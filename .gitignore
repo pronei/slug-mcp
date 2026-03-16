@@ -1,0 +1,6 @@
+/target
+.firecrawl/
+*.enc
+cache.db
+.claude/
+docs/

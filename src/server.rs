@@ -68,6 +68,18 @@ pub struct DiningMenuRequest {
     pub meal: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NutritionRequest {
+    /// Recipe ID from the menu (e.g., "061002*3"). Get this from get_dining_menu output.
+    pub recipe_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DiningHoursRequest {
+    /// Location name to filter by (e.g., "Crown", "Porter"). If omitted, returns all locations.
+    pub location: Option<String>,
+}
+
 #[tool_router]
 impl SlugMcpServer {
     #[tool(description = "Login to UCSC via CAS SSO. Opens your browser for authentication with CruzID and Duo MFA.")]
@@ -128,11 +140,34 @@ impl SlugMcpServer {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Get UCSC dining hall operating hours")]
-    async fn get_dining_hours(&self) -> Result<CallToolResult, ErrorData> {
-        let hours = self.dining.get_hours().await.map_err(|e| {
-            ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-        })?;
+    #[tool(description = "Get detailed nutrition facts for a specific menu item. Use the recipe ID from get_dining_menu output.")]
+    async fn get_nutrition_info(
+        &self,
+        Parameters(req): Parameters<NutritionRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let result = self
+            .dining
+            .get_nutrition(&req.recipe_id)
+            .await
+            .map_err(|e| {
+                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+            })?;
+
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Get UCSC dining location hours. Optionally filter by location name.")]
+    async fn get_dining_hours(
+        &self,
+        Parameters(req): Parameters<DiningHoursRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let hours = self
+            .dining
+            .get_hours(req.location.as_deref())
+            .await
+            .map_err(|e| {
+                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+            })?;
 
         Ok(CallToolResult::success(vec![Content::text(hours)]))
     }

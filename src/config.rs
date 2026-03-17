@@ -34,9 +34,6 @@ impl Config {
         self.data_dir.join("session.enc")
     }
 
-    pub fn cache_db_path(&self) -> PathBuf {
-        self.data_dir.join("cache.db")
-    }
 }
 
 fn dirs_fallback() -> Option<PathBuf> {

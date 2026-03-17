@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let config = Arc::new(config::Config::load()?);
-    let cache = Arc::new(cache::CacheStore::open(&config.cache_db_path())?);
+    let cache = Arc::new(cache::CacheStore::new(10_000));
 
     let http = reqwest::Client::new();
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));

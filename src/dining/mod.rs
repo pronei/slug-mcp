@@ -3,11 +3,12 @@ pub mod scraper;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
+use chrono::Datelike;
 
 use crate::cache::CacheStore;
 use scraper::{
-    find_hall, hall_names, scrape_menu, scrape_balance, scrape_nutrition, scrape_hours,
-    DiningMenu, MealBalance, DiningLocation, DINING_HALLS,
+    find_hall, hall_names, scrape_balance, scrape_hours, scrape_menu, scrape_nutrition,
+    DiningLocation, DiningMenu, MealBalance, DINING_HALLS,
 };
 
 pub struct DiningService {
@@ -24,7 +25,26 @@ impl DiningService {
         &self,
         hall: Option<&str>,
         meal: Option<&str>,
+        date: Option<&str>,
     ) -> Result<String> {
+        // Convert ISO date (YYYY-MM-DD) to M/D/YYYY for the nutrition site.
+        // Cache key always uses the canonical ISO date for consistency.
+        let (iso_date, formatted_date) = match date {
+            Some(d) => {
+                if let Ok(parsed) = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d") {
+                    let iso = d.to_string();
+                    let formatted = format!("{}/{}/{}", parsed.month(), parsed.day(), parsed.year());
+                    (Some(iso), Some(formatted))
+                } else {
+                    // Assume it's already in M/D/YYYY — store raw as cache key
+                    (Some(d.to_string()), Some(d.to_string()))
+                }
+            }
+            None => (None, None),
+        };
+        let scraper_date = formatted_date.as_deref();
+        let cache_date = iso_date.as_deref().unwrap_or("today");
+
         let mut menus = if let Some(hall_query) = hall {
             let hall = find_hall(hall_query).ok_or_else(|| {
                 anyhow::anyhow!(
@@ -34,15 +54,21 @@ impl DiningService {
                 )
             })?;
 
-            let cache_key = format!("dining:menu:{}", hall.location_num);
+            let cache_key = format!("dining:menu:{}:{}", hall.location_num, cache_date);
             if let Some(cached) = self.cache.get(&cache_key).await {
-                let menu: DiningMenu = serde_json::from_str(&cached).unwrap_or(DiningMenu {
-                    hall_name: hall.name.to_string(),
-                    meals: vec![],
-                });
-                vec![menu]
+                match serde_json::from_str::<DiningMenu>(&cached) {
+                    Ok(menu) => vec![menu],
+                    Err(e) => {
+                        tracing::warn!("Cache deserialization failed for {}: {}", cache_key, e);
+                        let menu = scrape_menu(&self.http, hall, scraper_date).await?;
+                        if let Ok(json) = serde_json::to_string(&menu) {
+                            self.cache.set(&cache_key, &json, 3600).await;
+                        }
+                        vec![menu]
+                    }
+                }
             } else {
-                let menu = scrape_menu(&self.http, hall).await?;
+                let menu = scrape_menu(&self.http, hall, scraper_date).await?;
                 if let Ok(json) = serde_json::to_string(&menu) {
                     self.cache.set(&cache_key, &json, 3600).await;
                 }
@@ -51,14 +77,21 @@ impl DiningService {
         } else {
             let mut all_menus = Vec::new();
             for hall in DINING_HALLS.iter().take(5) {
-                let cache_key = format!("dining:menu:{}", hall.location_num);
+                let cache_key = format!("dining:menu:{}:{}", hall.location_num, cache_date);
                 let menu = if let Some(cached) = self.cache.get(&cache_key).await {
-                    serde_json::from_str(&cached).unwrap_or(DiningMenu {
-                        hall_name: hall.name.to_string(),
-                        meals: vec![],
-                    })
+                    match serde_json::from_str::<DiningMenu>(&cached) {
+                        Ok(menu) => menu,
+                        Err(e) => {
+                            tracing::warn!("Cache deserialization failed for {}: {}", cache_key, e);
+                            let menu = scrape_menu(&self.http, hall, scraper_date).await?;
+                            if let Ok(json) = serde_json::to_string(&menu) {
+                                self.cache.set(&cache_key, &json, 3600).await;
+                            }
+                            menu
+                        }
+                    }
                 } else {
-                    let menu = scrape_menu(&self.http, hall).await?;
+                    let menu = scrape_menu(&self.http, hall, scraper_date).await?;
                     if let Ok(json) = serde_json::to_string(&menu) {
                         self.cache.set(&cache_key, &json, 3600).await;
                     }
@@ -73,11 +106,16 @@ impl DiningService {
         if let Some(meal_filter) = meal {
             let filter = meal_filter.to_lowercase();
             for menu in &mut menus {
-                menu.meals.retain(|m| m.name.to_lowercase().contains(&filter));
+                menu.meals
+                    .retain(|m| m.name.to_lowercase().contains(&filter));
             }
         }
 
-        let output: String = menus.iter().map(|m| m.format()).collect::<Vec<_>>().join("\n---\n\n");
+        let output: String = menus
+            .iter()
+            .map(|m| m.to_string())
+            .collect::<Vec<_>>()
+            .join("\n---\n\n");
 
         if output.trim().is_empty() {
             bail!("No menu data available. The nutrition site may be temporarily down.");
@@ -88,13 +126,23 @@ impl DiningService {
 
     pub async fn get_nutrition(&self, recipe_id: &str) -> Result<String> {
         let info = scrape_nutrition(&self.http, recipe_id).await?;
-        Ok(info.format())
+        Ok(info.to_string())
     }
 
     pub async fn get_hours(&self, location: Option<&str>) -> Result<String> {
         let cache_key = "dining:hours";
         let locations: Vec<DiningLocation> = if let Some(cached) = self.cache.get(cache_key).await {
-            serde_json::from_str(&cached).unwrap_or_default()
+            match serde_json::from_str(&cached) {
+                Ok(locs) => locs,
+                Err(e) => {
+                    tracing::warn!("Cache deserialization failed for {}: {}", cache_key, e);
+                    let locs = scrape_hours(&self.http).await?;
+                    if let Ok(json) = serde_json::to_string(&locs) {
+                        self.cache.set(cache_key, &json, 21600).await;
+                    }
+                    locs
+                }
+            }
         } else {
             let locs = scrape_hours(&self.http).await?;
             if let Ok(json) = serde_json::to_string(&locs) {
@@ -103,53 +151,50 @@ impl DiningService {
             locs
         };
 
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+
         let filtered: Vec<&DiningLocation> = if let Some(query) = location {
             let q = query.to_lowercase();
-            locations.iter().filter(|l| l.name.to_lowercase().contains(&q)).collect()
+            locations
+                .iter()
+                .filter(|l| l.name.to_lowercase().contains(&q))
+                .collect()
         } else {
             locations.iter().collect()
         };
 
         if filtered.is_empty() {
-            if location.is_some() {
-                bail!("Location '{}' not found.", location.unwrap());
+            if let Some(query) = location {
+                bail!("Location '{}' not found.", query);
             }
             bail!("No hours data available.");
         }
 
-        let output: String = filtered.iter().map(|l| l.format()).collect::<Vec<_>>().join("");
+        let output: String = filtered
+            .iter()
+            .map(|l| l.format_with_date(&today))
+            .collect::<Vec<_>>()
+            .join("");
         Ok(format!("# UCSC Dining Hours\n\n{}", output))
     }
 
     pub async fn get_balance(&self, auth_client: &reqwest::Client) -> Result<MealBalance> {
         let cache_key = "dining:balance";
         if let Some(cached) = self.cache.get(cache_key).await {
-            if let Ok(balance) = serde_json::from_str::<CachedBalance>(&cached) {
-                return Ok(MealBalance {
-                    slug_points: balance.slug_points,
-                    banana_bucks: balance.banana_bucks,
-                    meal_swipes: balance.meal_swipes,
-                });
+            match serde_json::from_str::<MealBalance>(&cached) {
+                Ok(balance) => return Ok(balance),
+                Err(e) => {
+                    tracing::warn!("Cache deserialization failed for {}: {}", cache_key, e);
+                }
             }
         }
 
         let balance = scrape_balance(auth_client).await?;
 
-        if let Ok(json) = serde_json::to_string(&CachedBalance {
-            slug_points: balance.slug_points,
-            banana_bucks: balance.banana_bucks,
-            meal_swipes: balance.meal_swipes,
-        }) {
+        if let Ok(json) = serde_json::to_string(&balance) {
             self.cache.set(cache_key, &json, 300).await; // 5 min TTL
         }
 
         Ok(balance)
     }
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct CachedBalance {
-    slug_points: Option<f64>,
-    banana_bucks: Option<f64>,
-    meal_swipes: Option<u32>,
 }

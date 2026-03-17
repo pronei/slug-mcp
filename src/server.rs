@@ -66,6 +66,8 @@ pub struct DiningMenuRequest {
     pub hall: Option<String>,
     /// Meal period: "breakfast", "lunch", "dinner", or "late night". If omitted, returns all meals.
     pub meal: Option<String>,
+    /// Date in YYYY-MM-DD format (e.g., "2026-03-19"). If omitted, returns today's menu.
+    pub date: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -121,7 +123,7 @@ impl SlugMcpServer {
             ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
         })?;
 
-        Ok(CallToolResult::success(vec![Content::text(balance.format())]))
+        Ok(CallToolResult::success(vec![Content::text(balance.to_string())]))
     }
 
     #[tool(description = "Get the menu for a UCSC dining hall")]
@@ -131,7 +133,7 @@ impl SlugMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         let result = self
             .dining
-            .get_menu(req.hall.as_deref(), req.meal.as_deref())
+            .get_menu(req.hall.as_deref(), req.meal.as_deref(), req.date.as_deref())
             .await
             .map_err(|e| {
                 ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)

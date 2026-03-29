@@ -1,25 +1,27 @@
-# slug-mcp
+<p align="center">
+  <img src="assets/logo.png" alt="slug-mcp" width="400" />
+</p>
 
-An [MCP](https://modelcontextprotocol.io/) server that gives AI assistants access to UC Santa Cruz campus services. Ask your AI about dining menus, gym crowding, class schedules, study room availability, and more — all from one interface.
+<h1 align="center">slug-mcp</h1>
 
-Built with Rust ([rmcp](https://github.com/anthropics/rmcp)) for the UCSC community.
+<p align="center">
+  An <a href="https://modelcontextprotocol.io/">MCP</a> server that gives AI assistants access to UC Santa Cruz campus services.<br/>
+  Ask about dining menus, gym crowding, class schedules, study rooms, and more — all from one interface.<br/><br/>
+  Built with Rust and <a href="https://github.com/anthropics/rmcp">rmcp</a> for the UCSC community.
+</p>
+
+---
 
 ## Features
 
-| Tool | What it does | Source |
-|------|-------------|--------|
-| `get_dining_menu` | Menus for all 5 dining halls with dietary tags and allergens | nutrition.sa.ucsc.edu |
-| `get_nutrition_info` | Full nutrition facts for any menu item | nutrition.sa.ucsc.edu |
-| `get_dining_hours` | Operating hours for all dining locations | din.dining.ucsc.edu |
-| `get_meal_balance` | Slug Points / Banana Bucks balance | get.cbord.com (auth) |
-| `search_events` / `get_upcoming_events` | Campus events by keyword or category | events.ucsc.edu |
-| `get_facility_occupancy` | Live headcounts for gym, pool, fields, climbing wall | campusrec.ucsc.edu |
-| `get_facility_schedule` | Rec facility calendars (open gym, swim, intramurals) | campusrec.ucsc.edu |
-| `get_study_room_availability` | Study room time slots at McHenry and S&E Library | calendar.library.ucsc.edu |
-| `book_study_room` | Book a study room (authenticated) | calendar.library.ucsc.edu |
-| `search_classes` | Class schedule search — enrollment, instructor, times, GE | pisa.ucsc.edu |
-| `search_directory` | Faculty/staff contact info and department lookup | campusdirectory.ucsc.edu |
-| `search_classrooms` | Find rooms by capacity, AV equipment, building, features | classrooms.ucsc.edu |
+| Service | What you can do |
+|---------|----------------|
+| **Dining** | Browse menus for all 5 dining halls with dietary tags and allergen info, look up full nutrition facts for any item, check operating hours for all locations, view your Slug Points / Banana Bucks balance |
+| **Events** | Search campus events by keyword or category, list upcoming events |
+| **Recreation** | See live headcounts for gym, pool, fields, climbing wall, and wellness center; view facility schedules (open gym, lap swim, intramurals) |
+| **Library** | Check study room availability at McHenry and S&E Library by time slot, book a room (authenticated) |
+| **Academics** | Search the class schedule by subject, instructor, GE, course number — with enrollment counts, meeting times, and instruction mode; look up faculty/staff contact info and departments |
+| **Classrooms** | Find general-assignment classrooms by capacity, building, AV equipment, seating style, and accessibility features |
 
 ## Quick Start (Local)
 
@@ -31,9 +33,11 @@ cd slug-mcp
 cargo build --release
 ```
 
-### Use with Claude Desktop (stdio)
+## Client Setup
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -45,20 +49,42 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-Then ask Claude things like:
-- *"What's for dinner at Crown tonight?"*
-- *"How crowded is the gym right now?"*
-- *"Find me a study room at McHenry after 2pm"*
-- *"What CSE classes are open for Spring?"*
-
-### Authentication (optional)
-
-Some tools (meal balance, room booking) require UCSC login:
+### Claude Code
 
 ```bash
-# Local use — opens Chrome for CruzID + Duo MFA
-# (happens automatically when you use an auth-required tool)
+claude mcp add slug-mcp /path/to/slug-mcp
 ```
+
+Or to connect to the hosted server:
+
+```bash
+claude mcp add slug-mcp --transport sse https://<TBD>/mcp
+```
+
+### ChatGPT Desktop
+
+Open **ChatGPT** → **Settings** → **Beta Features** → enable **MCP Servers**, then:
+
+**Settings** → **MCP Servers** → **Add Server** → **Command-line (stdio)**
+
+- **Name:** `slug-mcp`
+- **Command:** `/path/to/slug-mcp`
+
+### Gemini
+
+In **Google AI Studio** or the **Gemini API**, add the server as a tool source using the Streamable HTTP endpoint:
+
+```
+https://<TBD>/mcp
+```
+
+Gemini supports MCP via its [tool use](https://ai.google.dev/gemini-api/docs/function-calling) framework — point it at the SSE server URL.
+
+### Any MCP-compatible client
+
+**Local (stdio):** run `/path/to/slug-mcp` as the command — no arguments needed.
+
+**Remote (SSE):** connect to `https://<TBD>/mcp` using Streamable HTTP transport.
 
 ## Connecting to the Hosted Server
 
@@ -68,34 +94,32 @@ A shared instance is available for UCSC students:
 >
 > *Connection details will be provided by the course staff.*
 
-### Setup
-
-Point your MCP client at the server URL. Most tools work immediately — no login needed for dining, events, gym, classes, classrooms, or directory.
-
-For authenticated tools (meal balance, room booking), generate a token on your local machine and pass it to the server:
+Most tools work immediately with no login. For authenticated tools (meal balance, room booking), generate a token on your local machine:
 
 ```bash
-# 1. Generate a token locally (opens browser for Duo MFA)
-cargo run -- export-token
+# 1. Generate a token locally (opens browser for CruzID + Duo MFA)
+slug-mcp export-token
 # Prints a base64 token valid for 8 hours
 
-# 2. In your MCP client, call the authenticate tool with the token
-# authenticate(token: "eyJ...")
+# 2. In your AI assistant, call the authenticate tool with the token
 ```
 
 Each connected client gets independent auth state — your credentials are not shared with other users.
 
-## Running Your Own Server (SSE)
+## Running Your Own Server
 
 ```bash
 # Start the SSE server
 ./slug-mcp serve --sse --port 3000
+```
 
-# With a reverse proxy (recommended for TLS)
-# Example Caddyfile:
-#   slug-mcp.example.com {
-#       reverse_proxy localhost:3000
-#   }
+For production, put a reverse proxy in front for TLS:
+
+```
+# Caddyfile
+slug-mcp.example.com {
+    reverse_proxy localhost:3000
+}
 ```
 
 The server handles multiple concurrent clients. Each SSE session gets its own isolated state via the rmcp session factory. Shared resources (cache, HTTP client) are `Arc`-wrapped and thread-safe.
@@ -120,8 +144,8 @@ src/
 └── classrooms/          # Classroom directory scraping
 ```
 
-Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) + `mod.rs` (service layer with caching).
+Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) → `mod.rs` (service layer with caching) → `server.rs` (MCP tool handler).
 
 ## License
 
-MIT
+[MIT](LICENSE)

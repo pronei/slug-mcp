@@ -26,10 +26,12 @@ open = "5"
 directories = "6"
 aes-gcm = "0.10"
 sha2 = "0.10"
-quick-xml = "0.37"
 hostname = "0.4"
 urlencoding = "2"
 chrono = "0.4"
+chromiumoxide = "0.9.1"
+futures-util = "0.3.32"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

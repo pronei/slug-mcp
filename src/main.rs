@@ -1,57 +1,134 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::Result;
-use clap::Parser;
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 
+mod academics;
 mod auth;
 mod cache;
+mod classrooms;
 mod config;
 mod dining;
 mod events;
+mod library;
+mod recreation;
 mod server;
 
 #[derive(Parser)]
 #[command(name = "slug-mcp", about = "MCP server for UCSC campus services")]
 struct Cli {
-    /// Run as an SSE server instead of stdio
-    #[arg(long)]
-    sse: bool,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
 
-    /// Port for the SSE server
-    #[arg(long, default_value_t = 3000)]
-    port: u16,
+#[derive(Subcommand)]
+enum Command {
+    /// Run the MCP server (default if no subcommand given)
+    Serve {
+        /// Run as an SSE server instead of stdio
+        #[arg(long)]
+        sse: bool,
+        /// Port for the SSE server
+        #[arg(long, default_value_t = 3000)]
+        port: u16,
+    },
+    /// Login locally via browser and print a portable auth token to stdout.
+    /// Use this token with the `authenticate` tool on a remote SSE server.
+    ExportToken,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command.unwrap_or(Command::Serve {
+        sse: false,
+        port: 3000,
+    }) {
+        Command::ExportToken => run_export_token().await,
+        Command::Serve { sse, port } => {
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::from_default_env()
+                        .add_directive(tracing::Level::INFO.into()),
+                )
+                .with_writer(std::io::stderr)
+                .init();
+
+            run_serve(sse, port).await
+        }
+    }
+}
+
+async fn run_export_token() -> Result<()> {
+    // Minimal logging — only errors, since stdout is for the token
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::new("error"))
         .with_writer(std::io::stderr)
         .init();
 
-    let cli = Cli::parse();
+    eprintln!("Opening browser for UCSC login...");
+    eprintln!("Complete CruzID + Duo authentication in the browser window.");
+
+    let cookies = auth::browser::login_via_browser()
+        .await
+        .context("browser login failed")?;
+
+    let cookie_data =
+        auth::browser::serialize_cookies(&cookies).context("failed to serialize cookies")?;
+
+    let username =
+        auth::browser::extract_username(&cookies).unwrap_or_else(|| "UCSC User".to_string());
+
+    let expires_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+        + 8 * 3600; // 8 hours
+
+    let session_data = auth::session::SessionData {
+        cookies: cookie_data,
+        username: username.clone(),
+        expires_at,
+    };
+
+    let token = auth::token::encode_token(&session_data)?;
+
+    eprintln!();
+    eprintln!("Authenticated as {}. Token valid for 8 hours.", username);
+    eprintln!("Pass this token to the `authenticate` tool on the remote server:");
+    eprintln!();
+    println!("{}", token);
+
+    Ok(())
+}
+
+async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let config = Arc::new(config::Config::load()?);
     let cache = Arc::new(cache::CacheStore::new(10_000));
 
     let http = reqwest::Client::new();
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
     let dining = Arc::new(dining::DiningService::new(http.clone(), cache.clone()));
-    let events = Arc::new(events::EventsService::new(http, cache.clone()));
+    let events = Arc::new(events::EventsService::new(http.clone(), cache.clone()));
+    let recreation = Arc::new(recreation::RecreationService::new(http.clone(), cache.clone()));
+    let library = Arc::new(library::LibraryService::new(http.clone(), cache.clone()));
+    let academics = Arc::new(academics::AcademicsService::new(http.clone(), cache.clone()));
+    let classrooms_svc = Arc::new(classrooms::ClassroomService::new(http, cache.clone()));
 
-    if cli.sse {
-        run_sse(cli.port, config, cache, auth, dining, events).await
+    if sse {
+        run_sse(port, config, cache, auth, dining, events, recreation, library, academics, classrooms_svc).await
     } else {
-        let server = server::SlugMcpServer::new(config, cache, auth, dining, events);
+        let server = server::SlugMcpServer::new(config, cache, auth, dining, events, recreation, library, academics, classrooms_svc);
         let service = server.serve(rmcp::transport::io::stdio()).await?;
         service.waiting().await?;
         Ok(())
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_sse(
     port: u16,
     config: Arc<config::Config>,
@@ -59,6 +136,10 @@ async fn run_sse(
     auth: Arc<auth::AuthManager>,
     dining: Arc<dining::DiningService>,
     events: Arc<events::EventsService>,
+    recreation: Arc<recreation::RecreationService>,
+    library: Arc<library::LibraryService>,
+    academics: Arc<academics::AcademicsService>,
+    classrooms_svc: Arc<classrooms::ClassroomService>,
 ) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
@@ -78,6 +159,10 @@ async fn run_sse(
                 auth.clone(),
                 dining.clone(),
                 events.clone(),
+                recreation.clone(),
+                library.clone(),
+                academics.clone(),
+                classrooms_svc.clone(),
             ))
         },
         session_manager,

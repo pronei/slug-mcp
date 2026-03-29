@@ -8,8 +8,17 @@ use chrono::Datelike;
 use crate::cache::CacheStore;
 use scraper::{
     find_hall, hall_names, scrape_balance, scrape_hours, scrape_menu, scrape_nutrition,
-    DiningLocation, DiningMenu, MealBalance, DINING_HALLS,
+    BalanceResult, DiningLocation, DiningMenu, MealBalance, DINING_HALLS,
 };
+
+const FILTERED_CATEGORIES: &[&str] = &[
+    "condiments",
+    "all day",
+    "beverages",
+    "bread & bagels",
+    "bread and bagels",
+    "cereal",
+];
 
 pub struct DiningService {
     http: reqwest::Client,
@@ -26,6 +35,7 @@ impl DiningService {
         hall: Option<&str>,
         meal: Option<&str>,
         date: Option<&str>,
+        include_all: bool,
     ) -> Result<String> {
         // Convert ISO date (YYYY-MM-DD) to M/D/YYYY for the nutrition site.
         // Cache key always uses the canonical ISO date for consistency.
@@ -111,6 +121,17 @@ impl DiningService {
             }
         }
 
+        // Filter out noisy categories (condiments, beverages, etc.) by default
+        if !include_all {
+            for menu in &mut menus {
+                for meal in &mut menu.meals {
+                    meal.categories.retain(|c| {
+                        !FILTERED_CATEGORIES.contains(&c.name.to_lowercase().as_str())
+                    });
+                }
+            }
+        }
+
         let output: String = menus
             .iter()
             .map(|m| m.to_string())
@@ -178,23 +199,31 @@ impl DiningService {
         Ok(format!("# UCSC Dining Hours\n\n{}", output))
     }
 
-    pub async fn get_balance(&self, auth_client: &reqwest::Client) -> Result<MealBalance> {
+    pub async fn get_balance(&self, auth_client: &reqwest::Client) -> Result<BalanceResult> {
         let cache_key = "dining:balance";
         if let Some(cached) = self.cache.get(cache_key).await {
             match serde_json::from_str::<MealBalance>(&cached) {
-                Ok(balance) => return Ok(balance),
+                Ok(balance) => {
+                    return Ok(BalanceResult {
+                        balance,
+                        debug_snippet: None,
+                    })
+                }
                 Err(e) => {
                     tracing::warn!("Cache deserialization failed for {}: {}", cache_key, e);
                 }
             }
         }
 
-        let balance = scrape_balance(auth_client).await?;
+        let result = scrape_balance(auth_client).await?;
 
-        if let Ok(json) = serde_json::to_string(&balance) {
-            self.cache.set(cache_key, &json, 300).await; // 5 min TTL
+        // Only cache if we got actual data
+        if result.debug_snippet.is_none() {
+            if let Ok(json) = serde_json::to_string(&result.balance) {
+                self.cache.set(cache_key, &json, 300).await; // 5 min TTL
+            }
         }
 
-        Ok(balance)
+        Ok(result)
     }
 }

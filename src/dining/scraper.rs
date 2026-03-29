@@ -441,49 +441,59 @@ impl fmt::Display for MealBalance {
     }
 }
 
-pub async fn scrape_balance(client: &reqwest::Client) -> Result<MealBalance> {
-    // The meal plan balance is typically available through the GET system
-    // at get.cbord.com/ucsc or through the UCSC dining portal.
-    // This requires an authenticated session with CAS cookies.
-    //
-    // TODO: Once we have a real session to test with, discover the exact
-    // URL and HTML structure for balance data.
-    let urls = [
-        "https://nutrition.sa.ucsc.edu/longmenu.aspx",
-        "https://get.cbord.com/ucsc/full/funds_home.php",
-    ];
+/// Result of a balance scrape attempt.
+pub struct BalanceResult {
+    pub balance: MealBalance,
+    /// If parsing failed, contains a snippet of what the page actually showed.
+    pub debug_snippet: Option<String>,
+}
 
-    for url in &urls {
-        let resp = match client.get(*url).send().await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("Failed to fetch balance from {}: {}", url, e);
-                continue;
-            }
-        };
+pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
+    // The meal plan balance is available through the GET system at
+    // get.cbord.com/ucsc. This requires an authenticated session — the
+    // client should have IdP cookies from browser SSO that allow the
+    // SAML redirect chain to auto-approve.
+    let url = "https://get.cbord.com/ucsc/full/funds_home.php";
 
-        if !resp.status().is_success() {
-            continue;
-        }
+    let resp = crate::auth::saml_aware_get(client, url)
+        .await
+        .context("failed to fetch balance page")?;
 
-        let html = match resp.text().await {
-            Ok(h) => h,
-            Err(e) => {
-                tracing::warn!("Failed to read balance page body from {}: {}", url, e);
-                continue;
-            }
-        };
-
-        if let Some(balance) = try_parse_balance(&html) {
-            return Ok(balance);
-        }
+    if !resp.status.is_success() {
+        anyhow::bail!("Balance page returned status {}", resp.status);
     }
 
-    // Return empty balance if we can't find the data
-    Ok(MealBalance {
-        slug_points: None,
-        banana_bucks: None,
-        meal_swipes: None,
+    // Extract visible text from the HTML
+    let document = Html::parse_document(&resp.body);
+    let page_text = document.root_element().text().collect::<String>();
+
+    // Try to parse balance values
+    if let Some(balance) = try_parse_balance(&resp.body) {
+        return Ok(BalanceResult {
+            balance,
+            debug_snippet: None,
+        });
+    }
+
+    // Parsing failed — extract a useful snippet for debugging
+    // Trim whitespace and take first ~500 meaningful chars
+    let clean_text: String = page_text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let snippet = if clean_text.len() > 500 {
+        format!("{}...", &clean_text[..500])
+    } else {
+        clean_text
+    };
+
+    Ok(BalanceResult {
+        balance: MealBalance {
+            slug_points: None,
+            banana_bucks: None,
+            meal_swipes: None,
+        },
+        debug_snippet: Some(snippet),
     })
 }
 

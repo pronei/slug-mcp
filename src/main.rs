@@ -15,6 +15,7 @@ mod events;
 mod library;
 mod recreation;
 mod server;
+mod transit;
 
 #[derive(Parser)]
 #[command(name = "slug-mcp", about = "MCP server for UCSC campus services")]
@@ -111,6 +112,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
 
     let http = reqwest::Client::new();
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
+    let bustime_key = config.bustime_api_key.clone();
     let ctx = server::ServiceContext {
         config,
         cache: cache.clone(),
@@ -120,7 +122,8 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         recreation: Arc::new(recreation::RecreationService::new(http.clone(), cache.clone())),
         library: Arc::new(library::LibraryService::new(http.clone(), cache.clone())),
         academics: Arc::new(academics::AcademicsService::new(http.clone(), cache.clone())),
-        classrooms: Arc::new(classrooms::ClassroomService::new(http.clone(), cache)),
+        classrooms: Arc::new(classrooms::ClassroomService::new(http.clone(), cache.clone())),
+        transit: Arc::new(transit::TransitService::new(http.clone(), cache.clone(), bustime_key)),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

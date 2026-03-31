@@ -18,6 +18,7 @@ use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, Nutrit
 use crate::events::{EventsService, SearchEventsRequest, UpcomingEventsRequest};
 use crate::library::{BookStudyRoomRequest, LibraryService, StudyRoomAvailabilityRequest};
 use crate::recreation::{FacilityOccupancyRequest, FacilityScheduleRequest, RecreationService};
+use crate::transit::TransitService;
 
 fn internal_err(e: impl std::fmt::Display) -> ErrorData {
     ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
@@ -35,6 +36,7 @@ pub struct ServiceContext {
     pub library: Arc<LibraryService>,
     pub academics: Arc<AcademicsService>,
     pub classrooms: Arc<ClassroomService>,
+    pub transit: Arc<TransitService>,
 }
 
 #[derive(Clone)]
@@ -52,6 +54,7 @@ pub struct SlugMcpServer {
     library: Arc<LibraryService>,
     academics: Arc<AcademicsService>,
     classrooms: Arc<ClassroomService>,
+    transit: Arc<TransitService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -68,6 +71,7 @@ impl SlugMcpServer {
             library: ctx.library,
             academics: ctx.academics,
             classrooms: ctx.classrooms,
+            transit: ctx.transit,
             tool_router: Self::tool_router(),
         }
     }
@@ -91,6 +95,16 @@ impl SlugMcpServer {
 pub struct AuthenticateRequest {
     /// Portable auth token from `slug-mcp export-token`. Base64-encoded session data.
     pub token: String,
+}
+
+// ─── Transit ───
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BusPredictionRequest {
+    /// Stop name to search for (e.g., "Science Hill", "Metro Center", "Oakes College").
+    pub stop: String,
+    /// Route number to filter (e.g., "10", "15"). If omitted, shows all routes at the stop.
+    pub route: Option<String>,
 }
 
 #[tool_router]
@@ -400,6 +414,22 @@ impl SlugMcpServer {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    // ─── Transit Tools ───
+
+    #[tool(description = "Get real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name and optionally filter by route number. Shows ETAs in minutes for upcoming buses. All UCSC students ride free with student ID.")]
+    async fn get_bus_predictions(
+        &self,
+        Parameters(req): Parameters<BusPredictionRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let result = self
+            .transit
+            .get_predictions(&req.stop, req.route.as_deref())
+            .await
+            .map_err(internal_err)?;
+
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // ─── Classroom Tools ───
 
     #[tool(description = "Search UCSC classrooms by capacity, building, technology, and features. Find rooms with specific AV equipment or seating arrangements.")]
@@ -432,7 +462,8 @@ impl ServerHandler for SlugMcpServer {
                 "UCSC campus services MCP server. Provides dining menus, nutrition info, \
                  meal plan balances, campus events, recreation facility occupancy, \
                  library study room availability and booking, class schedule search, \
-                 campus directory lookup, and classroom search for UC Santa Cruz students.",
+                 campus directory lookup, classroom search, and real-time bus arrival \
+                 predictions for UC Santa Cruz students.",
             )
     }
 }

@@ -1,3 +1,4 @@
+pub mod locations;
 pub mod scraper;
 
 use std::sync::Arc;
@@ -53,7 +54,16 @@ impl ClassroomService {
         }
 
         let header = format!("## UCSC Classrooms ({} results)\n", filtered.len());
-        let body: Vec<String> = filtered.iter().map(|c| c.to_string()).collect();
+        let body: Vec<String> = filtered
+            .iter()
+            .map(|c| {
+                let loc = c
+                    .area
+                    .as_deref()
+                    .and_then(locations::lookup_by_area);
+                c.format_with_location(loc)
+            })
+            .collect();
         Ok(format!("{}{}", header, body.join("\n\n")))
     }
 

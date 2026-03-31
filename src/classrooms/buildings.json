@@ -1,0 +1,130 @@
+{
+  "baskin-theater-arts": {
+    "name": "Jack Baskin Engineering / Theater Arts",
+    "college_area": "Science Hill / Porter",
+    "lat": 37.000370,
+    "lon": -122.063200,
+    "landmarks": "Jack Baskin Engineering is on Science Hill near the Hagar Dr entrance. Theater Arts (DNCE 100) is near Porter College off Empire Grade Rd.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "classroom-unit": {
+    "name": "Classroom Unit",
+    "college_area": "Central Campus",
+    "lat": 36.997868,
+    "lon": -122.056585,
+    "landmarks": "Central Campus near Hahn Student Services and the Bay Tree Bookstore. The three Classroom Unit buildings are along the main campus walkway between McHenry Library and the Quarry Plaza.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "college-9-social-sciences": {
+    "name": "Colleges Nine & Ten / Social Sciences",
+    "college_area": "Colleges Nine & Ten",
+    "lat": 37.001350,
+    "lon": -122.059090,
+    "landmarks": "Upper campus near the Social Sciences buildings. Access via McLaughlin Dr or the campus loop road. Adjacent to the College Nine and John R. Lewis College dining hall.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "cowell-college": {
+    "name": "Cowell College",
+    "college_area": "Cowell",
+    "lat": 36.997100,
+    "lon": -122.054100,
+    "landmarks": "Lower campus near the main entrance. Adjacent to Stevenson College. Walk uphill from the main campus entrance on Bay Dr. Near the Cowell & Stevenson Dining Hall.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "crown-college": {
+    "name": "Crown College",
+    "college_area": "Crown / Merrill",
+    "lat": 37.000070,
+    "lon": -122.054520,
+    "landmarks": "Upper campus past Science Hill. Adjacent to Merrill College. Access via Heller Dr. Near the Crown & Merrill Dining Hall. Uphill from McHenry Library.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "engineering": {
+    "name": "Engineering 2",
+    "college_area": "Science Hill",
+    "lat": 36.999600,
+    "lon": -122.060300,
+    "landmarks": "On Science Hill next to Jack Baskin Engineering. Access via Hagar Dr or McLaughlin Dr. The building is behind Baskin Engineering, closer to the campus loop road.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "humanities": {
+    "name": "Humanities Building",
+    "college_area": "Central Campus / Quarry",
+    "lat": 36.998440,
+    "lon": -122.054510,
+    "landmarks": "Central campus near Quarry Plaza and the Cowell/Stevenson area. Walk past the Quarry Amphitheater from the main road. Adjacent to the Communications Building.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "johnrlewis-socialsciences": {
+    "name": "John R. Lewis College / Social Sciences",
+    "college_area": "Colleges Nine & Ten",
+    "lat": 37.002250,
+    "lon": -122.058370,
+    "landmarks": "Upper campus near the Social Sciences buildings. Same area as Colleges Nine & Ten. Access via McLaughlin Dr. Near the John R. Lewis & College Nine Dining Hall.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "kresge-college": {
+    "name": "Kresge College",
+    "college_area": "Kresge",
+    "lat": 36.997900,
+    "lon": -122.065950,
+    "landmarks": "West side of campus near Porter College. Access via Empire Grade Rd or the campus loop road. Known for its distinctive village-style architecture. Near Porter & Kresge Dining Hall.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "mchenry-library": {
+    "name": "McHenry Library",
+    "college_area": "Central Campus",
+    "lat": 36.995930,
+    "lon": -122.059040,
+    "landmarks": "Heart of central campus. The main library building is easily visible from most directions. Between Science Hill and the Colleges. Multiple entrances on ground and upper levels.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "merrill-college": {
+    "name": "Merrill College",
+    "college_area": "Crown / Merrill",
+    "lat": 36.999610,
+    "lon": -122.053470,
+    "landmarks": "Upper campus adjacent to Crown College. Access via Heller Dr. Near the Crown & Merrill Dining Hall. The cultural center is a notable landmark nearby.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "oakes-college": {
+    "name": "Oakes College",
+    "college_area": "Oakes / Rachel Carson",
+    "lat": 36.990050,
+    "lon": -122.062970,
+    "landmarks": "West side of upper campus. Access via Empire Grade Rd. Adjacent to Rachel Carson College. Near the Rachel Carson & Oakes Dining Hall. Close to the campus western entrance.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "porter-college": {
+    "name": "Porter College",
+    "college_area": "Porter",
+    "lat": 36.994130,
+    "lon": -122.065130,
+    "landmarks": "West side of campus near Kresge College. Access via Empire Grade Rd. Known for its art studios and murals. Near Porter & Kresge Dining Hall. The Porter Sinsheimer Labs are nearby.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "rachel-carson-college": {
+    "name": "Rachel Carson College",
+    "college_area": "Rachel Carson / Oakes",
+    "lat": 36.991580,
+    "lon": -122.064880,
+    "landmarks": "West side of upper campus next to Oakes College. Access via Empire Grade Rd. Near the Rachel Carson & Oakes Dining Hall. Previously known as College Eight.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "science-hill": {
+    "name": "Science Hill",
+    "college_area": "Science Hill",
+    "lat": 36.998140,
+    "lon": -122.062030,
+    "landmarks": "Cluster of science buildings including Physical Sciences, Natural Sciences Annex, Thimann Labs, and Earth & Marine Sciences. Central to campus, accessible from Hagar Dr. Between McHenry Library and the Engineering buildings.",
+    "map_url": "https://maps.ucsc.edu/"
+  },
+  "stevenson-college": {
+    "name": "Stevenson College",
+    "college_area": "Cowell / Stevenson",
+    "lat": 36.996900,
+    "lon": -122.051200,
+    "landmarks": "Lower campus adjacent to Cowell College. Near the main campus entrance. Walk uphill from Bay Dr. Near the Cowell & Stevenson Dining Hall. The Stevenson fireside lounge is a popular study spot.",
+    "map_url": "https://maps.ucsc.edu/"
+  }
+}

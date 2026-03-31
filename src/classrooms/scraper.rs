@@ -1,8 +1,11 @@
 use std::fmt;
+use std::fmt::Write;
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use scraper::{Html, Selector};
+
+use super::locations::BuildingLocation;
 
 fn sel<'a>(cell: &'a OnceLock<Selector>, s: &str) -> &'a Selector {
     cell.get_or_init(|| Selector::parse(s).expect("hardcoded selector"))
@@ -45,6 +48,41 @@ impl fmt::Display for Classroom {
             write!(f, "\n- **Features**: {}", feats.join(", "))?;
         }
         Ok(())
+    }
+}
+
+impl Classroom {
+    /// Format classroom info with optional location data from the buildings index.
+    pub fn format_with_location(&self, location: Option<&BuildingLocation>) -> String {
+        let mut out = format!("### {}", self.name);
+
+        // Location info first (most useful for wayfinding)
+        if let Some(loc) = location {
+            let _ = write!(out, "\n{}", loc.format_location());
+        }
+
+        if let Some(cap) = self.capacity {
+            let _ = write!(out, "\n- **Capacity**: {}", cap);
+        }
+        if let Some(style) = &self.seating_style {
+            let _ = write!(out, "\n- **Seating**: {}", humanize(style));
+        }
+        // Only show raw area if no location data was found
+        if location.is_none() {
+            if let Some(area) = &self.area {
+                let _ = write!(out, "\n- **Area**: {}", humanize(area));
+            }
+        }
+        if !self.technology.is_empty() {
+            let techs: Vec<String> = self.technology.iter().map(|t| humanize(t)).collect();
+            let _ = write!(out, "\n- **Technology**: {}", techs.join(", "));
+        }
+        if !self.physical_features.is_empty() {
+            let feats: Vec<String> = self.physical_features.iter().map(|t| humanize(t)).collect();
+            let _ = write!(out, "\n- **Features**: {}", feats.join(", "));
+        }
+
+        out
     }
 }
 

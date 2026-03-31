@@ -158,8 +158,8 @@ async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
 
     let app = axum::Router::new().nest_service("/mcp", service);
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    tracing::info!("SSE server listening on http://0.0.0.0:{}/mcp", port);
+    let listener = tokio::net::TcpListener::bind(format!("localhost:{}", port)).await?;
+    tracing::info!("SSE server listening on http://localhost:{}/mcp", port);
 
     axum::serve(listener, app).await?;
 

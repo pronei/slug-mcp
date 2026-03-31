@@ -8,6 +8,7 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub sse_port: u16,
     pub eventbrite_api_key: Option<String>,
+    pub bustime_api_key: Option<String>,
 }
 
 impl Config {
@@ -27,6 +28,7 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3000),
             eventbrite_api_key: std::env::var("SLUG_MCP_EVENTBRITE_KEY").ok(),
+            bustime_api_key: std::env::var("SLUG_MCP_BUSTIME_KEY").ok(),
         })
     }
 

@@ -32,6 +32,8 @@ chrono = "0.4"
 chromiumoxide = "0.9.1"
 futures-util = "0.3.32"
 base64 = "0.22"
+zip = "2"
+csv = "1"
 
 [dev-dependencies]
 tempfile = "3"

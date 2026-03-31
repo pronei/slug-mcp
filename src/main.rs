@@ -15,6 +15,7 @@ mod events;
 mod library;
 mod recreation;
 mod server;
+mod transit;
 
 #[derive(Parser)]
 #[command(name = "slug-mcp", about = "MCP server for UCSC campus services")]
@@ -116,12 +117,17 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let recreation = Arc::new(recreation::RecreationService::new(http.clone(), cache.clone()));
     let library = Arc::new(library::LibraryService::new(http.clone(), cache.clone()));
     let academics = Arc::new(academics::AcademicsService::new(http.clone(), cache.clone()));
-    let classrooms_svc = Arc::new(classrooms::ClassroomService::new(http, cache.clone()));
+    let classrooms_svc = Arc::new(classrooms::ClassroomService::new(http.clone(), cache.clone()));
+    let transit_svc = Arc::new(transit::TransitService::new(
+        http,
+        cache.clone(),
+        config.bustime_api_key.clone(),
+    ));
 
     if sse {
-        run_sse(port, config, cache, auth, dining, events, recreation, library, academics, classrooms_svc).await
+        run_sse(port, config, cache, auth, dining, events, recreation, library, academics, classrooms_svc, transit_svc).await
     } else {
-        let server = server::SlugMcpServer::new(config, cache, auth, dining, events, recreation, library, academics, classrooms_svc);
+        let server = server::SlugMcpServer::new(config, cache, auth, dining, events, recreation, library, academics, classrooms_svc, transit_svc);
         let service = server.serve(rmcp::transport::io::stdio()).await?;
         service.waiting().await?;
         Ok(())
@@ -140,6 +146,7 @@ async fn run_sse(
     library: Arc<library::LibraryService>,
     academics: Arc<academics::AcademicsService>,
     classrooms_svc: Arc<classrooms::ClassroomService>,
+    transit_svc: Arc<transit::TransitService>,
 ) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
@@ -163,6 +170,7 @@ async fn run_sse(
                 library.clone(),
                 academics.clone(),
                 classrooms_svc.clone(),
+                transit_svc.clone(),
             ))
         },
         session_manager,

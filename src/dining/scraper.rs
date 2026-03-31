@@ -463,10 +463,6 @@ pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
         anyhow::bail!("Balance page returned status {}", resp.status);
     }
 
-    // Extract visible text from the HTML
-    let document = Html::parse_document(&resp.body);
-    let page_text = document.root_element().text().collect::<String>();
-
     // Try to parse balance values
     if let Some(balance) = try_parse_balance(&resp.body) {
         return Ok(BalanceResult {
@@ -475,14 +471,14 @@ pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
         });
     }
 
-    // Parsing failed — extract a useful snippet for debugging
-    // Trim whitespace and take first ~500 meaningful chars
+    // Parsing failed — extract visible text (skipping script/style) for debugging
+    let page_text = extract_visible_text(&resp.body);
     let clean_text: String = page_text
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    let snippet = if clean_text.len() > 500 {
-        format!("{}...", &clean_text[..500])
+    let snippet = if clean_text.len() > 1000 {
+        format!("{}...", &clean_text[..1000])
     } else {
         clean_text
     };
@@ -497,9 +493,46 @@ pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
     })
 }
 
+/// Extract visible text from HTML, stripping script/style/noscript blocks first.
+fn extract_visible_text(html: &str) -> String {
+    // Strip <script>...</script>, <style>...</style>, <noscript>...</noscript> blocks
+    let stripped = strip_tag_blocks(html, "script");
+    let stripped = strip_tag_blocks(&stripped, "style");
+    let stripped = strip_tag_blocks(&stripped, "noscript");
+
+    let document = Html::parse_document(&stripped);
+    document.root_element().text().collect::<String>()
+}
+
+/// Remove all occurrences of <tag ...>...</tag> (case-insensitive) from HTML.
+fn strip_tag_blocks(html: &str, tag: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let lower = html.to_lowercase();
+    let open = format!("<{}", tag);
+    let close = format!("</{}>", tag);
+
+    let mut pos = 0;
+    while pos < html.len() {
+        if let Some(start) = lower[pos..].find(&open) {
+            let abs_start = pos + start;
+            result.push_str(&html[pos..abs_start]);
+            // Find closing tag
+            if let Some(end) = lower[abs_start..].find(&close) {
+                pos = abs_start + end + close.len();
+            } else {
+                // No closing tag found — skip rest
+                break;
+            }
+        } else {
+            result.push_str(&html[pos..]);
+            break;
+        }
+    }
+    result
+}
+
 fn try_parse_balance(html: &str) -> Option<MealBalance> {
-    let document = Html::parse_document(html);
-    let text = document.root_element().text().collect::<String>();
+    let text = extract_visible_text(html);
 
     let slug_points = extract_balance_value(&text, "slug points");
     let banana_bucks = extract_balance_value(&text, "banana bucks");

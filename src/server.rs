@@ -8,16 +8,34 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
-use crate::academics::AcademicsService;
+use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
 use crate::auth::session::SessionData;
 use crate::auth::AuthManager;
 use crate::cache::CacheStore;
-use crate::classrooms::ClassroomService;
+use crate::classrooms::{ClassroomService, SearchClassroomsRequest};
 use crate::config::Config;
-use crate::dining::DiningService;
-use crate::events::EventsService;
-use crate::library::LibraryService;
-use crate::recreation::RecreationService;
+use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
+use crate::events::{EventsService, SearchEventsRequest, UpcomingEventsRequest};
+use crate::library::{BookStudyRoomRequest, LibraryService, StudyRoomAvailabilityRequest};
+use crate::recreation::{FacilityOccupancyRequest, FacilityScheduleRequest, RecreationService};
+
+fn internal_err(e: impl std::fmt::Display) -> ErrorData {
+    ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+}
+
+/// Shared service dependencies, constructed once and cloned into each MCP session.
+#[derive(Clone)]
+pub struct ServiceContext {
+    pub config: Arc<Config>,
+    pub cache: Arc<CacheStore>,
+    pub auth: Arc<AuthManager>,
+    pub dining: Arc<DiningService>,
+    pub events: Arc<EventsService>,
+    pub recreation: Arc<RecreationService>,
+    pub library: Arc<LibraryService>,
+    pub academics: Arc<AcademicsService>,
+    pub classrooms: Arc<ClassroomService>,
+}
 
 #[derive(Clone)]
 pub struct SlugMcpServer {
@@ -38,29 +56,18 @@ pub struct SlugMcpServer {
 }
 
 impl SlugMcpServer {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        config: Arc<Config>,
-        cache: Arc<CacheStore>,
-        auth: Arc<AuthManager>,
-        dining: Arc<DiningService>,
-        events: Arc<EventsService>,
-        recreation: Arc<RecreationService>,
-        library: Arc<LibraryService>,
-        academics: Arc<AcademicsService>,
-        classrooms: Arc<ClassroomService>,
-    ) -> Self {
+    pub fn new(ctx: ServiceContext) -> Self {
         Self {
-            config,
-            cache,
-            auth,
+            config: ctx.config,
+            cache: ctx.cache,
+            auth: ctx.auth,
             session_auth: Arc::new(RwLock::new(None)),
-            dining,
-            events,
-            recreation,
-            library,
-            academics,
-            classrooms,
+            dining: ctx.dining,
+            events: ctx.events,
+            recreation: ctx.recreation,
+            library: ctx.library,
+            academics: ctx.academics,
+            classrooms: ctx.classrooms,
             tool_router: Self::tool_router(),
         }
     }
@@ -78,112 +85,6 @@ impl SlugMcpServer {
     }
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SearchEventsRequest {
-    /// Search query string
-    pub query: Option<String>,
-    /// Event category/type filter (e.g., "workshop", "lecture")
-    pub category: Option<String>,
-    /// Max results (default 10, max 50)
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct UpcomingEventsRequest {
-    /// Number of events to return (default 10, max 50)
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct DiningMenuRequest {
-    /// Dining hall name (e.g., "Crown", "Porter", "College Nine"). If omitted, returns all halls.
-    pub hall: Option<String>,
-    /// Meal period: "breakfast", "lunch", "dinner", or "late night". If omitted, returns all meals.
-    pub meal: Option<String>,
-    /// Date in YYYY-MM-DD format (e.g., "2026-03-19"). If omitted, returns today's menu.
-    pub date: Option<String>,
-    /// Set to true to include all categories (condiments, beverages, cereal, etc.). Default: only main food items.
-    pub include_all_categories: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct NutritionRequest {
-    /// Recipe ID from the menu (e.g., "061002*3"). Get this from get_dining_menu output.
-    pub recipe_id: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct DiningHoursRequest {
-    /// Location name to filter by (e.g., "Crown", "Porter"). If omitted, returns all locations.
-    pub location: Option<String>,
-}
-
-// ─── Recreation ───
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct FacilityOccupancyRequest {
-    /// Facility name to filter (e.g., "East Gym", "Pool", "Wellness"). If omitted, returns all facilities.
-    pub facility: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct FacilityScheduleRequest {
-    /// Facility UUID from get_facility_occupancy output.
-    pub facility_id: String,
-}
-
-// ─── Library ───
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct StudyRoomAvailabilityRequest {
-    /// Library name: "McHenry" or "Science & Engineering". If omitted, returns both.
-    pub library: Option<String>,
-    /// Date in YYYY-MM-DD format. If omitted, returns today's availability.
-    pub date: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct BookStudyRoomRequest {
-    /// Space/room ID from get_study_room_availability output.
-    pub space_id: u32,
-    /// Date in YYYY-MM-DD format.
-    pub date: String,
-    /// Start time (e.g., "09:00", "2:00 PM").
-    pub start_time: String,
-    /// End time (e.g., "10:00", "3:00 PM").
-    pub end_time: String,
-}
-
-// ─── Academics ───
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SearchClassesRequest {
-    /// Term code (e.g., "2262" for Spring 2026). If omitted, uses current term.
-    pub term: Option<String>,
-    /// Subject/department code (e.g., "CSE", "MATH", "PHYS").
-    pub subject: Option<String>,
-    /// Course catalog number (e.g., "115A", "19A").
-    pub course_number: Option<String>,
-    /// Instructor last name.
-    pub instructor: Option<String>,
-    /// Course title keyword.
-    pub title: Option<String>,
-    /// General Education requirement code.
-    pub ge: Option<String>,
-    /// If true, only show open classes. Default: show all.
-    pub open_only: Option<bool>,
-    /// Page number for pagination (25 results per page). Default: 0.
-    pub page: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SearchDirectoryRequest {
-    /// Search query (name, department, etc.)
-    pub query: String,
-    /// Search type: "people" (default) or "departments".
-    pub search_type: Option<String>,
-}
-
 // ─── Authentication ───
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -192,31 +93,11 @@ pub struct AuthenticateRequest {
     pub token: String,
 }
 
-// ─── Classrooms ───
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SearchClassroomsRequest {
-    /// Classroom or building name to search for (e.g., "Baskin", "Classroom Unit").
-    pub name: Option<String>,
-    /// Minimum seating capacity.
-    pub min_capacity: Option<u32>,
-    /// Maximum seating capacity.
-    pub max_capacity: Option<u32>,
-    /// Campus area or building filter (e.g., "crown-college", "science-hill").
-    pub building: Option<String>,
-    /// Required technology (e.g., "lecture-capture", "wireless-projection").
-    pub technology: Option<String>,
-    /// Required physical feature (e.g., "ada-accessible", "chalkboards").
-    pub feature: Option<String>,
-}
-
 #[tool_router]
 impl SlugMcpServer {
     #[tool(description = "Login to UCSC SSO. Opens your browser for Shibboleth authentication with CruzID and Duo MFA. After completing login in your browser, the tool will detect your session automatically. For remote servers, use `authenticate` with a token from `slug-mcp export-token` instead.")]
     async fn login(&self) -> Result<CallToolResult, ErrorData> {
-        let username = self.auth.login().await.map_err(|e| {
-            ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-        })?;
+        let username = self.auth.login().await.map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Successfully logged in as **{}**. Session valid for 8 hours.",
@@ -273,9 +154,7 @@ impl SlugMcpServer {
         }
 
         // Fall back to disk-based session (stdio mode)
-        let status = self.auth.check_auth().map_err(|e| {
-            ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-        })?;
+        let status = self.auth.check_auth().map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(status.format())]))
     }
@@ -293,13 +172,9 @@ impl SlugMcpServer {
 
         // Build an authenticated client with IdP cookies for SAML auto-approval
         let client =
-            crate::auth::build_authenticated_client(&session.cookies).map_err(|e| {
-                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-            })?;
+            crate::auth::build_authenticated_client(&session.cookies).map_err(internal_err)?;
 
-        let result = self.dining.get_balance(&client).await.map_err(|e| {
-            ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-        })?;
+        let result = self.dining.get_balance(&client).await.map_err(internal_err)?;
 
         let mut output = result.balance.to_string();
 
@@ -328,9 +203,7 @@ impl SlugMcpServer {
                 req.include_all_categories.unwrap_or(false),
             )
             .await
-            .map_err(|e| {
-                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-            })?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -344,9 +217,7 @@ impl SlugMcpServer {
             .dining
             .get_nutrition(&req.recipe_id)
             .await
-            .map_err(|e| {
-                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-            })?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -360,9 +231,7 @@ impl SlugMcpServer {
             .dining
             .get_hours(req.location.as_deref())
             .await
-            .map_err(|e| {
-                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-            })?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(hours)]))
     }
@@ -381,9 +250,7 @@ impl SlugMcpServer {
                 req.limit,
             )
             .await
-            .map_err(|e| {
-                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-            })?;
+            .map_err(internal_err)?;
 
         if events.is_empty() {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -407,9 +274,7 @@ impl SlugMcpServer {
             .events
             .get_upcoming_events(limit)
             .await
-            .map_err(|e| {
-                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-            })?;
+            .map_err(internal_err)?;
 
         if events.is_empty() {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -435,7 +300,7 @@ impl SlugMcpServer {
             .recreation
             .get_occupancy(req.facility.as_deref())
             .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -449,7 +314,7 @@ impl SlugMcpServer {
             .recreation
             .get_schedule(&req.facility_id)
             .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -465,7 +330,7 @@ impl SlugMcpServer {
             .library
             .get_availability(req.library.as_deref(), req.date.as_deref())
             .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -485,15 +350,13 @@ impl SlugMcpServer {
         };
 
         let client =
-            crate::auth::build_authenticated_client(&session.cookies).map_err(|e| {
-                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-            })?;
+            crate::auth::build_authenticated_client(&session.cookies).map_err(internal_err)?;
 
         let result = self
             .library
             .book(&client, req.space_id, &req.date, &req.start_time, &req.end_time)
             .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -518,7 +381,7 @@ impl SlugMcpServer {
                 req.page,
             )
             .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -532,7 +395,7 @@ impl SlugMcpServer {
             .academics
             .search_directory(&req.query, req.search_type.as_deref())
             .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -555,7 +418,7 @@ impl SlugMcpServer {
                 req.feature.as_deref(),
             )
             .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+            .map_err(internal_err)?;
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }

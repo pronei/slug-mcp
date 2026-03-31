@@ -56,4 +56,33 @@ impl CacheStore {
     pub async fn invalidate(&self, key: &str) {
         self.inner.invalidate(key).await;
     }
+
+    /// Check cache for `key`, deserialize as `T`. On miss or deser failure,
+    /// call `fetch`, serialize the result back into the cache, and return it.
+    pub async fn get_or_fetch<T, F, Fut>(
+        &self,
+        key: &str,
+        ttl_secs: u64,
+        fetch: F,
+    ) -> anyhow::Result<T>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = anyhow::Result<T>>,
+    {
+        if let Some(cached) = self.get(key).await {
+            match serde_json::from_str::<T>(&cached) {
+                Ok(val) => return Ok(val),
+                Err(e) => tracing::warn!("Cache deser failed for {}: {}", key, e),
+            }
+        }
+
+        let val = fetch().await?;
+
+        if let Ok(json) = serde_json::to_string(&val) {
+            self.set(key, &json, ttl_secs).await;
+        }
+
+        Ok(val)
+    }
 }

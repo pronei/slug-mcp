@@ -3,6 +3,28 @@ pub mod scraper;
 use std::sync::Arc;
 
 use anyhow::Result;
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StudyRoomAvailabilityRequest {
+    /// Library name: "McHenry" or "Science & Engineering". If omitted, returns both.
+    pub library: Option<String>,
+    /// Date in YYYY-MM-DD format. If omitted, returns today's availability.
+    pub date: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BookStudyRoomRequest {
+    /// Space/room ID from get_study_room_availability output.
+    pub space_id: u32,
+    /// Date in YYYY-MM-DD format.
+    pub date: String,
+    /// Start time (e.g., "09:00", "2:00 PM").
+    pub start_time: String,
+    /// End time (e.g., "10:00", "3:00 PM").
+    pub end_time: String,
+}
 
 use crate::cache::CacheStore;
 use scraper::{
@@ -44,24 +66,12 @@ impl LibraryService {
 
         for (lid, _name) in &lids {
             let cache_key = format!("library:availability:{}:{}", lid, date);
-
-            let avail = if let Some(cached) = self.cache.get(&cache_key).await {
-                serde_json::from_str::<RoomAvailability>(&cached).ok()
-            } else {
-                None
-            };
-
-            let avail = match avail {
-                Some(a) => a,
-                None => {
-                    let a = scrape_availability(&self.http, *lid, date).await?;
-                    if let Ok(json) = serde_json::to_string(&a) {
-                        self.cache.set(&cache_key, &json, 300).await; // 5 minutes
-                    }
-                    a
-                }
-            };
-
+            let http = &self.http;
+            let lid = *lid;
+            let avail: RoomAvailability = self
+                .cache
+                .get_or_fetch(&cache_key, 300, || scrape_availability(http, lid, date))
+                .await?;
             outputs.push(avail.to_string());
         }
 

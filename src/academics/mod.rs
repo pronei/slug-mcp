@@ -3,6 +3,36 @@ pub mod scraper;
 use std::sync::Arc;
 
 use anyhow::Result;
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchClassesRequest {
+    /// Term code (e.g., "2262" for Spring 2026). If omitted, uses current term.
+    pub term: Option<String>,
+    /// Subject/department code (e.g., "CSE", "MATH", "PHYS").
+    pub subject: Option<String>,
+    /// Course catalog number (e.g., "115A", "19A").
+    pub course_number: Option<String>,
+    /// Instructor last name.
+    pub instructor: Option<String>,
+    /// Course title keyword.
+    pub title: Option<String>,
+    /// General Education requirement code.
+    pub ge: Option<String>,
+    /// If true, only show open classes. Default: show all.
+    pub open_only: Option<bool>,
+    /// Page number for pagination (25 results per page). Default: 0.
+    pub page: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchDirectoryRequest {
+    /// Search query (name, department, etc.)
+    pub query: String,
+    /// Search type: "people" (default) or "departments".
+    pub search_type: Option<String>,
+}
 
 use crate::cache::CacheStore;
 use scraper::{
@@ -64,20 +94,14 @@ impl AcademicsService {
             page_start,
         );
 
-        if let Some(cached) = self.cache.get(&cache_key).await {
-            if let Ok(result) = serde_json::from_str::<ClassSearchResult>(&cached) {
-                return Ok(result.to_string());
-            }
-        }
-
-        let result = scrape_class_search(&self.http, &params).await?;
+        let http = &self.http;
+        let result: ClassSearchResult = self
+            .cache
+            .get_or_fetch(&cache_key, 1800, || scrape_class_search(http, &params))
+            .await?;
 
         if result.classes.is_empty() {
             return Ok("No classes found matching your search criteria.".to_string());
-        }
-
-        if let Ok(json) = serde_json::to_string(&result) {
-            self.cache.set(&cache_key, &json, 1800).await; // 30 minutes
         }
 
         Ok(result.to_string())
@@ -91,20 +115,14 @@ impl AcademicsService {
         let stype = search_type.unwrap_or("people");
         let cache_key = format!("academics:directory:{}:{}", stype, query.to_lowercase());
 
-        if let Some(cached) = self.cache.get(&cache_key).await {
-            if let Ok(result) = serde_json::from_str::<DirectoryResult>(&cached) {
-                return Ok(result.to_string());
-            }
-        }
-
-        let result = scrape_directory(&self.http, query, stype).await?;
+        let http = &self.http;
+        let result: DirectoryResult = self
+            .cache
+            .get_or_fetch(&cache_key, 21600, || scrape_directory(http, query, stype))
+            .await?;
 
         if result.entries.is_empty() {
             return Ok(format!("No directory results found for \"{}\".", query));
-        }
-
-        if let Ok(json) = serde_json::to_string(&result) {
-            self.cache.set(&cache_key, &json, 21600).await; // 6 hours
         }
 
         Ok(result.to_string())

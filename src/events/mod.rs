@@ -3,6 +3,24 @@ pub mod tribe;
 use std::sync::Arc;
 
 use anyhow::Result;
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchEventsRequest {
+    /// Search query string
+    pub query: Option<String>,
+    /// Event category/type filter (e.g., "workshop", "lecture")
+    pub category: Option<String>,
+    /// Max results (default 10, max 50)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpcomingEventsRequest {
+    /// Number of events to return (default 10, max 50)
+    pub limit: Option<u32>,
+}
 
 use crate::cache::CacheStore;
 use tribe::{TribeClient, TribeEvent};
@@ -38,32 +56,23 @@ impl EventsService {
             limit
         );
 
-        if let Some(cached) = self.cache.get(&cache_key).await {
-            if let Ok(events) = serde_json::from_str(&cached) {
-                return Ok(events);
-            }
-        }
+        let client = &self.client;
+        let events: Vec<TribeEvent> = self
+            .cache
+            .get_or_fetch(&cache_key, 900, || async {
+                let mut params: Vec<(&str, &str)> = vec![("per_page", &limit_str)];
+                if let Some(q) = query {
+                    params.push(("search", q));
+                }
+                if let Some(cat) = category {
+                    params.push(("categories", cat));
+                }
+                let resp = client.fetch_events(&params).await?;
+                Ok(resp.events)
+            })
+            .await?;
 
-        let mut params: Vec<(&str, &str)> = vec![("per_page", &limit_str)];
-
-        if let Some(q) = query {
-            params.push(("search", q));
-        }
-
-        if let Some(cat) = category {
-            params.push(("categories", cat));
-        }
-
-        // Tribe Events uses start_date/end_date for date filtering
-        // Default: returns future events from now
-
-        let resp = self.client.fetch_events(&params).await?;
-
-        if let Ok(json) = serde_json::to_string(&resp.events) {
-            self.cache.set(&cache_key, &json, 900).await; // 15 min TTL
-        }
-
-        Ok(resp.events)
+        Ok(events)
     }
 
     pub async fn get_upcoming_events(&self, limit: u32) -> Result<Vec<TribeEvent>> {

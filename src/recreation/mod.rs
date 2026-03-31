@@ -3,6 +3,20 @@ pub mod scraper;
 use std::sync::Arc;
 
 use anyhow::Result;
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FacilityOccupancyRequest {
+    /// Facility name to filter (e.g., "East Gym", "Pool", "Wellness"). If omitted, returns all facilities.
+    pub facility: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FacilityScheduleRequest {
+    /// Facility UUID from get_facility_occupancy output.
+    pub facility_id: String,
+}
 
 use crate::cache::CacheStore;
 use scraper::{find_facility, scrape_occupancy, scrape_schedule, FacilityOccupancy};
@@ -55,20 +69,9 @@ impl RecreationService {
     }
 
     async fn fetch_occupancy(&self) -> Result<Vec<FacilityOccupancy>> {
-        let cache_key = "recreation:occupancy";
-
-        if let Some(cached) = self.cache.get(cache_key).await {
-            if let Ok(data) = serde_json::from_str::<Vec<FacilityOccupancy>>(&cached) {
-                return Ok(data);
-            }
-        }
-
-        let data = scrape_occupancy(&self.http).await?;
-
-        if let Ok(json) = serde_json::to_string(&data) {
-            self.cache.set(cache_key, &json, 120).await; // 2 minutes
-        }
-
-        Ok(data)
+        let http = &self.http;
+        self.cache
+            .get_or_fetch("recreation:occupancy", 120, || scrape_occupancy(http))
+            .await
     }
 }

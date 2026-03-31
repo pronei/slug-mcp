@@ -111,36 +111,32 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
 
     let http = reqwest::Client::new();
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
-    let dining = Arc::new(dining::DiningService::new(http.clone(), cache.clone()));
-    let events = Arc::new(events::EventsService::new(http.clone(), cache.clone()));
-    let recreation = Arc::new(recreation::RecreationService::new(http.clone(), cache.clone()));
-    let library = Arc::new(library::LibraryService::new(http.clone(), cache.clone()));
-    let academics = Arc::new(academics::AcademicsService::new(http.clone(), cache.clone()));
-    let classrooms_svc = Arc::new(classrooms::ClassroomService::new(http, cache.clone()));
+    let ctx = server::ServiceContext {
+        config,
+        cache: cache.clone(),
+        auth,
+        dining: Arc::new(dining::DiningService::new(http.clone(), cache.clone())),
+        events: Arc::new(events::EventsService::new(http.clone(), cache.clone())),
+        recreation: Arc::new(recreation::RecreationService::new(http.clone(), cache.clone())),
+        library: Arc::new(library::LibraryService::new(http.clone(), cache.clone())),
+        academics: Arc::new(academics::AcademicsService::new(http.clone(), cache.clone())),
+        classrooms: Arc::new(classrooms::ClassroomService::new(http.clone(), cache)),
+    };
+
+    // Pre-warm dining menu cache daily at 5 AM Pacific
+    let _refresher = dining::start_cache_refresher(http, ctx.cache.clone());
 
     if sse {
-        run_sse(port, config, cache, auth, dining, events, recreation, library, academics, classrooms_svc).await
+        run_sse(port, ctx).await
     } else {
-        let server = server::SlugMcpServer::new(config, cache, auth, dining, events, recreation, library, academics, classrooms_svc);
+        let server = server::SlugMcpServer::new(ctx);
         let service = server.serve(rmcp::transport::io::stdio()).await?;
         service.waiting().await?;
         Ok(())
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_sse(
-    port: u16,
-    config: Arc<config::Config>,
-    cache: Arc<cache::CacheStore>,
-    auth: Arc<auth::AuthManager>,
-    dining: Arc<dining::DiningService>,
-    events: Arc<events::EventsService>,
-    recreation: Arc<recreation::RecreationService>,
-    library: Arc<library::LibraryService>,
-    academics: Arc<academics::AcademicsService>,
-    classrooms_svc: Arc<classrooms::ClassroomService>,
-) -> Result<()> {
+async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
@@ -152,19 +148,7 @@ async fn run_sse(
     };
 
     let service = StreamableHttpService::new(
-        move || {
-            Ok(server::SlugMcpServer::new(
-                config.clone(),
-                cache.clone(),
-                auth.clone(),
-                dining.clone(),
-                events.clone(),
-                recreation.clone(),
-                library.clone(),
-                academics.clone(),
-                classrooms_svc.clone(),
-            ))
-        },
+        move || Ok(server::SlugMcpServer::new(ctx.clone())),
         session_manager,
         sse_config,
     );

@@ -19,6 +19,7 @@ static SEL_ALL_MENU: OnceLock<Selector> = OnceLock::new();
 static SEL_RECIPE: OnceLock<Selector> = OnceLock::new();
 static SEL_INGREDIENTS: OnceLock<Selector> = OnceLock::new();
 static SEL_ALLERGENS: OnceLock<Selector> = OnceLock::new();
+static SEL_SHORT_MENU: OnceLock<Selector> = OnceLock::new();
 static SEL_SCHEMA: OnceLock<Selector> = OnceLock::new();
 static SEL_NAME: OnceLock<Selector> = OnceLock::new();
 static SEL_HOURS: OnceLock<Selector> = OnceLock::new();
@@ -97,7 +98,9 @@ pub static DINING_HALLS: &[DiningHall] = &[
     },
 ];
 
-const BASE_URL: &str = "https://nutrition.sa.ucsc.edu/longmenu.aspx";
+const SHORTMENU_BASE: &str = "https://nutrition.sa.ucsc.edu/shortmenu.aspx";
+const LONGMENU_BASE: &str = "https://nutrition.sa.ucsc.edu/longmenu.aspx";
+const USER_AGENT: &str = "Mozilla/5.0 (compatible; SlugMCP/0.1)";
 
 pub fn find_hall(query: &str) -> Option<&'static DiningHall> {
     let q = query.to_lowercase();
@@ -142,15 +145,19 @@ pub fn hall_names() -> &'static str {
 
 /// Build menu URL. Accepts date in `M/D/YYYY` format (the nutrition site's native format).
 /// The caller (DiningService) is responsible for converting ISO dates before calling this.
-fn menu_url(hall: &DiningHall, date: Option<&str>) -> String {
+fn menu_url(base: &str, hall: &DiningHall, date: Option<&str>, meal_name: Option<&str>) -> String {
     let mut url = format!(
         "{}?sName=UC+Santa+Cruz+Dining&locationNum={}&locationName={}&naFlag=1\
          &WeeksMenus=UCSC+-+This+Week%27s+Menus&myaction=read",
-        BASE_URL, hall.location_num, hall.location_name
+        base, hall.location_num, hall.location_name
     );
     if let Some(d) = date {
         url.push_str("&dtdate=");
         url.push_str(&urlencoding::encode(d));
+    }
+    if let Some(m) = meal_name {
+        url.push_str("&mealName=");
+        url.push_str(&urlencoding::encode(m));
     }
     url
 }
@@ -243,33 +250,212 @@ impl fmt::Display for DiningMenu {
 const NUTRITION_COOKIES: &str =
     "WebInaCartLocation=; WebInaCartDates=; WebInaCartMeals=; WebInaCartRecipes=; WebInaCartQtys=";
 
+/// Fetch a nutrition site page with required cookies and User-Agent.
+async fn fetch_with_cookies(client: &reqwest::Client, url: &str) -> Result<String> {
+    let resp = client
+        .get(url)
+        .header("Cookie", NUTRITION_COOKIES)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .context("Failed to fetch nutrition page")?;
+
+    let status = resp.status();
+    let html = resp.text().await.context("Failed to read nutrition page body")?;
+
+    if !status.is_success() || html.contains("Runtime Error") || html.contains("Server Error") {
+        anyhow::bail!("Nutrition site returned error (status {})", status);
+    }
+
+    Ok(html)
+}
+
 pub async fn scrape_menu(
     client: &reqwest::Client,
     hall: &DiningHall,
     date: Option<&str>,
 ) -> Result<DiningMenu> {
-    let url = menu_url(hall, date);
-    let resp = client
-        .get(&url)
-        .header("Cookie", NUTRITION_COOKIES)
-        .send()
-        .await
-        .context("Failed to fetch menu page")?;
+    // Primary: fetch shortmenu (all meals on one page, no recipe IDs)
+    let short_url = menu_url(SHORTMENU_BASE, hall, date, None);
+    let html = fetch_with_cookies(client, &short_url).await?;
+    let mut menu = parse_shortmenu(&html, hall.name);
+    menu.date = date.map(|s| s.to_string());
 
-    let status = resp.status();
-    let html = resp.text().await.context("Failed to read menu page body")?;
-
-    if !status.is_success() || html.contains("Runtime Error") || html.contains("Server Error") {
-        return Ok(DiningMenu {
-            hall_name: hall.name.to_string(),
-            date: date.map(|s| s.to_string()),
-            meals: vec![],
-        });
+    // Best-effort: enrich with recipe IDs from longmenu (one page per meal)
+    let meal_names: Vec<String> = menu.meals.iter().map(|m| m.name.clone()).collect();
+    for meal_name in &meal_names {
+        let long_url = menu_url(LONGMENU_BASE, hall, date, Some(meal_name));
+        match fetch_with_cookies(client, &long_url).await {
+            Ok(long_html) => {
+                let long_menu = parse_longmenu(&long_html, hall.name);
+                enrich_recipe_ids(&mut menu, &long_menu);
+            }
+            Err(e) => {
+                tracing::warn!("Longmenu fallback failed for {} ({}): {}", hall.name, meal_name, e);
+            }
+        }
     }
 
-    let mut menu = parse_longmenu(&html, hall.name);
-    menu.date = date.map(|s| s.to_string());
     Ok(menu)
+}
+
+fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
+    let document = Html::parse_document(html);
+
+    let img_sel = sel(&SEL_IMG, "img");
+    let td_sel = sel(&SEL_TD, "td");
+    let all_sel = sel(
+        &SEL_SHORT_MENU,
+        "div.shortmenumeals, div.shortmenucats, div.shortmenurecipes",
+    );
+
+    let mut meals: Vec<Meal> = Vec::new();
+    let mut current_meal: Option<Meal> = None;
+    let mut current_cat: Option<Category> = None;
+
+    for element in document.select(all_sel) {
+        let classes: Vec<&str> = element.value().classes().collect();
+
+        if classes.contains(&"shortmenumeals") {
+            // Flush previous state
+            if let Some(cat) = current_cat.take() {
+                if let Some(meal) = current_meal.as_mut() {
+                    if !cat.items.is_empty() {
+                        meal.categories.push(cat);
+                    }
+                }
+            }
+            if let Some(meal) = current_meal.take() {
+                if !meal.categories.is_empty() {
+                    meals.push(meal);
+                }
+            }
+
+            let meal_name = element.text().collect::<String>().trim().to_string();
+            current_meal = Some(Meal {
+                name: meal_name,
+                categories: Vec::new(),
+            });
+        } else if classes.contains(&"shortmenucats") {
+            if let Some(cat) = current_cat.take() {
+                if let Some(meal) = current_meal.as_mut() {
+                    if !cat.items.is_empty() {
+                        meal.categories.push(cat);
+                    }
+                }
+            }
+
+            let name = element.text().collect::<String>();
+            let name = name
+                .trim()
+                .trim_start_matches("--")
+                .trim_end_matches("--")
+                .trim()
+                .to_string();
+
+            if !name.is_empty() {
+                current_cat = Some(Category {
+                    name,
+                    items: Vec::new(),
+                });
+            }
+        } else if classes.contains(&"shortmenurecipes") {
+            if let Some(cat) = current_cat.as_mut() {
+                let item_name = element
+                    .text()
+                    .collect::<String>()
+                    .trim()
+                    .trim_end_matches('\u{a0}') // &nbsp;
+                    .trim()
+                    .to_string();
+
+                // Dietary icons are in sibling <td> elements in the parent <tr>
+                let mut dietary_tags = Vec::new();
+                // Walk up: div.shortmenurecipes → td → tr (inner table) → td → tr (outer)
+                if let Some(parent_td) = element.parent() {
+                    if let Some(parent_tr) = parent_td.parent() {
+                        // Check the outer row's sibling tds for images
+                        if let Some(outer_td) = parent_tr.parent() {
+                            if let Some(outer_tr) = outer_td.parent() {
+                                if let Some(outer_el) = scraper::ElementRef::wrap(outer_tr) {
+                                    for td in outer_el.select(td_sel) {
+                                        for img in td.select(img_sel) {
+                                            if let Some(src) = img.value().attr("src") {
+                                                if let Some(icon_name) = src
+                                                    .strip_prefix("LegendImages/")
+                                                    .and_then(|s| s.strip_suffix(".gif"))
+                                                {
+                                                    if let Some(tag) = icon_to_tag(icon_name) {
+                                                        dietary_tags.push(tag.to_string());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !item_name.is_empty() {
+                    cat.items.push(MenuItem {
+                        name: item_name,
+                        dietary_tags,
+                        recipe_id: None,
+                    });
+                }
+            }
+        }
+    }
+
+    // Flush remaining
+    if let Some(cat) = current_cat {
+        if let Some(meal) = current_meal.as_mut() {
+            if !cat.items.is_empty() {
+                meal.categories.push(cat);
+            }
+        }
+    }
+    if let Some(meal) = current_meal {
+        if !meal.categories.is_empty() {
+            meals.push(meal);
+        }
+    }
+
+    DiningMenu {
+        hall_name: hall_name.to_string(),
+        date: None,
+        meals,
+    }
+}
+
+/// Copy recipe IDs from longmenu items into shortmenu items by matching item names.
+fn enrich_recipe_ids(menu: &mut DiningMenu, long_menu: &DiningMenu) {
+    // Build a map of item name → recipe_id from longmenu
+    let mut recipe_map = std::collections::HashMap::new();
+    for meal in &long_menu.meals {
+        for cat in &meal.categories {
+            for item in &cat.items {
+                if let Some(ref rid) = item.recipe_id {
+                    recipe_map.insert(item.name.to_lowercase(), rid.clone());
+                }
+            }
+        }
+    }
+
+    // Apply to shortmenu items
+    for meal in &mut menu.meals {
+        for cat in &mut meal.categories {
+            for item in &mut cat.items {
+                if item.recipe_id.is_none() {
+                    if let Some(rid) = recipe_map.get(&item.name.to_lowercase()) {
+                        item.recipe_id = Some(rid.clone());
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
@@ -570,14 +756,7 @@ pub async fn scrape_nutrition(
     recipe_id: &str,
 ) -> Result<NutritionInfo> {
     let url = format!("{}?RecNumAndPort={}", LABEL_URL, recipe_id);
-    let resp = client
-        .get(&url)
-        .header("Cookie", NUTRITION_COOKIES)
-        .send()
-        .await
-        .context("Failed to fetch nutrition label")?;
-
-    let html = resp.text().await.context("Failed to read label page")?;
+    let html = fetch_with_cookies(client, &url).await?;
     Ok(parse_nutrition_label(&html))
 }
 
@@ -886,6 +1065,78 @@ mod tests {
         let bakery = &meal.categories[1];
         assert_eq!(bakery.items[0].name, "Waffle");
         assert!(bakery.items[0].dietary_tags.contains(&"vegan".to_string()));
+    }
+
+    const MOCK_SHORTMENU_HTML: &str = r#"<html><body>
+    <table>
+      <tr><td>
+        <div class="shortmenumeals">Breakfast</div>
+      </td></tr>
+      <tr><td colspan="4">
+        <div class="shortmenucats"><span style="color: #000000">-- Entrees --</span></div>
+      </td></tr>
+      <tr>
+        <td><table><tr>
+          <td><div class='shortmenurecipes'><span style='color: #585858'>Scrambled Eggs&nbsp;</span></div></td>
+          <td width="10%"><img src="LegendImages/veggie.gif" alt="" width="25px" height="25px"></td>
+          <td width="10%"><img src="LegendImages/eggs.gif" alt="" width="25px" height="25px"></td>
+        </tr></table></td>
+      </tr>
+      <tr><td colspan="4">
+        <div class="shortmenucats"><span style="color: #000000">-- Bakery --</span></div>
+      </td></tr>
+      <tr>
+        <td><table><tr>
+          <td><div class='shortmenurecipes'><span style='color: #585858'>Waffle&nbsp;</span></div></td>
+          <td width="10%"><img src="LegendImages/vegan.gif" alt="" width="25px" height="25px"></td>
+        </tr></table></td>
+      </tr>
+    </table>
+    </body></html>"#;
+
+    #[test]
+    fn test_parse_shortmenu() {
+        let menu = parse_shortmenu(MOCK_SHORTMENU_HTML, "Test Hall");
+        assert_eq!(menu.hall_name, "Test Hall");
+        assert_eq!(menu.meals.len(), 1);
+
+        let meal = &menu.meals[0];
+        assert_eq!(meal.name, "Breakfast");
+        assert_eq!(meal.categories.len(), 2);
+
+        let entrees = &meal.categories[0];
+        assert_eq!(entrees.name, "Entrees");
+        assert_eq!(entrees.items.len(), 1);
+        assert_eq!(entrees.items[0].name, "Scrambled Eggs");
+        assert_eq!(entrees.items[0].recipe_id, None);
+        assert!(
+            entrees.items[0].dietary_tags.contains(&"vegetarian".to_string()),
+            "Expected vegetarian tag, got: {:?}",
+            entrees.items[0].dietary_tags
+        );
+
+        let bakery = &meal.categories[1];
+        assert_eq!(bakery.items[0].name, "Waffle");
+        assert!(
+            bakery.items[0].dietary_tags.contains(&"vegan".to_string()),
+            "Expected vegan tag, got: {:?}",
+            bakery.items[0].dietary_tags
+        );
+    }
+
+    #[test]
+    fn test_enrich_recipe_ids() {
+        let mut short_menu = parse_shortmenu(MOCK_SHORTMENU_HTML, "Test");
+        let long_menu = parse_longmenu(MOCK_LONGMENU_HTML, "Test");
+        enrich_recipe_ids(&mut short_menu, &long_menu);
+
+        let eggs = &short_menu.meals[0].categories[0].items[0];
+        assert_eq!(eggs.name, "Scrambled Eggs");
+        assert_eq!(eggs.recipe_id, Some("061002*3".to_string()));
+
+        let waffle = &short_menu.meals[0].categories[1].items[0];
+        assert_eq!(waffle.name, "Waffle");
+        assert_eq!(waffle.recipe_id, Some("217044*1".to_string()));
     }
 
     const MOCK_LABEL_HTML: &str = r#"<html><body>

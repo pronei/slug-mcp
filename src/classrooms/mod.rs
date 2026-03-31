@@ -3,6 +3,24 @@ pub mod scraper;
 use std::sync::Arc;
 
 use anyhow::Result;
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchClassroomsRequest {
+    /// Classroom or building name to search for (e.g., "Baskin", "Classroom Unit").
+    pub name: Option<String>,
+    /// Minimum seating capacity.
+    pub min_capacity: Option<u32>,
+    /// Maximum seating capacity.
+    pub max_capacity: Option<u32>,
+    /// Campus area or building filter (e.g., "crown-college", "science-hill").
+    pub building: Option<String>,
+    /// Required technology (e.g., "lecture-capture", "wireless-projection").
+    pub technology: Option<String>,
+    /// Required physical feature (e.g., "ada-accessible", "chalkboards").
+    pub feature: Option<String>,
+}
 
 use crate::cache::CacheStore;
 use scraper::{filter_classrooms, scrape_classrooms, Classroom};
@@ -40,20 +58,9 @@ impl ClassroomService {
     }
 
     async fn get_all(&self) -> Result<Vec<Classroom>> {
-        let cache_key = "classrooms:all";
-
-        if let Some(cached) = self.cache.get(cache_key).await {
-            if let Ok(classrooms) = serde_json::from_str::<Vec<Classroom>>(&cached) {
-                return Ok(classrooms);
-            }
-        }
-
-        let classrooms = scrape_classrooms(&self.http).await?;
-
-        if let Ok(json) = serde_json::to_string(&classrooms) {
-            self.cache.set(cache_key, &json, 86400).await; // 24 hours
-        }
-
-        Ok(classrooms)
+        let http = &self.http;
+        self.cache
+            .get_or_fetch("classrooms:all", 86400, || scrape_classrooms(http))
+            .await
     }
 }

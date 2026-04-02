@@ -109,17 +109,22 @@ pub struct BusPredictionRequest {
 
 #[tool_router]
 impl SlugMcpServer {
-    #[tool(description = "Login to UCSC SSO. Opens your browser for Shibboleth authentication with CruzID and Duo MFA. After completing login in your browser, the tool will detect your session automatically. For remote servers, use `authenticate` with a token from `slug-mcp export-token` instead.")]
+    #[tool(description = "Login to UCSC SSO. This opens a Chrome window on your machine for CruzID + Duo MFA authentication — use this tool directly, it works from any MCP client including Claude Desktop. After you complete login in the browser, the session is captured automatically.")]
     async fn login(&self) -> Result<CallToolResult, ErrorData> {
-        let username = self.auth.login().await.map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Successfully logged in as **{}**. Session valid for 8 hours.",
-            username
-        ))]))
+        match self.auth.login().await {
+            Ok(username) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "Successfully logged in as **{}**. Session valid for 8 hours.",
+                username
+            ))])),
+            Err(e) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "Browser login failed: {}. If the server is running on a remote or headless machine, \
+                 use the `authenticate` tool with a token from `slug-mcp export-token` run on a machine with a browser.",
+                e
+            ))])),
+        }
     }
 
-    #[tool(description = "Authenticate with a portable UCSC session token. Run `slug-mcp export-token` on your local machine to get a token, then pass it here. Use this for remote/SSE server connections where browser login is not available.")]
+    #[tool(description = "Authenticate using a portable session token. Only needed when the MCP server is running on a remote or headless machine where a browser cannot open. Run `slug-mcp export-token` on a machine with a browser to get a token, then pass it here.")]
     async fn authenticate(
         &self,
         Parameters(req): Parameters<AuthenticateRequest>,
@@ -173,13 +178,13 @@ impl SlugMcpServer {
         Ok(CallToolResult::success(vec![Content::text(status.format())]))
     }
 
-    #[tool(description = "Get your UCSC meal plan balance (Slug Points, Banana Bucks). Requires authentication - use 'login' or 'authenticate' first.")]
+    #[tool(description = "Get your UCSC meal plan balance (Slug Points, Banana Bucks). Requires authentication — call 'login' first if not already logged in.")]
     async fn get_meal_balance(&self) -> Result<CallToolResult, ErrorData> {
         let session = match self.get_active_session().await {
             Some(s) => s,
             None => {
                 return Ok(CallToolResult::success(vec![Content::text(
-                    "You need to log in first. Use the `login` tool (local) or `authenticate` tool (remote) with a token from `slug-mcp export-token`.",
+                    "You need to log in first. Call the `login` tool to authenticate.",
                 )]));
             }
         };
@@ -349,7 +354,7 @@ impl SlugMcpServer {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Book a study room at a UCSC library. Requires authentication - use 'login' or 'authenticate' first. Use space_id from get_study_room_availability.")]
+    #[tool(description = "Book a study room at a UCSC library. Requires authentication — call 'login' first if not already logged in. Use space_id from get_study_room_availability.")]
     async fn book_study_room(
         &self,
         Parameters(req): Parameters<BookStudyRoomRequest>,
@@ -358,7 +363,7 @@ impl SlugMcpServer {
             Some(s) => s,
             None => {
                 return Ok(CallToolResult::success(vec![Content::text(
-                    "You need to log in first. Use the `login` tool (local) or `authenticate` tool (remote) with a token from `slug-mcp export-token`.",
+                    "You need to log in first. Call the `login` tool to authenticate.",
                 )]));
             }
         };
@@ -391,6 +396,7 @@ impl SlugMcpServer {
                 req.instructor.as_deref(),
                 req.title.as_deref(),
                 req.ge.as_deref(),
+                req.career.as_deref(),
                 req.open_only.unwrap_or(false),
                 req.page,
             )

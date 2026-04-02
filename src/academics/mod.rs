@@ -20,6 +20,8 @@ pub struct SearchClassesRequest {
     pub title: Option<String>,
     /// General Education requirement code.
     pub ge: Option<String>,
+    /// Academic career: "UGRD" for undergraduate, "GRAD" for graduate. If omitted, searches all.
+    pub career: Option<String>,
     /// If true, only show open classes. Default: show all.
     pub open_only: Option<bool>,
     /// Page number for pagination (25 results per page). Default: 0.
@@ -59,6 +61,7 @@ impl AcademicsService {
         instructor: Option<&str>,
         title: Option<&str>,
         ge: Option<&str>,
+        career: Option<&str>,
         open_only: bool,
         page: Option<u32>,
     ) -> Result<String> {
@@ -76,20 +79,21 @@ impl AcademicsService {
             title: title.map(|s| s.to_string()),
             ge: ge.map(|s| s.to_string()),
             reg_status: if open_only { "O".to_string() } else { "all".to_string() },
-            career: None,
+            career: career.map(|s| s.to_uppercase()),
             page_start,
             page_size: 25,
         };
 
         // Build cache key from params
         let cache_key = format!(
-            "academics:classes:{}:{}:{}:{}:{}:{}:{}:{}",
+            "academics:classes:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             term_code,
             subject.unwrap_or(""),
             catalog_number.unwrap_or(""),
             instructor.unwrap_or(""),
             title.unwrap_or(""),
             ge.unwrap_or(""),
+            career.unwrap_or(""),
             if open_only { "open" } else { "all" },
             page_start,
         );

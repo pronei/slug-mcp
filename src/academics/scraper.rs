@@ -315,7 +315,7 @@ fn extract_field(body: &str, field: &str) -> Option<String> {
         }
         "schedule" => {
             // Look for day+time patterns like "MWF 10:40AM-11:45AM" or "TR 1:30PM-3:05PM"
-            let days_pattern = ["MWF", "MW", "TR", "MF", "WF", "M ", "T ", "W ", "R ", "F "];
+            let days_pattern = ["MWF", "TuTh", "MW", "MF", "WF", "Tu ", "Th ", "Sa ", "Su ", "M ", "W ", "F "];
             for pat in &days_pattern {
                 if let Some(pos) = body.find(pat) {
                     let rest = &body[pos..];

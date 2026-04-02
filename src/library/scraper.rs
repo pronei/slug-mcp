@@ -401,15 +401,14 @@ pub async fn book_room(
     start_time: &str,
     end_time: &str,
 ) -> Result<BookingResult> {
-    // First, visit the space page to establish session and get any CSRF tokens
+    // Visit the space page via SAML-aware GET to follow Shibboleth SSO redirects
+    // and establish a LibCal session using the IdP cookies from browser login.
     let space_url = format!("{}/space/{}", LIBCAL_BASE, space_id);
-    let page_resp = auth_client
-        .get(&space_url)
-        .send()
+    let saml_resp = crate::auth::saml_aware_get(auth_client, &space_url)
         .await
         .context("Failed to load space page for booking")?;
 
-    let page_html = page_resp.text().await.unwrap_or_default();
+    let page_html = saml_resp.body;
 
     // Look for CSRF token in the page
     let csrf_token = extract_csrf_token(&page_html);

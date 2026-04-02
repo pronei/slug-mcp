@@ -1,12 +1,12 @@
 pub mod bustime;
-pub mod gtfs;
+pub mod stops;
 
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
 
 use crate::cache::CacheStore;
-use gtfs::Stop;
+use stops::Stop;
 
 pub struct TransitService {
     http: reqwest::Client,
@@ -36,10 +36,10 @@ impl TransitService {
         };
 
         // Load stops (cached for 24h)
-        let stops = self.load_stops().await?;
+        let stops = self.load_stops(&api_key).await?;
 
         // Search for matching stops
-        let matches = gtfs::search_stops(&stops, stop_query, 5);
+        let matches = stops::search_stops(&stops, stop_query, 5);
         if matches.is_empty() {
             return Ok(format!(
                 "No stops found matching \"{}\". Try a different search term (e.g., \"Science Hill\", \"Metro Center\", \"Oakes\").",
@@ -87,8 +87,8 @@ impl TransitService {
         Ok(output)
     }
 
-    async fn load_stops(&self) -> Result<Vec<Stop>> {
-        let cache_key = "transit:gtfs:stops";
+    async fn load_stops(&self, api_key: &str) -> Result<Vec<Stop>> {
+        let cache_key = "transit:bustime:stops";
 
         if let Some(cached) = self.cache.get(cache_key).await {
             if let Ok(stops) = serde_json::from_str::<Vec<Stop>>(&cached) {
@@ -96,14 +96,14 @@ impl TransitService {
             }
         }
 
-        let stops = gtfs::download_and_parse_stops(&self.http)
+        let stops = stops::fetch_all_stops(&self.http, api_key)
             .await
             .map_err(|e| {
-                anyhow::anyhow!("Failed to load GTFS stop data: {}. The GTFS feed at scmtd.com may be temporarily unavailable.", e)
+                anyhow::anyhow!("Failed to load stops from BusTime API: {}", e)
             })?;
 
         if stops.is_empty() {
-            bail!("GTFS feed returned no stops — the feed may be malformed or unavailable.");
+            bail!("BusTime API returned no stops — the API may be temporarily unavailable.");
         }
 
         if let Ok(json) = serde_json::to_string(&stops) {

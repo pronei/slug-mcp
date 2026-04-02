@@ -6,24 +6,49 @@
 
 <p align="center">
   An <a href="https://modelcontextprotocol.io/">MCP</a> server that gives AI assistants access to UC Santa Cruz campus services.<br/>
-  Ask about dining menus, gym crowding, class schedules, study rooms, and more — all from one interface.<br/><br/>
+  Dining menus, gym crowding, class schedules, study rooms, bus times, and more — all from one conversation.<br/><br/>
   Built with Rust and <a href="https://github.com/anthropics/rmcp">rmcp</a> for the UCSC community.
 </p>
 
 ---
 
+## Why?
+
+UCSC students juggle 6+ different websites daily — PISA for classes, nutrition.sa.ucsc.edu for menus, LibCal for study rooms, campusrec for gym status, Metro for buses, the events calendar. None of them talk to each other.
+
+slug-mcp puts all of these behind a single MCP interface. Your AI assistant can combine data across services to answer questions that no single UCSC website can:
+
+> **"I have CSE 115A at 4pm in Baskin — what's for dinner nearby after class, and when's the next bus home from Science Hill?"**
+>
+> The assistant checks your class schedule for the room and time, pulls tonight's dining hall menus, cross-references dining hours with your class end time, and gets real-time bus ETAs from the nearest stop. One question, four services, ten seconds.
+
+## Try These
+
+These prompts show what's possible when campus services are connected:
+
+| Prompt | What happens behind the scenes |
+|--------|-------------------------------|
+| *"I need to study for 3 hours today — find me a room near food"* | Checks study room availability at both libraries, cross-references with dining hall hours and proximity, suggests a room + meal window |
+| *"Is it worth going to the gym right now or should I wait?"* | Pulls live headcount from the rec center (updates every 2 min), checks the facility schedule for upcoming open-gym blocks |
+| *"What are my options for a high-protein dinner tonight?"* | Gets tonight's menus across all 5 dining halls, looks up nutrition facts for the main proteins, ranks by protein-per-serving |
+| *"Who teaches CSE 130 and when are their office hours?"* | Searches the class schedule for the instructor, then searches the campus directory for their office location and contact info |
+| *"I have $12 in Slug Points — where should I eat?"* | Checks your meal balance, pulls current menus and dining hours, suggests halls that are open now |
+| *"Find me a GE class that fits between my Tuesday 10am and 2pm classes"* | Searches for open GE courses in the current term filtered to TuTh, checks enrollment status, returns options that fit the gap |
+| *"Any cool events this week I can get to by bus?"* | Searches upcoming campus events, checks bus routes and real-time ETAs from your stop |
+
 ## Features
 
-| Service | What you can do |
-|---------|----------------|
-| **Dining** | Browse menus for all 5 dining halls with dietary tags and allergen info, look up full nutrition facts for any item, check operating hours for all locations, view your Slug Points / Banana Bucks balance |
-| **Events** | Search campus events by keyword or category, list upcoming events |
-| **Recreation** | See live headcounts for gym, pool, fields, climbing wall, and wellness center; view facility schedules (open gym, lap swim, intramurals) |
-| **Library** | Check study room availability at McHenry and S&E Library by time slot, book a room (authenticated) |
-| **Academics** | Search the class schedule by subject, instructor, GE, course number — with enrollment counts, meeting times, and instruction mode; look up faculty/staff contact info and departments |
-| **Classrooms** | Find general-assignment classrooms by capacity, building, AV equipment, seating style, and accessibility features |
+| Service | Tools |
+|---------|-------|
+| **Dining** | Menus for all 5 dining halls with dietary/allergen tags, nutrition facts per item, operating hours, Slug Points / Banana Bucks balance |
+| **Events** | Search campus events by keyword or category, list upcoming events chronologically |
+| **Recreation** | Live headcounts for gym, pool, fields, climbing wall, wellness center; facility schedules |
+| **Library** | Study room availability at McHenry and S&E Library by time slot, room booking |
+| **Academics** | Class search by subject, instructor, GE, course number, career level — enrollment counts, meeting times, instruction mode; faculty/staff directory |
+| **Classrooms** | Find rooms by capacity, building, AV equipment, seating style, accessibility |
+| **Transit** | Real-time bus arrival predictions by stop and route via Santa Cruz Metro |
 
-## Quick Start (Local)
+## Quick Start
 
 **Prerequisites:** Rust 1.75+, Chrome/Chromium (for authenticated tools only)
 
@@ -55,56 +80,36 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 claude mcp add slug-mcp /path/to/slug-mcp
 ```
 
-Or to connect to the hosted server:
-
-```bash
-claude mcp add slug-mcp --transport sse https://<TBD>/mcp
-```
-
 ### ChatGPT Desktop
 
-Open **ChatGPT** → **Settings** → **Beta Features** → enable **MCP Servers**, then:
+Open **ChatGPT** > **Settings** > **Beta Features** > enable **MCP Servers**, then:
 
-**Settings** → **MCP Servers** → **Add Server** → **Command-line (stdio)**
+**Settings** > **MCP Servers** > **Add Server** > **Command-line (stdio)**
 
 - **Name:** `slug-mcp`
 - **Command:** `/path/to/slug-mcp`
 
-### Gemini
-
-In **Google AI Studio** or the **Gemini API**, add the server as a tool source using the Streamable HTTP endpoint:
-
-```
-https://<TBD>/mcp
-```
-
-Gemini supports MCP via its [tool use](https://ai.google.dev/gemini-api/docs/function-calling) framework — point it at the SSE server URL.
-
 ### Any MCP-compatible client
 
-**Local (stdio):** run `/path/to/slug-mcp` as the command — no arguments needed.
+Run `/path/to/slug-mcp` as a stdio subprocess — no arguments needed.
 
-**Remote (SSE):** connect to `https://<TBD>/mcp` using Streamable HTTP transport.
+For remote connections, start the SSE server and point your client at the endpoint (see [Running Your Own Server](#running-your-own-server)).
 
-## Connecting to the Hosted Server
+## Authentication
 
-A shared instance is available for UCSC students:
+Most tools work without login. Two tools require UCSC authentication:
+- **Meal balance** — Slug Points / Banana Bucks
+- **Room booking** — reserve study rooms
 
-> **Server URL:** `https://<TBD>/mcp`
->
-> *Connection details will be provided by the course staff.*
+When you ask for something that needs auth, the assistant will call the `login` tool, which opens a Chrome window for CruzID + Duo MFA. The session is captured automatically and lasts 8 hours.
 
-Most tools work immediately with no login. For authenticated tools (meal balance, room booking), generate a token on your local machine:
+For remote/headless servers where a browser can't open, generate a portable token locally:
 
 ```bash
-# 1. Generate a token locally (opens browser for CruzID + Duo MFA)
-slug-mcp export-token
-# Prints a base64 token valid for 8 hours
-
-# 2. In your AI assistant, call the authenticate tool with the token
+slug-mcp export-token    # opens browser, prints base64 token
 ```
 
-Each connected client gets independent auth state — your credentials are not shared with other users.
+Then pass the token to the `authenticate` tool on the remote server.
 
 ## Running Your Own Server
 
@@ -122,7 +127,7 @@ slug-mcp.example.com {
 }
 ```
 
-The server handles multiple concurrent clients. Each SSE session gets its own isolated state via the rmcp session factory. Shared resources (cache, HTTP client) are `Arc`-wrapped and thread-safe.
+The server handles multiple concurrent clients. Each SSE session gets its own isolated auth state via the rmcp session factory. Shared resources (cache, HTTP client) are `Arc`-wrapped and thread-safe.
 
 ## Architecture
 
@@ -141,10 +146,11 @@ src/
 ├── recreation/          # Facility occupancy + schedules
 ├── library/             # LibCal study room availability + booking
 ├── academics/           # PISA class search + campus directory
-└── classrooms/          # Classroom directory scraping
+├── classrooms/          # Classroom directory + campus locations
+└── transit/             # Santa Cruz Metro real-time predictions
 ```
 
-Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) → `mod.rs` (service layer with caching) → `server.rs` (MCP tool handler).
+Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) > `mod.rs` (service layer with caching) > `server.rs` (MCP tool handler).
 
 ## License
 

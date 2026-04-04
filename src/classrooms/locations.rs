@@ -29,42 +29,6 @@ pub fn lookup_by_area(area_code: &str) -> Option<&'static BuildingLocation> {
     buildings().get(area_code)
 }
 
-/// Search buildings by a free-text query, matching against area codes, names, and college areas.
-/// Returns the best match, if any.
-pub fn search_building(query: &str) -> Option<&'static BuildingLocation> {
-    let q = query.to_lowercase();
-    let map = buildings();
-
-    // Exact area code match
-    if let Some(loc) = map.get(&q) {
-        return Some(loc);
-    }
-
-    // Search by name or college_area
-    let mut best: Option<(&BuildingLocation, usize)> = None;
-
-    for (code, loc) in map.iter() {
-        let name_lower = loc.name.to_lowercase();
-        let area_lower = loc.college_area.to_lowercase();
-
-        let rank = if name_lower == q || area_lower == q {
-            0 // exact match
-        } else if name_lower.starts_with(&q) || code.starts_with(&q) {
-            1 // prefix match
-        } else if name_lower.contains(&q) || area_lower.contains(&q) || code.contains(&q) {
-            2 // substring match
-        } else {
-            continue;
-        };
-
-        if best.as_ref().is_none_or(|(_, r)| rank < *r) {
-            best = Some((loc, rank));
-        }
-    }
-
-    best.map(|(loc, _)| loc)
-}
-
 impl BuildingLocation {
     /// Format as markdown location info for display.
     pub fn format_location(&self) -> String {

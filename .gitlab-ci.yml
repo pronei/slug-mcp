@@ -39,7 +39,7 @@ deploy:
   before_script:
     - apk add --no-cache openssh-client
     - mkdir -p ~/.ssh
-    - echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+    - cp "${SSH_PRIVATE_KEY}" ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
     - echo "${VM_HOST_KEY}" >> ~/.ssh/known_hosts
   script:
@@ -50,8 +50,10 @@ deploy:
         sudo mv /tmp/slug-mcp.new /usr/local/bin/slug-mcp
         sudo chmod +x /usr/local/bin/slug-mcp
         sudo systemctl start slug-mcp
+        sudo systemctl restart ngrok
         sleep 2
         sudo systemctl is-active slug-mcp
+        sudo systemctl is-active ngrok
       EOF
   only:
     - main

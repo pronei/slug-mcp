@@ -3,6 +3,7 @@ use std::fmt;
 
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
+#[cfg(feature = "auth")]
 use scraper::{Html, Selector};
 
 const LIBCAL_BASE: &str = "https://calendar.library.ucsc.edu";
@@ -118,12 +119,14 @@ impl fmt::Display for Room {
     }
 }
 
+#[cfg(feature = "auth")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BookingResult {
     pub success: bool,
     pub message: String,
 }
 
+#[cfg(feature = "auth")]
 impl fmt::Display for BookingResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.success {
@@ -394,6 +397,7 @@ pub async fn scrape_availability(
     })
 }
 
+#[cfg(feature = "auth")]
 pub async fn book_room(
     auth_client: &reqwest::Client,
     space_id: u32,
@@ -467,6 +471,7 @@ pub async fn book_room(
     }
 }
 
+#[cfg(feature = "auth")]
 fn extract_csrf_token(html: &str) -> Option<String> {
     // Look for hidden input with name="_token" or "csrf_token"
     let document = Html::parse_document(html);

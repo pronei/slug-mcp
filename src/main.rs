@@ -1,11 +1,15 @@
 use std::sync::Arc;
+#[cfg(feature = "auth")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
+#[cfg(feature = "auth")]
+use anyhow::Context;
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 
 mod academics;
+#[cfg(feature = "auth")]
 mod auth;
 mod cache;
 mod classrooms;
@@ -37,6 +41,7 @@ enum Command {
     },
     /// Login locally via browser and print a portable auth token to stdout.
     /// Use this token with the `authenticate` tool on a remote SSE server.
+    #[cfg(feature = "auth")]
     ExportToken,
 }
 
@@ -48,6 +53,7 @@ async fn main() -> Result<()> {
         sse: false,
         port: 3000,
     }) {
+        #[cfg(feature = "auth")]
         Command::ExportToken => run_export_token().await,
         Command::Serve { sse, port } => {
             tracing_subscriber::fmt()
@@ -63,6 +69,7 @@ async fn main() -> Result<()> {
     }
 }
 
+#[cfg(feature = "auth")]
 async fn run_export_token() -> Result<()> {
     // Minimal logging — only errors, since stdout is for the token
     tracing_subscriber::fmt()
@@ -111,11 +118,13 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let cache = Arc::new(cache::CacheStore::new(10_000));
 
     let http = reqwest::Client::new();
+    #[cfg(feature = "auth")]
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
     let bustime_key = config.bustime_api_key.clone();
     let ctx = server::ServiceContext {
         config,
         cache: cache.clone(),
+        #[cfg(feature = "auth")]
         auth,
         dining: Arc::new(dining::DiningService::new(http.clone(), cache.clone())),
         events: Arc::new(events::EventsService::new(http.clone(), cache.clone())),

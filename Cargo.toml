@@ -22,16 +22,19 @@ clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-open = "5"
 directories = "6"
-aes-gcm = "0.10"
-sha2 = "0.10"
-hostname = "0.4"
+aes-gcm = { version = "0.10", optional = true }
+sha2 = { version = "0.10", optional = true }
+hostname = { version = "0.4", optional = true }
 urlencoding = "2"
 chrono = "0.4"
-chromiumoxide = "0.9.1"
+chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
-base64 = "0.22"
+base64 = { version = "0.22", optional = true }
+
+[features]
+default = ["auth"]
+auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname", "dep:base64"]
 
 [dev-dependencies]
 tempfile = "3"

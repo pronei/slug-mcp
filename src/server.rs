@@ -6,17 +6,22 @@ use rmcp::model::*;
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
+#[cfg(feature = "auth")]
 use tokio::sync::RwLock;
 
 use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
+#[cfg(feature = "auth")]
 use crate::auth::session::SessionData;
+#[cfg(feature = "auth")]
 use crate::auth::AuthManager;
 use crate::cache::CacheStore;
 use crate::classrooms::{ClassroomService, SearchClassroomsRequest};
 use crate::config::Config;
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
 use crate::events::{EventsService, SearchEventsRequest, UpcomingEventsRequest};
-use crate::library::{BookStudyRoomRequest, LibraryService, StudyRoomAvailabilityRequest};
+#[cfg(feature = "auth")]
+use crate::library::BookStudyRoomRequest;
+use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
 use crate::recreation::{FacilityOccupancyRequest, FacilityScheduleRequest, RecreationService};
 use crate::transit::TransitService;
 
@@ -29,6 +34,7 @@ fn internal_err(e: impl std::fmt::Display) -> ErrorData {
 pub struct ServiceContext {
     pub config: Arc<Config>,
     pub cache: Arc<CacheStore>,
+    #[cfg(feature = "auth")]
     pub auth: Arc<AuthManager>,
     pub dining: Arc<DiningService>,
     pub events: Arc<EventsService>,
@@ -45,7 +51,9 @@ pub struct SlugMcpServer {
     config: Arc<Config>,
     #[allow(dead_code)]
     cache: Arc<CacheStore>,
+    #[cfg(feature = "auth")]
     auth: Arc<AuthManager>,
+    #[cfg(feature = "auth")]
     /// Per-session auth state for SSE mode (set via `authenticate` tool).
     session_auth: Arc<RwLock<Option<SessionData>>>,
     dining: Arc<DiningService>,
@@ -63,7 +71,9 @@ impl SlugMcpServer {
         Self {
             config: ctx.config,
             cache: ctx.cache,
+            #[cfg(feature = "auth")]
             auth: ctx.auth,
+            #[cfg(feature = "auth")]
             session_auth: Arc::new(RwLock::new(None)),
             dining: ctx.dining,
             events: ctx.events,
@@ -76,6 +86,7 @@ impl SlugMcpServer {
         }
     }
 
+    #[cfg(feature = "auth")]
     /// Get the active session from either per-session token (SSE) or disk (stdio).
     async fn get_active_session(&self) -> Option<SessionData> {
         // 1. Check per-session token (set via `authenticate` tool)
@@ -91,6 +102,7 @@ impl SlugMcpServer {
 
 // ─── Authentication ───
 
+#[cfg(feature = "auth")]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AuthenticateRequest {
     /// Portable auth token from `slug-mcp export-token`. Base64-encoded session data.
@@ -107,8 +119,256 @@ pub struct BusPredictionRequest {
     pub route: Option<String>,
 }
 
-#[tool_router]
-impl SlugMcpServer {
+// ─── Tool definitions ───
+// The `define_tools!` macro wraps the `#[tool_router]` impl so that public tools
+// are defined once, while auth-only tools are injected via the `$extra` parameter.
+// Declarative macros expand before proc macros, so `#[tool_router]` sees the
+// fully-expanded impl block regardless of which cfg variant is active.
+
+macro_rules! define_tools {
+    ({ $($extra:tt)* }) => {
+        #[tool_router]
+        impl SlugMcpServer {
+            // ─── Dining Tools ───
+
+            #[tool(description = "Get the menu for a UCSC dining hall")]
+            async fn get_dining_menu(
+                &self,
+                Parameters(req): Parameters<DiningMenuRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .dining
+                    .get_menu(
+                        req.hall.as_deref(),
+                        req.meal.as_deref(),
+                        req.date.as_deref(),
+                        req.include_all_categories.unwrap_or(false),
+                    )
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get detailed nutrition facts for a specific menu item. Use the recipe ID from get_dining_menu output.")]
+            async fn get_nutrition_info(
+                &self,
+                Parameters(req): Parameters<NutritionRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .dining
+                    .get_nutrition(&req.recipe_id)
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get UCSC dining location hours. Optionally filter by location name.")]
+            async fn get_dining_hours(
+                &self,
+                Parameters(req): Parameters<DiningHoursRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let hours = self
+                    .dining
+                    .get_hours(req.location.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(hours)]))
+            }
+
+            // ─── Events Tools ───
+
+            #[tool(description = "Search for UCSC campus events by keyword or category")]
+            async fn search_events(
+                &self,
+                Parameters(req): Parameters<SearchEventsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let events = self
+                    .events
+                    .search_events(
+                        req.query.as_deref(),
+                        None,
+                        req.category.as_deref(),
+                        req.limit,
+                    )
+                    .await
+                    .map_err(internal_err)?;
+
+                if events.is_empty() {
+                    return Ok(CallToolResult::success(vec![Content::text(
+                        "No events found matching your search.",
+                    )]));
+                }
+
+                let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
+                Ok(CallToolResult::success(vec![Content::text(
+                    formatted.join("\n---\n\n"),
+                )]))
+            }
+
+            #[tool(description = "Get upcoming UCSC campus events")]
+            async fn get_upcoming_events(
+                &self,
+                Parameters(req): Parameters<UpcomingEventsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let limit = req.limit.unwrap_or(10);
+                let events = self
+                    .events
+                    .get_upcoming_events(limit)
+                    .await
+                    .map_err(internal_err)?;
+
+                if events.is_empty() {
+                    return Ok(CallToolResult::success(vec![Content::text(
+                        "No upcoming events found.",
+                    )]));
+                }
+
+                let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "# Upcoming UCSC Events\n\n{}",
+                    formatted.join("\n---\n\n")
+                ))]))
+            }
+
+            // ─── Recreation Tools ───
+
+            #[tool(description = "Get current occupancy for UCSC recreation facilities (gym, pool, fields, climbing wall). Shows live headcounts.")]
+            async fn get_facility_occupancy(
+                &self,
+                Parameters(req): Parameters<FacilityOccupancyRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .recreation
+                    .get_occupancy(req.facility.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get the schedule for a specific UCSC recreation facility. Use the facility UUID from get_facility_occupancy output.")]
+            async fn get_facility_schedule(
+                &self,
+                Parameters(req): Parameters<FacilityScheduleRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .recreation
+                    .get_schedule(&req.facility_id)
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Library Tools ───
+
+            #[tool(description = "Get available study rooms at UCSC libraries (McHenry, Science & Engineering). Shows room availability by time slot.")]
+            async fn get_study_room_availability(
+                &self,
+                Parameters(req): Parameters<StudyRoomAvailabilityRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .library
+                    .get_availability(req.library.as_deref(), req.date.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Academics Tools ───
+
+            #[tool(description = "Search the UCSC class schedule. Filter by subject, course number, instructor, title, or GE requirement. Returns enrollment counts and meeting times.")]
+            async fn search_classes(
+                &self,
+                Parameters(req): Parameters<SearchClassesRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .academics
+                    .search_classes(
+                        req.term.as_deref(),
+                        req.subject.as_deref(),
+                        req.course_number.as_deref(),
+                        req.instructor.as_deref(),
+                        req.title.as_deref(),
+                        req.ge.as_deref(),
+                        req.career.as_deref(),
+                        req.open_only.unwrap_or(false),
+                        req.page,
+                    )
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Search the UCSC campus directory for people or departments. Find faculty/staff contact info, office locations, and emails.")]
+            async fn search_directory(
+                &self,
+                Parameters(req): Parameters<SearchDirectoryRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .academics
+                    .search_directory(&req.query, req.search_type.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Transit Tools ───
+
+            #[tool(description = "Get real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name and optionally filter by route number. Shows ETAs in minutes for upcoming buses. All UCSC students ride free with student ID.")]
+            async fn get_bus_predictions(
+                &self,
+                Parameters(req): Parameters<BusPredictionRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .transit
+                    .get_predictions(&req.stop, req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Classroom Tools ───
+
+            #[tool(description = "Search UCSC classrooms by capacity, building, technology, and features. Find rooms with specific AV equipment or seating arrangements.")]
+            async fn search_classrooms(
+                &self,
+                Parameters(req): Parameters<SearchClassroomsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .classrooms
+                    .search(
+                        req.name.as_deref(),
+                        req.min_capacity,
+                        req.max_capacity,
+                        req.building.as_deref(),
+                        req.technology.as_deref(),
+                        req.feature.as_deref(),
+                    )
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Extra tools (auth or empty) ───
+            $($extra)*
+        }
+    };
+}
+
+// Full build: public tools + auth tools
+#[cfg(feature = "auth")]
+define_tools!({
+    // ─── Auth Tools ───
+
     #[tool(description = "Login to UCSC SSO. This opens a Chrome window on your machine for CruzID + Duo MFA authentication — use this tool directly, it works from any MCP client including Claude Desktop. After you complete login in the browser, the session is captured automatically.")]
     async fn login(&self) -> Result<CallToolResult, ErrorData> {
         match self.auth.login().await {
@@ -208,152 +468,6 @@ impl SlugMcpServer {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    #[tool(description = "Get the menu for a UCSC dining hall")]
-    async fn get_dining_menu(
-        &self,
-        Parameters(req): Parameters<DiningMenuRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .dining
-            .get_menu(
-                req.hall.as_deref(),
-                req.meal.as_deref(),
-                req.date.as_deref(),
-                req.include_all_categories.unwrap_or(false),
-            )
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    #[tool(description = "Get detailed nutrition facts for a specific menu item. Use the recipe ID from get_dining_menu output.")]
-    async fn get_nutrition_info(
-        &self,
-        Parameters(req): Parameters<NutritionRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .dining
-            .get_nutrition(&req.recipe_id)
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    #[tool(description = "Get UCSC dining location hours. Optionally filter by location name.")]
-    async fn get_dining_hours(
-        &self,
-        Parameters(req): Parameters<DiningHoursRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let hours = self
-            .dining
-            .get_hours(req.location.as_deref())
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(hours)]))
-    }
-
-    #[tool(description = "Search for UCSC campus events by keyword or category")]
-    async fn search_events(
-        &self,
-        Parameters(req): Parameters<SearchEventsRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let events = self
-            .events
-            .search_events(
-                req.query.as_deref(),
-                None,
-                req.category.as_deref(),
-                req.limit,
-            )
-            .await
-            .map_err(internal_err)?;
-
-        if events.is_empty() {
-            return Ok(CallToolResult::success(vec![Content::text(
-                "No events found matching your search.",
-            )]));
-        }
-
-        let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
-        Ok(CallToolResult::success(vec![Content::text(
-            formatted.join("\n---\n\n"),
-        )]))
-    }
-
-    #[tool(description = "Get upcoming UCSC campus events")]
-    async fn get_upcoming_events(
-        &self,
-        Parameters(req): Parameters<UpcomingEventsRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let limit = req.limit.unwrap_or(10);
-        let events = self
-            .events
-            .get_upcoming_events(limit)
-            .await
-            .map_err(internal_err)?;
-
-        if events.is_empty() {
-            return Ok(CallToolResult::success(vec![Content::text(
-                "No upcoming events found.",
-            )]));
-        }
-
-        let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "# Upcoming UCSC Events\n\n{}",
-            formatted.join("\n---\n\n")
-        ))]))
-    }
-
-    // ─── Recreation Tools ───
-
-    #[tool(description = "Get current occupancy for UCSC recreation facilities (gym, pool, fields, climbing wall). Shows live headcounts.")]
-    async fn get_facility_occupancy(
-        &self,
-        Parameters(req): Parameters<FacilityOccupancyRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .recreation
-            .get_occupancy(req.facility.as_deref())
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    #[tool(description = "Get the schedule for a specific UCSC recreation facility. Use the facility UUID from get_facility_occupancy output.")]
-    async fn get_facility_schedule(
-        &self,
-        Parameters(req): Parameters<FacilityScheduleRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .recreation
-            .get_schedule(&req.facility_id)
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    // ─── Library Tools ───
-
-    #[tool(description = "Get available study rooms at UCSC libraries (McHenry, Science & Engineering). Shows room availability by time slot.")]
-    async fn get_study_room_availability(
-        &self,
-        Parameters(req): Parameters<StudyRoomAvailabilityRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .library
-            .get_availability(req.library.as_deref(), req.date.as_deref())
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
     #[tool(description = "Book a study room at a UCSC library. Requires authentication — call 'login' first if not already logged in. Use space_id from get_study_room_availability.")]
     async fn book_study_room(
         &self,
@@ -379,97 +493,30 @@ impl SlugMcpServer {
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+});
 
-    // ─── Academics Tools ───
-
-    #[tool(description = "Search the UCSC class schedule. Filter by subject, course number, instructor, title, or GE requirement. Returns enrollment counts and meeting times.")]
-    async fn search_classes(
-        &self,
-        Parameters(req): Parameters<SearchClassesRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .academics
-            .search_classes(
-                req.term.as_deref(),
-                req.subject.as_deref(),
-                req.course_number.as_deref(),
-                req.instructor.as_deref(),
-                req.title.as_deref(),
-                req.ge.as_deref(),
-                req.career.as_deref(),
-                req.open_only.unwrap_or(false),
-                req.page,
-            )
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    #[tool(description = "Search the UCSC campus directory for people or departments. Find faculty/staff contact info, office locations, and emails.")]
-    async fn search_directory(
-        &self,
-        Parameters(req): Parameters<SearchDirectoryRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .academics
-            .search_directory(&req.query, req.search_type.as_deref())
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    // ─── Transit Tools ───
-
-    #[tool(description = "Get real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name and optionally filter by route number. Shows ETAs in minutes for upcoming buses. All UCSC students ride free with student ID.")]
-    async fn get_bus_predictions(
-        &self,
-        Parameters(req): Parameters<BusPredictionRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .transit
-            .get_predictions(&req.stop, req.route.as_deref())
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    // ─── Classroom Tools ───
-
-    #[tool(description = "Search UCSC classrooms by capacity, building, technology, and features. Find rooms with specific AV equipment or seating arrangements.")]
-    async fn search_classrooms(
-        &self,
-        Parameters(req): Parameters<SearchClassroomsRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let result = self
-            .classrooms
-            .search(
-                req.name.as_deref(),
-                req.min_capacity,
-                req.max_capacity,
-                req.building.as_deref(),
-                req.technology.as_deref(),
-                req.feature.as_deref(),
-            )
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-}
+// Public-only build: no auth tools
+#[cfg(not(feature = "auth"))]
+define_tools!({});
 
 #[tool_handler]
 impl ServerHandler for SlugMcpServer {
     fn get_info(&self) -> ServerInfo {
+        let instructions = if cfg!(feature = "auth") {
+            "UCSC campus services MCP server. Provides dining menus, nutrition info, \
+             meal plan balances, campus events, recreation facility occupancy, \
+             library study room availability and booking, class schedule search, \
+             campus directory lookup, classroom search, and real-time bus arrival \
+             predictions for UC Santa Cruz students."
+        } else {
+            "UCSC campus services MCP server (public mode). Provides dining menus, \
+             nutrition info, campus events, recreation facility occupancy, \
+             library study room availability, class schedule search, \
+             campus directory lookup, classroom search, and real-time bus arrival \
+             predictions for UC Santa Cruz students."
+        };
+
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_instructions(
-                "UCSC campus services MCP server. Provides dining menus, nutrition info, \
-                 meal plan balances, campus events, recreation facility occupancy, \
-                 library study room availability and booking, class schedule search, \
-                 campus directory lookup, classroom search, and real-time bus arrival \
-                 predictions for UC Santa Cruz students.",
-            )
+            .with_instructions(instructions)
     }
 }

@@ -34,9 +34,11 @@ pub struct DiningHoursRequest {
 use std::time::Duration;
 
 use crate::cache::CacheStore;
+#[cfg(feature = "auth")]
+use scraper::{scrape_balance, BalanceResult, MealBalance};
 use scraper::{
-    find_hall, hall_names, scrape_balance, scrape_hours, scrape_menu, scrape_nutrition,
-    BalanceResult, DiningLocation, MealBalance, DINING_HALLS,
+    find_hall, hall_names, scrape_hours, scrape_menu, scrape_nutrition,
+    DiningLocation, DINING_HALLS,
 };
 
 const FILTERED_CATEGORIES: &[&str] = &[
@@ -179,6 +181,7 @@ impl DiningService {
         Ok(format!("# UCSC Dining Hours\n\n{}", output))
     }
 
+    #[cfg(feature = "auth")]
     pub async fn get_balance(&self, auth_client: &reqwest::Client) -> Result<BalanceResult> {
         // Balance uses conditional caching (only cache on success), so we don't
         // use get_or_fetch here.

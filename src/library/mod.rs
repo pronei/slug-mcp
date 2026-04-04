@@ -14,6 +14,7 @@ pub struct StudyRoomAvailabilityRequest {
     pub date: Option<String>,
 }
 
+#[cfg(feature = "auth")]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct BookStudyRoomRequest {
     /// Space/room ID from get_study_room_availability output.
@@ -27,9 +28,9 @@ pub struct BookStudyRoomRequest {
 }
 
 use crate::cache::CacheStore;
-use scraper::{
-    book_room, find_library, library_names, scrape_availability, RoomAvailability, LIBRARIES,
-};
+#[cfg(feature = "auth")]
+use scraper::book_room;
+use scraper::{find_library, library_names, scrape_availability, RoomAvailability, LIBRARIES};
 
 pub struct LibraryService {
     http: reqwest::Client,
@@ -78,6 +79,7 @@ impl LibraryService {
         Ok(outputs.join("\n\n"))
     }
 
+    #[cfg(feature = "auth")]
     pub async fn book(
         &self,
         auth_client: &reqwest::Client,

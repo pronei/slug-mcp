@@ -601,6 +601,7 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
 
 // --- Meal balance ---
 
+#[cfg(feature = "auth")]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct MealBalance {
     pub slug_points: Option<f64>,
@@ -608,6 +609,7 @@ pub struct MealBalance {
     pub meal_swipes: Option<u32>,
 }
 
+#[cfg(feature = "auth")]
 impl fmt::Display for MealBalance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "# Meal Plan Balance\n\n")?;
@@ -627,6 +629,7 @@ impl fmt::Display for MealBalance {
     }
 }
 
+#[cfg(feature = "auth")]
 /// Result of a balance scrape attempt.
 pub struct BalanceResult {
     pub balance: MealBalance,
@@ -634,6 +637,7 @@ pub struct BalanceResult {
     pub debug_snippet: Option<String>,
 }
 
+#[cfg(feature = "auth")]
 pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
     // The meal plan balance is available through the GET system at
     // get.cbord.com/ucsc. This requires an authenticated session — the
@@ -679,6 +683,7 @@ pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
     })
 }
 
+#[cfg(feature = "auth")]
 /// Extract visible text from HTML, stripping script/style/noscript blocks first.
 fn extract_visible_text(html: &str) -> String {
     // Strip <script>...</script>, <style>...</style>, <noscript>...</noscript> blocks
@@ -690,6 +695,7 @@ fn extract_visible_text(html: &str) -> String {
     document.root_element().text().collect::<String>()
 }
 
+#[cfg(feature = "auth")]
 /// Remove all occurrences of <tag ...>...</tag> (case-insensitive) from HTML.
 fn strip_tag_blocks(html: &str, tag: &str) -> String {
     let mut result = String::with_capacity(html.len());
@@ -717,6 +723,7 @@ fn strip_tag_blocks(html: &str, tag: &str) -> String {
     result
 }
 
+#[cfg(feature = "auth")]
 fn try_parse_balance(html: &str) -> Option<MealBalance> {
     let text = extract_visible_text(html);
 
@@ -734,6 +741,7 @@ fn try_parse_balance(html: &str) -> Option<MealBalance> {
     }
 }
 
+#[cfg(feature = "auth")]
 fn extract_balance_value(text: &str, label: &str) -> Option<f64> {
     let lower = text.to_lowercase();
     let idx = lower.find(label)?;

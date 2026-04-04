@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-const BUSTIME_BASE_URL: &str = "https://rt.scmetro.org/bustime/api/v2";
+use super::BUSTIME_BASE_URL;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stop {

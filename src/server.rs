@@ -119,6 +119,14 @@ pub struct BusPredictionRequest {
     pub route: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ServiceAlertRequest {
+    /// Route number to check alerts for (e.g., "10", "15"). At least one of route or stop_id should be specified.
+    pub route: Option<String>,
+    /// Stop ID to check alerts for (e.g., "1234"). At least one of route or stop_id should be specified.
+    pub stop_id: Option<String>,
+}
+
 // ─── Tool definitions ───
 // The `define_tools!` macro wraps the `#[tool_router]` impl so that public tools
 // are defined once, while auth-only tools are injected via the `$extra` parameter.
@@ -321,7 +329,7 @@ macro_rules! define_tools {
 
             // ─── Transit Tools ───
 
-            #[tool(description = "Get real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name and optionally filter by route number. Shows ETAs in minutes for upcoming buses. All UCSC students ride free with student ID.")]
+            #[tool(description = "Get real-time bus arrival predictions for a Santa Cruz Metro stop. Shows ETAs, delays, passenger load, and trip status (canceled/express). Search by stop name; optionally filter by route. All UCSC students ride free with student ID.")]
             async fn get_bus_predictions(
                 &self,
                 Parameters(req): Parameters<BusPredictionRequest>,
@@ -329,6 +337,20 @@ macro_rules! define_tools {
                 let result = self
                     .transit
                     .get_predictions(&req.stop, req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes. Shows detours, disruptions, and schedule changes. Specify a route number or stop ID.")]
+            async fn get_service_alerts(
+                &self,
+                Parameters(req): Parameters<ServiceAlertRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .transit
+                    .get_service_alerts(req.route.as_deref(), req.stop_id.as_deref())
                     .await
                     .map_err(internal_err)?;
 
@@ -506,14 +528,14 @@ impl ServerHandler for SlugMcpServer {
             "UCSC campus services MCP server. Provides dining menus, nutrition info, \
              meal plan balances, campus events, recreation facility occupancy, \
              library study room availability and booking, class schedule search, \
-             campus directory lookup, classroom search, and real-time bus arrival \
-             predictions for UC Santa Cruz students."
+             campus directory lookup, classroom search, real-time bus arrival \
+             predictions, and transit service alerts for UC Santa Cruz students."
         } else {
             "UCSC campus services MCP server (public mode). Provides dining menus, \
              nutrition info, campus events, recreation facility occupancy, \
              library study room availability, class schedule search, \
-             campus directory lookup, classroom search, and real-time bus arrival \
-             predictions for UC Santa Cruz students."
+             campus directory lookup, classroom search, real-time bus arrival \
+             predictions, and transit service alerts for UC Santa Cruz students."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

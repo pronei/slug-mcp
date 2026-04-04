@@ -9,6 +9,7 @@ pub struct Config {
     pub sse_port: u16,
     pub eventbrite_api_key: Option<String>,
     pub bustime_api_key: Option<String>,
+    #[cfg(feature = "instagram")]
     pub apify_api_key: Option<String>,
 }
 
@@ -30,6 +31,7 @@ impl Config {
                 .unwrap_or(3000),
             eventbrite_api_key: std::env::var("SLUG_MCP_EVENTBRITE_KEY").ok(),
             bustime_api_key: std::env::var("SLUG_MCP_BUSTIME_KEY").ok(),
+            #[cfg(feature = "instagram")]
             apify_api_key: std::env::var("SLUG_MCP_APIFY_KEY").ok(),
         })
     }
@@ -39,10 +41,12 @@ impl Config {
         self.data_dir.join("session.enc")
     }
 
+    #[cfg(feature = "instagram")]
     pub fn instagram_config_path(&self) -> PathBuf {
         self.data_dir.join("instagram.toml")
     }
 
+    #[cfg(feature = "instagram")]
     pub fn instagram_images_dir(&self) -> PathBuf {
         self.data_dir.join("instagram").join("images")
     }

@@ -30,11 +30,13 @@ urlencoding = "2"
 chrono = "0.4"
 chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
-base64 = { version = "0.22", optional = true }
+base64 = "0.22"
+toml = { version = "0.8", optional = true }
 
 [features]
 default = ["auth"]
-auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname", "dep:base64"]
+auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname"]
+instagram = ["dep:toml"]
 
 [dev-dependencies]
 tempfile = "3"

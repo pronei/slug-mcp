@@ -23,6 +23,8 @@ use crate::events::{EventsService, SearchEventsRequest, UpcomingEventsRequest};
 use crate::library::BookStudyRoomRequest;
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
 use crate::recreation::{FacilityOccupancyRequest, FacilityScheduleRequest, RecreationService};
+#[cfg(feature = "instagram")]
+use crate::instagram::{InstagramService, SearchCampusSocialRequest};
 use crate::transit::TransitService;
 
 fn internal_err(e: impl std::fmt::Display) -> ErrorData {
@@ -43,6 +45,8 @@ pub struct ServiceContext {
     pub academics: Arc<AcademicsService>,
     pub classrooms: Arc<ClassroomService>,
     pub transit: Arc<TransitService>,
+    #[cfg(feature = "instagram")]
+    pub instagram: Arc<InstagramService>,
 }
 
 #[derive(Clone)]
@@ -63,6 +67,8 @@ pub struct SlugMcpServer {
     academics: Arc<AcademicsService>,
     classrooms: Arc<ClassroomService>,
     transit: Arc<TransitService>,
+    #[cfg(feature = "instagram")]
+    instagram: Arc<InstagramService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -82,6 +88,8 @@ impl SlugMcpServer {
             academics: ctx.academics,
             classrooms: ctx.classrooms,
             transit: ctx.transit,
+            #[cfg(feature = "instagram")]
+            instagram: ctx.instagram,
             tool_router: Self::tool_router(),
         }
     }
@@ -506,14 +514,16 @@ impl ServerHandler for SlugMcpServer {
             "UCSC campus services MCP server. Provides dining menus, nutrition info, \
              meal plan balances, campus events, recreation facility occupancy, \
              library study room availability and booking, class schedule search, \
-             campus directory lookup, classroom search, and real-time bus arrival \
-             predictions for UC Santa Cruz students."
+             campus directory lookup, classroom search, real-time bus arrival \
+             predictions, and Instagram posts from curated UCSC accounts \
+             for UC Santa Cruz students."
         } else {
             "UCSC campus services MCP server (public mode). Provides dining menus, \
              nutrition info, campus events, recreation facility occupancy, \
              library study room availability, class schedule search, \
-             campus directory lookup, classroom search, and real-time bus arrival \
-             predictions for UC Santa Cruz students."
+             campus directory lookup, classroom search, real-time bus arrival \
+             predictions, and Instagram posts from curated UCSC accounts \
+             for UC Santa Cruz students."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

@@ -16,6 +16,8 @@ mod classrooms;
 mod config;
 mod dining;
 mod events;
+#[cfg(feature = "instagram")]
+mod instagram;
 mod library;
 mod recreation;
 mod server;
@@ -121,6 +123,12 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     #[cfg(feature = "auth")]
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
     let bustime_key = config.bustime_api_key.clone();
+    #[cfg(feature = "instagram")]
+    let apify_key = config.apify_api_key.clone();
+    #[cfg(feature = "instagram")]
+    let ig_config_path = config.instagram_config_path();
+    #[cfg(feature = "instagram")]
+    let ig_images_dir = config.instagram_images_dir();
     let ctx = server::ServiceContext {
         config,
         cache: cache.clone(),
@@ -133,6 +141,10 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         academics: Arc::new(academics::AcademicsService::new(http.clone(), cache.clone())),
         classrooms: Arc::new(classrooms::ClassroomService::new(http.clone(), cache.clone())),
         transit: Arc::new(transit::TransitService::new(http.clone(), cache.clone(), bustime_key)),
+        #[cfg(feature = "instagram")]
+        instagram: Arc::new(instagram::InstagramService::new(
+            http.clone(), cache.clone(), apify_key, ig_config_path, ig_images_dir,
+        )),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

@@ -920,7 +920,14 @@ pub async fn scrape_hours(client: &reqwest::Client) -> Result<Vec<DiningLocation
 }
 
 fn parse_hours(html: &str) -> Vec<DiningLocation> {
-    let document = Html::parse_document(html);
+    // Strip <details>/<summary> wrappers that cause html5ever foster-parenting
+    // issues — the schema.org divs inside them get misplaced in the DOM tree.
+    let cleaned = html
+        .replace("<details", "<div")
+        .replace("</details>", "</div>")
+        .replace("<summary", "<span")
+        .replace("</summary>", "</span>");
+    let document = Html::parse_document(&cleaned);
     let mut locations = Vec::new();
 
     let schema_sel = sel(&SEL_SCHEMA, r#"div[itemtype]"#);

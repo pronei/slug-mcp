@@ -1,0 +1,58 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  BINARY_NAME: slug-mcp
+  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
+
+build:
+  stage: build
+  image: rust:latest
+  tags:
+    - docker
+    - linux
+  cache:
+    key: cargo-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cargo/registry
+      - .cargo/git
+      - target/
+  script:
+    - cargo build --release --no-default-features
+    - strip target/release/${BINARY_NAME}
+  artifacts:
+    paths:
+      - target/release/${BINARY_NAME}
+    expire_in: 7 days
+  only:
+    - main
+
+deploy:
+  stage: deploy
+  image: alpine:latest
+  tags:
+    - docker
+    - linux
+  needs:
+    - build
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - echo "${VM_HOST_KEY}" >> ~/.ssh/known_hosts
+  script:
+    - scp -o StrictHostKeyChecking=yes target/release/${BINARY_NAME} ${VM_USER}@${VM_HOST}:/tmp/${BINARY_NAME}.new
+    - |
+      ssh ${VM_USER}@${VM_HOST} << 'EOF'
+        sudo systemctl stop slug-mcp
+        sudo mv /tmp/slug-mcp.new /usr/local/bin/slug-mcp
+        sudo chmod +x /usr/local/bin/slug-mcp
+        sudo systemctl start slug-mcp
+        sleep 2
+        sudo systemctl is-active slug-mcp
+      EOF
+  only:
+    - main
+  when: manual

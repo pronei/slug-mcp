@@ -478,17 +478,76 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
                 }
             }
         } else if tag == "ol" || tag == "ul" {
-            // Capture ordered/unordered list items as notes (e.g., plan requirements in <ol><li>)
-            let items: Vec<String> = element
+            // Parse <ol>/<ul> items: extract structured rules from <li> items
+            // that contain course links (or course codes in plain text).
+            let link_sel = sel(&SEL_COURSE_LINK, "a.sc-courselink");
+            let mut note_items: Vec<String> = Vec::new();
+
+            for li in element
                 .children()
                 .filter_map(ElementRef::wrap)
                 .filter(|el| el.value().name() == "li")
-                .map(|li| li.text().collect::<String>().trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
+            {
+                let text = li.text().collect::<String>().trim().to_string();
+                if text.is_empty() {
+                    continue;
+                }
 
-            if !items.is_empty() {
-                let note = items
+                // Check if this <li> contains course links
+                let mut courses: Vec<Course> = li
+                    .select(link_sel)
+                    .filter_map(|a| {
+                        let href = a.value().attr("href").unwrap_or("");
+                        if href.contains("narrative-courses")
+                            || !href.contains("/courses/")
+                        {
+                            return None;
+                        }
+                        let code = a.text().collect::<String>().trim().to_string();
+                        if code.is_empty() {
+                            return None;
+                        }
+                        Some(Course {
+                            code,
+                            title: String::new(),
+                            credits: Some(5),
+                            url: Some(format!("{}{}", CATALOG_BASE, href)),
+                            cross_listed: None,
+                        })
+                    })
+                    .collect();
+
+                let lower = text.to_lowercase();
+
+                // If no course links found, try extracting codes from plain text
+                if courses.is_empty() && has_selection_language(&lower) {
+                    courses = extract_course_codes_from_text(&text)
+                        .into_iter()
+                        .map(|code| Course {
+                            code,
+                            title: String::new(),
+                            credits: None,
+                            url: None,
+                            cross_listed: None,
+                        })
+                        .collect();
+                }
+
+                // If this <li> has courses AND selection language, fix existing rules
+                if courses.len() >= 2 && has_selection_language(&lower) {
+                    let course_codes: Vec<String> =
+                        courses.iter().map(|c| c.code.clone()).collect();
+                    // Search already-flushed section for a matching AllOf rule and fix it
+                    if let Some(ref mut sec) = current_section {
+                        fix_allof_from_selection(sec, &course_codes, &lower);
+                    }
+                } else {
+                    note_items.push(text);
+                }
+            }
+
+            if !note_items.is_empty() {
+                let note = note_items
                     .iter()
                     .enumerate()
                     .map(|(i, item)| format!("{}. {}", i + 1, item))
@@ -805,6 +864,146 @@ fn extract_number_from_heading(text: &str) -> Option<u32> {
     }
 
     None
+}
+
+/// Check if text contains selection language indicating a structured rule.
+fn has_selection_language(lower: &str) -> bool {
+    lower.contains("any two out of")
+        || lower.contains("any one of")
+        || lower.contains("two out of the following")
+        || lower.contains("one of the following")
+        || lower.contains("one course each from")
+        || lower.contains("must be met by taking")
+}
+
+/// Extract course codes (e.g., "CSE 200", "CSE 210A") from plain text.
+/// Matches patterns like: 2-5 uppercase letters, space, 1-3 digits, optional uppercase letter.
+fn extract_course_codes_from_text(text: &str) -> Vec<String> {
+    let mut codes = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        // Look for start of a department code: 2+ uppercase letters
+        if chars[i].is_ascii_uppercase() {
+            let dept_start = i;
+            while i < len && chars[i].is_ascii_uppercase() {
+                i += 1;
+            }
+            let dept_len = i - dept_start;
+            if dept_len >= 2 && dept_len <= 5 {
+                // Expect whitespace then digits
+                if i < len && chars[i] == ' ' {
+                    i += 1; // skip space
+                    let num_start = i;
+                    while i < len && chars[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                    let num_len = i - num_start;
+                    if num_len >= 1 && num_len <= 3 {
+                        // Optional trailing uppercase letter (e.g., "210A")
+                        let end = if i < len && chars[i].is_ascii_uppercase()
+                            && (i + 1 >= len || !chars[i + 1].is_ascii_uppercase())
+                        {
+                            i += 1;
+                            i
+                        } else {
+                            i
+                        };
+                        let code: String = chars[dept_start..end].iter().collect();
+                        codes.push(code);
+                    }
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    // Deduplicate
+    let mut seen = std::collections::HashSet::new();
+    codes.retain(|c| seen.insert(c.clone()));
+    codes
+}
+
+/// When an <ol><li> contains selection language like "any two out of CSE 201, CSE 210A, CSE 220",
+/// find the matching AllOf rule in the section's already-flushed subsections and fix it.
+/// For "any two out of" with N courses, splits into: required course(s) + NOf(2) for the pool.
+fn fix_allof_from_selection(
+    section: &mut RequirementSection,
+    course_codes: &[String],
+    lower: &str,
+) {
+    use std::collections::HashSet;
+
+    let code_set: HashSet<&str> = course_codes.iter().map(|s| s.as_str()).collect();
+
+    for sub in &mut section.subsections {
+        for group in &mut sub.groups {
+            for rule in &mut group.rules {
+                if !matches!(rule.rule_type, RuleType::AllOf) {
+                    continue;
+                }
+                // Check if this rule's courses overlap significantly with the codes from the <li>
+                let rule_codes: HashSet<&str> =
+                    rule.courses.iter().map(|c| c.code.as_str()).collect();
+                let overlap = code_set.intersection(&rule_codes).count();
+                if overlap < 2 || overlap < code_set.len().saturating_sub(1) {
+                    continue;
+                }
+
+                // Found a matching AllOf rule — fix it based on selection language
+                if lower.contains("any two out of")
+                    || lower.contains("two out of the following")
+                {
+                    // Split: courses mentioned before "any two" are required (AllOf),
+                    // courses mentioned after are the pool (NOf(2)).
+                    // In practice: first course in list is required, rest are pool.
+                    // Keep only the pool courses in this rule; the required course
+                    // stays as a separate AllOf entry.
+                    let mut pool_courses = Vec::new();
+                    let mut required_courses = Vec::new();
+
+                    // The first course code in the <li> text is typically the required one
+                    if course_codes.len() >= 3 {
+                        let required_code = &course_codes[0];
+                        for c in &rule.courses {
+                            if c.code == *required_code {
+                                required_courses.push(c.clone());
+                            } else if code_set.contains(c.code.as_str()) {
+                                pool_courses.push(c.clone());
+                            } else {
+                                // Courses not mentioned in the <li> — keep as required
+                                required_courses.push(c.clone());
+                            }
+                        }
+                    }
+
+                    if pool_courses.len() >= 2 {
+                        // Replace this rule with the required courses as AllOf
+                        rule.courses = required_courses;
+                        rule.rule_type = RuleType::AllOf;
+
+                        // Add a new NOf(2) rule for the pool
+                        group.rules.push(CourseRule {
+                            rule_type: RuleType::NOf(2),
+                            heading: None,
+                            courses: pool_courses,
+                            alternative: None,
+                            description: None,
+                        });
+                        return; // Only fix the first matching rule
+                    }
+                } else if lower.contains("any one of")
+                    || lower.contains("one of the following")
+                {
+                    rule.rule_type = RuleType::OneOf;
+                    return;
+                }
+            }
+        }
+    }
 }
 
 fn parse_credits_from_prose(text: &str) -> Option<RuleType> {
@@ -1208,5 +1407,78 @@ mod tests {
         let course = &reqs.sections[0].subsections[0].groups[0].rules[0].courses[0];
         assert_eq!(course.code, "CSE 185E");
         assert_eq!(course.cross_listed.as_deref(), Some("CSE 185S"));
+    }
+
+    #[test]
+    fn test_extract_course_codes_from_text() {
+        let codes = extract_course_codes_from_text(
+            "A core requirement must be met by taking CSE 200, and any two out of the following three courses: CSE 201, CSE 210A, and CSE 220."
+        );
+        assert_eq!(codes, vec!["CSE 200", "CSE 201", "CSE 210A", "CSE 220"]);
+
+        let codes = extract_course_codes_from_text("MATH 19A and MATH 19B");
+        assert_eq!(codes, vec!["MATH 19A", "MATH 19B"]);
+
+        let codes = extract_course_codes_from_text("No courses here.");
+        assert!(codes.is_empty());
+    }
+
+    #[test]
+    fn test_fix_allof_from_selection() {
+        // Simulate: table parsed as AllOf [CSE 200, CSE 201, CSE 210A, CSE 220],
+        // then <ol><li> says "CSE 200, and any two out of CSE 201, CSE 210A, CSE 220"
+        let html = r#"
+        <html><body>
+        <div id="degree-req-2">
+            <h3 class="sc-RequiredCoursesHeading1">Course Requirements</h3>
+            <table>
+                <tr>
+                    <td class="sc-coursenumber"><a class="sc-courselink" href="/courses/cse/cse-200">CSE 200</a></td>
+                    <td class="sc-coursetitle">Research and Teaching</td>
+                    <td><p class="credits">3</p></td>
+                </tr>
+                <tr>
+                    <td class="sc-coursenumber"><a class="sc-courselink" href="/courses/cse/cse-201">CSE 201</a></td>
+                    <td class="sc-coursetitle">Analysis of Algorithms</td>
+                    <td><p class="credits">5</p></td>
+                </tr>
+                <tr>
+                    <td class="sc-coursenumber"><a class="sc-courselink" href="/courses/cse/cse-210a">CSE 210A</a></td>
+                    <td class="sc-coursetitle">Programming Languages</td>
+                    <td><p class="credits">5</p></td>
+                </tr>
+                <tr>
+                    <td class="sc-coursenumber"><a class="sc-courselink" href="/courses/cse/cse-220">CSE 220</a></td>
+                    <td class="sc-coursetitle">Computer Architecture</td>
+                    <td><p class="credits">5</p></td>
+                </tr>
+            </table>
+            <h4 class="sc-RequiredCoursesHeading2">Thesis Plan I</h4>
+            <ol>
+                <li>A core requirement must be met by taking CSE 200, and any two out of the following three courses: CSE 201, CSE 210A, and CSE 220.</li>
+                <li>Some other requirement text.</li>
+            </ol>
+        </div>
+        </body></html>"#;
+
+        let reqs = parse_requirements(html, "Test MS", "http://test", &DegreeType::MS).unwrap();
+        let section = &reqs.sections[0];
+
+        // The first subsection (from the table, before h4) should have been fixed
+        let first_sub = &section.subsections[0];
+        assert!(!first_sub.groups.is_empty(), "should have groups from the table");
+        let group = &first_sub.groups[0];
+
+        // Should now have 2 rules: AllOf [CSE 200] + NOf(2) [CSE 201, CSE 210A, CSE 220]
+        assert_eq!(group.rules.len(), 2, "expected 2 rules after fix, got {}: {:?}", group.rules.len(), group.rules);
+        assert_eq!(group.rules[0].rule_type, RuleType::AllOf);
+        assert_eq!(group.rules[0].courses.len(), 1);
+        assert_eq!(group.rules[0].courses[0].code, "CSE 200");
+        assert_eq!(group.rules[1].rule_type, RuleType::NOf(2));
+        assert_eq!(group.rules[1].courses.len(), 3);
+        let pool_codes: Vec<&str> = group.rules[1].courses.iter().map(|c| c.code.as_str()).collect();
+        assert!(pool_codes.contains(&"CSE 201"));
+        assert!(pool_codes.contains(&"CSE 210A"));
+        assert!(pool_codes.contains(&"CSE 220"));
     }
 }

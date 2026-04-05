@@ -17,6 +17,7 @@ use crate::auth::AuthManager;
 use crate::cache::CacheStore;
 use crate::classrooms::{ClassroomService, SearchClassroomsRequest};
 use crate::config::Config;
+use crate::degrees::{DegreeProgressRequest, DegreeRequirementsRequest, DegreeService};
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
 use crate::events::{EventsService, SearchEventsRequest, UpcomingEventsRequest};
 #[cfg(feature = "auth")]
@@ -36,6 +37,7 @@ pub struct ServiceContext {
     pub cache: Arc<CacheStore>,
     #[cfg(feature = "auth")]
     pub auth: Arc<AuthManager>,
+    pub degrees: Arc<DegreeService>,
     pub dining: Arc<DiningService>,
     pub events: Arc<EventsService>,
     pub recreation: Arc<RecreationService>,
@@ -56,6 +58,7 @@ pub struct SlugMcpServer {
     #[cfg(feature = "auth")]
     /// Per-session auth state for SSE mode (set via `authenticate` tool).
     session_auth: Arc<RwLock<Option<SessionData>>>,
+    degrees: Arc<DegreeService>,
     dining: Arc<DiningService>,
     events: Arc<EventsService>,
     recreation: Arc<RecreationService>,
@@ -75,6 +78,7 @@ impl SlugMcpServer {
             auth: ctx.auth,
             #[cfg(feature = "auth")]
             session_auth: Arc::new(RwLock::new(None)),
+            degrees: ctx.degrees,
             dining: ctx.dining,
             events: ctx.events,
             recreation: ctx.recreation,
@@ -327,6 +331,40 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
+            // ─── Degree Planner Tools ───
+
+            #[tool(description = "Get degree requirements for a UCSC program. Returns the full course requirement tree including lower-division, upper-division, electives, and comprehensive requirements. Includes GE requirements for undergraduate programs. Supports all BS/BA/MS/MA programs.")]
+            async fn get_degree_requirements(
+                &self,
+                Parameters(req): Parameters<DegreeRequirementsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .degrees
+                    .get_requirements(&req.program)
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Check progress toward completing a UCSC degree. Provide your program and list of completed courses to see which requirements are satisfied vs remaining. Handles all selection rules (all-of, one-of, either-or). Checks GE progress for undergrad programs.")]
+            async fn check_degree_progress(
+                &self,
+                Parameters(req): Parameters<DegreeProgressRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .degrees
+                    .check_progress(
+                        &req.program,
+                        &req.completed_courses,
+                        req.completed_ge.as_deref(),
+                    )
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
             // ─── Transit Tools ───
 
             #[tool(description = "Get real-time bus arrival predictions for a Santa Cruz Metro stop. Shows ETAs, delays, passenger load, and trip status (canceled/express). Search by stop name; optionally filter by route. All UCSC students ride free with student ID.")]
@@ -529,13 +567,15 @@ impl ServerHandler for SlugMcpServer {
              meal plan balances, campus events, recreation facility occupancy, \
              library study room availability and booking, class schedule search, \
              campus directory lookup, classroom search, real-time bus arrival \
-             predictions, and transit service alerts for UC Santa Cruz students."
+             predictions, transit service alerts, degree requirements lookup, \
+             and degree progress tracking for UC Santa Cruz students."
         } else {
             "UCSC campus services MCP server (public mode). Provides dining menus, \
              nutrition info, campus events, recreation facility occupancy, \
              library study room availability, class schedule search, \
              campus directory lookup, classroom search, real-time bus arrival \
-             predictions, and transit service alerts for UC Santa Cruz students."
+             predictions, transit service alerts, degree requirements lookup, \
+             and degree progress tracking for UC Santa Cruz students."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

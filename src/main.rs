@@ -14,6 +14,7 @@ mod auth;
 mod cache;
 mod classrooms;
 mod config;
+mod degrees;
 mod dining;
 mod events;
 mod library;
@@ -126,6 +127,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         cache: cache.clone(),
         #[cfg(feature = "auth")]
         auth,
+        degrees: Arc::new(degrees::DegreeService::new(http.clone(), cache.clone())),
         dining: Arc::new(dining::DiningService::new(http.clone(), cache.clone())),
         events: Arc::new(events::EventsService::new(http.clone(), cache.clone())),
         recreation: Arc::new(recreation::RecreationService::new(http.clone(), cache.clone())),

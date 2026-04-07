@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::degrees::{DegreeProgressRequest, DegreeRequirementsRequest, DegreeService};
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
 use crate::events::{EventsService, SearchEventsRequest, UpcomingEventsRequest};
+use crate::slugloop::SlugLoopService;
 #[cfg(feature = "auth")]
 use crate::library::BookStudyRoomRequest;
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
@@ -45,6 +46,7 @@ pub struct ServiceContext {
     pub academics: Arc<AcademicsService>,
     pub classrooms: Arc<ClassroomService>,
     pub transit: Arc<TransitService>,
+    pub slugloop: Arc<SlugLoopService>,
 }
 
 #[derive(Clone)]
@@ -66,6 +68,7 @@ pub struct SlugMcpServer {
     academics: Arc<AcademicsService>,
     classrooms: Arc<ClassroomService>,
     transit: Arc<TransitService>,
+    slugloop: Arc<SlugLoopService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -86,6 +89,7 @@ impl SlugMcpServer {
             academics: ctx.academics,
             classrooms: ctx.classrooms,
             transit: ctx.transit,
+            slugloop: ctx.slugloop,
             tool_router: Self::tool_router(),
         }
     }
@@ -129,6 +133,22 @@ pub struct ServiceAlertRequest {
     pub route: Option<String>,
     /// Stop ID to check alerts for (e.g., "1234"). At least one of route or stop_id should be specified.
     pub stop_id: Option<String>,
+}
+
+// ─── SlugLoop (Campus Loop Buses) ───
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LoopBusLocationRequest {
+    /// Filter by direction: "CW" (clockwise) or "CCW" (counter-clockwise). If omitted, shows all active buses.
+    pub direction: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LoopBusEtaRequest {
+    /// Stop name to check ETAs for (e.g., "Science Hill", "Oakes", "9/10", "Main Entrance").
+    pub stop: String,
+    /// Filter by direction: "CW" (clockwise) or "CCW" (counter-clockwise). If omitted, searches both directions.
+    pub direction: Option<String>,
 }
 
 // ─── Tool definitions ───
@@ -395,6 +415,36 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
+            // ─── Campus Loop Bus Tools ───
+
+            #[tool(description = "Get real-time locations of UCSC campus loop buses. Shows which buses are active, their current position (nearest stop), heading, and direction (CW/CCW). Data from SlugLoop.")]
+            async fn get_loop_bus_locations(
+                &self,
+                Parameters(req): Parameters<LoopBusLocationRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .slugloop
+                    .get_bus_locations(req.direction.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get estimated arrival times for UCSC campus loop buses at a specific stop. Search by stop name (e.g., \"Science Hill\", \"Oakes\", \"Main Entrance\"). Optionally filter by direction (CW/CCW). Data from SlugLoop.")]
+            async fn get_loop_bus_eta(
+                &self,
+                Parameters(req): Parameters<LoopBusEtaRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .slugloop
+                    .get_stop_eta(&req.stop, req.direction.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
             // ─── Classroom Tools ───
 
             #[tool(description = "Search UCSC classrooms by capacity, building, technology, and features. Find rooms with specific AV equipment or seating arrangements.")]
@@ -567,15 +617,17 @@ impl ServerHandler for SlugMcpServer {
              meal plan balances, campus events, recreation facility occupancy, \
              library study room availability and booking, class schedule search, \
              campus directory lookup, classroom search, real-time bus arrival \
-             predictions, transit service alerts, degree requirements lookup, \
-             and degree progress tracking for UC Santa Cruz students."
+             predictions, transit service alerts, campus loop bus tracking, \
+             degree requirements lookup, and degree progress tracking for \
+             UC Santa Cruz students."
         } else {
             "UCSC campus services MCP server (public mode). Provides dining menus, \
              nutrition info, campus events, recreation facility occupancy, \
              library study room availability, class schedule search, \
              campus directory lookup, classroom search, real-time bus arrival \
-             predictions, transit service alerts, degree requirements lookup, \
-             and degree progress tracking for UC Santa Cruz students."
+             predictions, transit service alerts, campus loop bus tracking, \
+             degree requirements lookup, and degree progress tracking for \
+             UC Santa Cruz students."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

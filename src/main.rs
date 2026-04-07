@@ -20,6 +20,7 @@ mod events;
 mod library;
 mod recreation;
 mod server;
+mod slugloop;
 mod transit;
 
 #[derive(Parser)]
@@ -135,6 +136,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         academics: Arc::new(academics::AcademicsService::new(http.clone(), cache.clone())),
         classrooms: Arc::new(classrooms::ClassroomService::new(http.clone(), cache.clone())),
         transit: Arc::new(transit::TransitService::new(http.clone(), cache.clone(), bustime_key)),
+        slugloop: Arc::new(slugloop::SlugLoopService::new(http.clone(), cache.clone())),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

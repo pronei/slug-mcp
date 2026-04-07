@@ -1,20 +1,19 @@
 use std::fmt;
-use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use scraper::{Html, Selector};
 
-fn sel<'a>(cell: &'a OnceLock<Selector>, s: &str) -> &'a Selector {
-    cell.get_or_init(|| Selector::parse(s).expect("hardcoded selector"))
-}
+use crate::util::{sel, selectors};
 
-static SEL_PANEL: OnceLock<Selector> = OnceLock::new();
-static SEL_CLASS_LINK: OnceLock<Selector> = OnceLock::new();
-static SEL_STATUS_IMG: OnceLock<Selector> = OnceLock::new();
-static SEL_PANEL_BODY: OnceLock<Selector> = OnceLock::new();
-static SEL_BOLD: OnceLock<Selector> = OnceLock::new();
-static SEL_DIR_ROW: OnceLock<Selector> = OnceLock::new();
-static SEL_DIR_LINK: OnceLock<Selector> = OnceLock::new();
+selectors! {
+    SEL_PANEL => "div.panel.panel-default",
+    SEL_CLASS_LINK => "a[id^='class_id_']",
+    SEL_STATUS_IMG => "img[alt]",
+    SEL_PANEL_BODY => "div.panel-body",
+    SEL_BOLD => "b",
+    SEL_DIR_ROW => "tr",
+    SEL_DIR_LINK => "a[href]",
+}
 
 const CLASS_SEARCH_URL: &str = "https://pisa.ucsc.edu/class_search/index.php";
 const DIRECTORY_SEARCH_URL: &str = "https://campusdirectory.ucsc.edu/cd_search";

@@ -1,18 +1,16 @@
 use std::fmt;
 use std::fmt::Write;
-use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
-use scraper::{Html, Selector};
+use scraper::Html;
 
 use super::locations::BuildingLocation;
+use crate::util::{sel, selectors};
 
-fn sel<'a>(cell: &'a OnceLock<Selector>, s: &str) -> &'a Selector {
-    cell.get_or_init(|| Selector::parse(s).expect("hardcoded selector"))
+selectors! {
+    SEL_POST_ITEM => "li.wp-block-post",
+    SEL_TITLE_LINK => "a",
 }
-
-static SEL_POST_ITEM: OnceLock<Selector> = OnceLock::new();
-static SEL_TITLE_LINK: OnceLock<Selector> = OnceLock::new();
 
 const CLASSROOMS_URL: &str = "https://classrooms.ucsc.edu/classroomlist/";
 

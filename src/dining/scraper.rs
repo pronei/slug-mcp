@@ -1,30 +1,29 @@
 use std::fmt;
 use std::fmt::Write;
+
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
-use scraper::{Html, Selector};
+use scraper::Html;
 
-// --- Static selectors (parsed once, reused across calls) ---
+use crate::util::{sel, selectors};
 
-fn sel<'a>(cell: &'a OnceLock<Selector>, s: &str) -> &'a Selector {
-    cell.get_or_init(|| Selector::parse(s).expect("hardcoded selector"))
+selectors! {
+    SEL_ANCHOR => "a",
+    SEL_LINK => "a[href]",
+    SEL_IMG => "img",
+    SEL_TD => "td",
+    SEL_ALL_MENU => "div.shortmenumeals, div.shortmenucats, div.shortmenurecipes",
+    SEL_RECIPE => "a[href*='recipe']",
+    SEL_INGREDIENTS => "span.labelingredientsvalue",
+    SEL_ALLERGENS => "span.labelallergensvalue",
+    SEL_SHORT_MENU => "div.shortmenumeals",
+    SEL_SCHEMA => "div[itemtype='http://schema.org/FoodEstablishment']",
+    SEL_NAME => "meta[itemprop='name']",
+    SEL_HOURS => "meta[itemprop='openingHours']",
+    SEL_SPEC => "div[itemtype='http://schema.org/OpeningHoursSpecification']",
+    SEL_TIME => "time",
 }
-
-static SEL_ANCHOR: OnceLock<Selector> = OnceLock::new();
-static SEL_LINK: OnceLock<Selector> = OnceLock::new();
-static SEL_IMG: OnceLock<Selector> = OnceLock::new();
-static SEL_TD: OnceLock<Selector> = OnceLock::new();
-static SEL_ALL_MENU: OnceLock<Selector> = OnceLock::new();
-static SEL_RECIPE: OnceLock<Selector> = OnceLock::new();
-static SEL_INGREDIENTS: OnceLock<Selector> = OnceLock::new();
-static SEL_ALLERGENS: OnceLock<Selector> = OnceLock::new();
-static SEL_SHORT_MENU: OnceLock<Selector> = OnceLock::new();
-static SEL_SCHEMA: OnceLock<Selector> = OnceLock::new();
-static SEL_NAME: OnceLock<Selector> = OnceLock::new();
-static SEL_HOURS: OnceLock<Selector> = OnceLock::new();
-static SEL_SPEC: OnceLock<Selector> = OnceLock::new();
-static SEL_TIME: OnceLock<Selector> = OnceLock::new();
 
 // --- Dining hall definitions ---
 

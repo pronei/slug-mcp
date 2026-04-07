@@ -98,16 +98,24 @@ impl DiningService {
             DINING_HALLS.iter().take(5).collect()
         };
 
-        let mut menus = Vec::new();
-        for hall in halls {
-            let cache_key = format!("dining:menu:{}:{}", hall.location_num, cache_date);
-            let http = &self.http;
-            let menu = self
-                .cache
-                .get_or_fetch(&cache_key, 3600, || scrape_menu(http, hall, scraper_date))
-                .await?;
-            menus.push(menu);
-        }
+        let futures: Vec<_> = halls
+            .iter()
+            .map(|hall| {
+                let cache_key = format!("dining:menu:{}:{}", hall.location_num, cache_date);
+                let cache = &self.cache;
+                let http = &self.http;
+                let scraper_date = scraper_date.clone();
+                async move {
+                    cache
+                        .get_or_fetch(&cache_key, 3600, || scrape_menu(http, hall, scraper_date.as_deref()))
+                        .await
+                }
+            })
+            .collect();
+        let mut menus: Vec<_> = futures_util::future::join_all(futures)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
 
         // Filter by meal if specified
         if let Some(meal_filter) = meal {

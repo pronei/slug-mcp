@@ -1,17 +1,16 @@
 use std::fmt;
-use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use scraper::{Html, Selector};
 
-fn sel<'a>(cell: &'a OnceLock<Selector>, s: &str) -> &'a Selector {
-    cell.get_or_init(|| Selector::parse(s).expect("hardcoded selector"))
-}
+use crate::util::{sel, selectors};
 
-static SEL_CANVAS: OnceLock<Selector> = OnceLock::new();
-static SEL_STRONG: OnceLock<Selector> = OnceLock::new();
-static SEL_SCHEDULE_ROW: OnceLock<Selector> = OnceLock::new();
-static SEL_TD: OnceLock<Selector> = OnceLock::new();
+selectors! {
+    SEL_CANVAS => "canvas.occupancy-chart",
+    SEL_STRONG => "strong",
+    SEL_SCHEDULE_ROW => "tr",
+    SEL_TD => "td",
+}
 
 const OCCUPANCY_URL: &str = "https://campusrec.ucsc.edu/FacilityOccupancy";
 const SCHEDULE_URL: &str = "https://campusrec.ucsc.edu/Facility/GetSchedule";

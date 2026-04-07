@@ -5,11 +5,13 @@
 ### Added
 
 #### Campus Service Modules
+- **Eventbrite event search** — search community events, concerts, meetups, and workshops near Santa Cruz (25-mile radius) via Eventbrite scraper. Returns event details with direct registration links.
 - **Recreation facility occupancy** — live headcounts for UCSC gym, pool, fields, climbing wall, and wellness center from `campusrec.ucsc.edu`. Includes facility schedule lookup.
 - **Library study room availability** — room-by-room time slot availability for McHenry Library and Science & Engineering Library via LibCal. Includes authenticated room booking through UCSC Shibboleth SSO.
 - **Class search** — search the UCSC class schedule via PISA (`pisa.ucsc.edu`). Filter by subject, course number, instructor, title, GE requirement. Returns enrollment counts, meeting times, locations, and instruction mode.
 - **Campus directory** — look up UCSC faculty, staff, and graduate student contact info, office locations, and department affiliations.
 - **Classroom directory** — search general-assignment classrooms by capacity, building, seating style, AV equipment, and physical features.
+- **Shared HTML utility module** (`src/util.rs`) — reusable `clean_html` and `extract_text` helpers for scraper modules.
 
 #### Multi-User Auth (SSE Deployment)
 - **`slug-mcp export-token`** CLI subcommand — runs browser login locally (CruzID + Duo MFA), prints a portable base64 auth token to stdout.
@@ -17,9 +19,16 @@
 - **`slug-mcp serve`** subcommand — explicit entry point for stdio/SSE mode (bare `slug-mcp` still defaults to stdio for backward compatibility).
 
 ### Changed
+- **Parallelized dining and library fetches** — dining menu and library availability scraping now use `futures_util::future::join_all` for concurrent requests instead of sequential loops.
+- **Improved event tool descriptions** — campus event and Eventbrite tools now cross-reference each other so LLMs call both for complete event coverage.
+- **Server instructions** updated to guide LLMs to pair campus + Eventbrite event tools together.
+- Scrapers refactored to use shared `util.rs` helpers, reducing HTML-handling duplication across modules.
 - Auth-dependent tools (`get_meal_balance`, `book_study_room`) now check both per-session token (SSE) and disk session (stdio), with updated help messages mentioning both `login` and `authenticate`.
 - `check_auth` reports token-based auth separately from disk-based auth.
 - Replaced legacy CAS module with CDP-based browser automation supporting full Shibboleth + Duo MFA flow.
+
+### Removed
+- **SlugLoop campus loop bus module** — removed `src/slugloop/` (api.rs, mod.rs, stops.rs) and associated tool handlers (`get_loop_bus_locations`, `get_loop_bus_eta`). The SlugLoop API was decommissioned (site converted to React SPA with Firebase backend, no public REST endpoints). SC Metro BusTime API remains available for metro bus tracking.
 
 ## [0.1.0] — 2026-03-19
 

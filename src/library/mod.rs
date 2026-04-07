@@ -63,20 +63,33 @@ impl LibraryService {
             LIBRARIES.iter().map(|l| (l.lid, l.name)).collect()
         };
 
-        let mut outputs = Vec::new();
+        let futures: Vec<_> = lids
+            .iter()
+            .map(|(lid, _name)| {
+                let cache_key = format!("library:availability:{}:{}", lid, date);
+                let lid = *lid;
+                let cache = &self.cache;
+                let http = &self.http;
+                let date = date.to_string();
+                async move {
+                    cache
+                        .get_or_fetch(&cache_key, 300, || scrape_availability(http, lid, &date))
+                        .await
+                }
+            })
+            .collect();
+        let availabilities: Vec<RoomAvailability> = futures_util::future::join_all(futures)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
 
-        for (lid, _name) in &lids {
-            let cache_key = format!("library:availability:{}:{}", lid, date);
-            let http = &self.http;
-            let lid = *lid;
-            let avail: RoomAvailability = self
-                .cache
-                .get_or_fetch(&cache_key, 300, || scrape_availability(http, lid, date))
-                .await?;
-            outputs.push(avail.to_string());
-        }
+        let output = availabilities
+            .iter()
+            .map(|a| a.to_string())
+            .collect::<Vec<_>>()
+            .join("\n\n");
 
-        Ok(outputs.join("\n\n"))
+        Ok(output)
     }
 
     #[cfg(feature = "auth")]

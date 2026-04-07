@@ -1,6 +1,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::util;
+
 const EVENTS_API_URL: &str =
     "https://events.ucsc.edu/wp-json/tribe/events/v1/events";
 
@@ -138,12 +140,8 @@ impl TribeEvent {
         out.push_str(&format!("- **Link**: {}\n", self.url));
 
         if let Some(desc) = &self.description {
-            let clean = strip_html_tags(desc);
-            let trimmed = if clean.len() > 300 {
-                format!("{}...", &clean[..300])
-            } else {
-                clean
-            };
+            let clean = util::strip_html_tags(desc);
+            let trimmed = util::truncate(&clean, 300);
             if !trimmed.is_empty() {
                 out.push_str(&format!("- **Description**: {}\n", trimmed));
             }
@@ -151,22 +149,4 @@ impl TribeEvent {
 
         out
     }
-}
-
-fn strip_html_tags(html: &str) -> String {
-    let mut result = String::with_capacity(html.len());
-    let mut in_tag = false;
-    for c in html.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => result.push(c),
-            _ => {}
-        }
-    }
-    // Collapse whitespace
-    result
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
 }

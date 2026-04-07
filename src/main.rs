@@ -21,6 +21,7 @@ mod library;
 mod recreation;
 mod server;
 mod transit;
+mod util;
 
 #[derive(Parser)]
 #[command(name = "slug-mcp", about = "MCP server for UCSC campus services")]

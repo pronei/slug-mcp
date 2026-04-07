@@ -19,7 +19,7 @@ use crate::classrooms::{ClassroomService, SearchClassroomsRequest};
 use crate::config::Config;
 use crate::degrees::{DegreeProgressRequest, DegreeRequirementsRequest, DegreeService};
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
-use crate::events::{EventsService, SearchEventsRequest, UpcomingEventsRequest};
+use crate::events::{EventsService, SearchEventbriteRequest, SearchEventsRequest, UpcomingEventsRequest};
 #[cfg(feature = "auth")]
 use crate::library::BookStudyRoomRequest;
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
@@ -192,7 +192,7 @@ macro_rules! define_tools {
 
             // ─── Events Tools ───
 
-            #[tool(description = "Search for UCSC campus events by keyword or category")]
+            #[tool(description = "Search for UCSC campus events by keyword or category. For broader event discovery, also call search_eventbrite_events to include off-campus and community events.")]
             async fn search_events(
                 &self,
                 Parameters(req): Parameters<SearchEventsRequest>,
@@ -220,7 +220,7 @@ macro_rules! define_tools {
                 )]))
             }
 
-            #[tool(description = "Get upcoming UCSC campus events")]
+            #[tool(description = "Get upcoming UCSC campus events. For a complete picture of what's happening in the area, also call search_eventbrite_events.")]
             async fn get_upcoming_events(
                 &self,
                 Parameters(req): Parameters<UpcomingEventsRequest>,
@@ -241,6 +241,34 @@ macro_rules! define_tools {
                 let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "# Upcoming UCSC Events\n\n{}",
+                    formatted.join("\n---\n\n")
+                ))]))
+            }
+
+            #[tool(description = "Search Eventbrite for community events, concerts, meetups, and workshops around Santa Cruz (25-mile radius). Complements UCSC campus event tools — call both for complete event coverage. Returns direct registration links.")]
+            async fn search_eventbrite_events(
+                &self,
+                Parameters(req): Parameters<SearchEventbriteRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let events = self
+                    .events
+                    .search_eventbrite(
+                        req.query.as_deref(),
+                        req.location.as_deref(),
+                        req.limit,
+                    )
+                    .await
+                    .map_err(internal_err)?;
+
+                if events.is_empty() {
+                    return Ok(CallToolResult::success(vec![Content::text(
+                        "No Eventbrite events found matching your search near Santa Cruz.",
+                    )]));
+                }
+
+                let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "# Eventbrite Events near Santa Cruz\n\n{}",
                     formatted.join("\n---\n\n")
                 ))]))
             }
@@ -564,18 +592,21 @@ impl ServerHandler for SlugMcpServer {
     fn get_info(&self) -> ServerInfo {
         let instructions = if cfg!(feature = "auth") {
             "UCSC campus services MCP server. Provides dining menus, nutrition info, \
-             meal plan balances, campus events, recreation facility occupancy, \
-             library study room availability and booking, class schedule search, \
-             campus directory lookup, classroom search, real-time bus arrival \
-             predictions, transit service alerts, degree requirements lookup, \
-             and degree progress tracking for UC Santa Cruz students."
+             meal plan balances, campus events and Eventbrite community events \
+             (use both event tools together for complete coverage), recreation \
+             facility occupancy, library study room availability and booking, \
+             class schedule search, campus directory lookup, classroom search, \
+             real-time bus arrival predictions, transit service alerts, \
+             degree requirements lookup, and degree progress tracking for \
+             UC Santa Cruz students."
         } else {
             "UCSC campus services MCP server (public mode). Provides dining menus, \
-             nutrition info, campus events, recreation facility occupancy, \
-             library study room availability, class schedule search, \
-             campus directory lookup, classroom search, real-time bus arrival \
-             predictions, transit service alerts, degree requirements lookup, \
-             and degree progress tracking for UC Santa Cruz students."
+             nutrition info, campus events and Eventbrite community events \
+             (use both event tools together for complete coverage), recreation \
+             facility occupancy, library study room availability, class schedule \
+             search, campus directory lookup, classroom search, real-time bus \
+             arrival predictions, transit service alerts, degree requirements \
+             lookup, and degree progress tracking for UC Santa Cruz students."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

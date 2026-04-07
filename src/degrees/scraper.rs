@@ -1,21 +1,20 @@
 use std::fmt;
-use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use scraper::{ElementRef, Html, Selector};
 
-fn sel<'a>(cell: &'a OnceLock<Selector>, s: &str) -> &'a Selector {
-    cell.get_or_init(|| Selector::parse(s).expect("hardcoded selector"))
-}
+use crate::util::{sel, selectors};
 
-static SEL_REQ_CONTAINER: OnceLock<Selector> = OnceLock::new();
-static SEL_TR: OnceLock<Selector> = OnceLock::new();
-static SEL_COURSE_NUM: OnceLock<Selector> = OnceLock::new();
-static SEL_COURSE_LINK: OnceLock<Selector> = OnceLock::new();
-static SEL_COURSE_TITLE: OnceLock<Selector> = OnceLock::new();
-static SEL_CREDITS: OnceLock<Selector> = OnceLock::new();
-static SEL_CROSSLISTED: OnceLock<Selector> = OnceLock::new();
-static SEL_PROGRAM_LINK: OnceLock<Selector> = OnceLock::new();
+selectors! {
+    SEL_REQ_CONTAINER => "div#degree-req-2",
+    SEL_TR => "tr",
+    SEL_COURSE_NUM => "td.sc-coursenumber",
+    SEL_COURSE_LINK => "a.sc-courselink",
+    SEL_COURSE_TITLE => "td.sc-coursetitle",
+    SEL_CREDITS => "p.credits",
+    SEL_CROSSLISTED => "div.sc-crosslisted",
+    SEL_PROGRAM_LINK => "div#main ul li a",
+}
 
 const CATALOG_BASE: &str = "https://catalog.ucsc.edu";
 

@@ -41,7 +41,7 @@ deploy:
     - mkdir -p ~/.ssh
     - cp "${SSH_PRIVATE_KEY}" ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
-    - echo "${VM_HOST_KEY}" >> ~/.ssh/known_hosts
+    - cat "${VM_HOST_KEY}" >> ~/.ssh/known_hosts
   script:
     - scp -o StrictHostKeyChecking=yes target/release/${BINARY_NAME} ${VM_USER}@${VM_HOST}:/tmp/${BINARY_NAME}.new
     - |

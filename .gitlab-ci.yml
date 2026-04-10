@@ -43,8 +43,8 @@ deploy:
     - chmod 600 ~/.ssh/id_ed25519
     - cat "${VM_HOST_KEY}" >> ~/.ssh/known_hosts
   script:
-    - echo "DEBUG - Target host: ${VM_HOST}"
-    - echo "DEBUG - Target user: ${VM_USER}"
+    - echo "DEBUG - Target host ${VM_HOST}"
+    - echo "DEBUG - Target user ${VM_USER}"
     - echo "DEBUG - Known hosts content:"
     - cat ~/.ssh/known_hosts
     - echo "DEBUG - Resolving hostname:"

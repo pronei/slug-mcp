@@ -43,15 +43,24 @@ deploy:
     - chmod 600 ~/.ssh/id_ed25519
     - cat "${VM_HOST_KEY}" >> ~/.ssh/known_hosts
   script:
-    - echo "DEBUG - Target host ${VM_HOST}"
-    - echo "DEBUG - Target user ${VM_USER}"
-    - echo "DEBUG - Known hosts content:"
+    - 'echo "DEBUG - Target host: ${VM_HOST}"'
+    - 'echo "DEBUG - Target user: ${VM_USER}"'
+    - 'echo "DEBUG - Known hosts content:"'
     - cat ~/.ssh/known_hosts
-    - echo "DEBUG - Resolving hostname:"
+    - 'echo "DEBUG - Runner egress IP (what the VM firewall sees):"'
+    - apk add --no-cache curl bind-tools busybox-extras || true
+    - curl -s https://ifconfig.me || curl -s https://api.ipify.org || echo "egress IP lookup failed"
+    - echo ""
+    - 'echo "DEBUG - Resolving hostname:"'
     - nslookup ${VM_HOST} || echo "nslookup not available"
+    - 'echo "DEBUG - ICMP ping:"'
     - ping -c 3 -W 5 ${VM_HOST} || echo "ping failed or timed out"
-    - echo "DEBUG - Testing SSH connectivity:"
-    - ssh -v -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ${VM_USER}@${VM_HOST} echo "SSH OK" || echo "SSH connection failed"
+    - 'echo "DEBUG - TCP port 22 reachability (nc):"'
+    - nc -vz -w 10 ${VM_HOST} 22 || echo "nc to port 22 failed"
+    - 'echo "DEBUG - TCP port 443 reachability (nc) for comparison:"'
+    - nc -vz -w 10 ${VM_HOST} 443 || echo "nc to port 443 failed"
+    - 'echo "DEBUG - Verbose SSH handshake:"'
+    - ssh -vvv -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ${VM_USER}@${VM_HOST} echo "SSH OK" || echo "SSH connection failed"
     - scp -o StrictHostKeyChecking=yes -o ConnectTimeout=15 target/release/${BINARY_NAME} ${VM_USER}@${VM_HOST}:/tmp/${BINARY_NAME}.new
     - |
       ssh ${VM_USER}@${VM_HOST} << 'EOF'

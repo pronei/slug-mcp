@@ -1,0 +1,200 @@
+<?xml version="1.0" ?>
+<State>
+<Center ID = "GGHB">
+<Dispatch ID = "MYCC">
+<Log ID = "260410MY0077">
+			<LogTime>"Apr 10 2026  7:41AM"</LogTime>
+			<LogType>"1125A-Animal Hazard"</LogType>
+			<Location>"Sr1 S / Ocean Av"</Location>
+			<LocationDesc>"NB 1000 YARDS JSO OCEAN AVE"</LocationDesc>
+			<Area>"Monterey"</Area>
+			<ThomasBrothers>""</ThomasBrothers>
+			<LATLON>"36556389:121911111"</LATLON>
+			<LogDetails>
+		<details>
+			<DetailTime>"Apr 10 2026  7:43AM"</DetailTime>
+			<IncidentDetail>"[3] NEG ASSOC VEHS"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:42AM"</DetailTime>
+			<IncidentDetail>"[1]  1144 DEER 1125 NB LANE"</IncidentDetail>
+		</details><units>
+			<UnitTime>"Apr 10 2026  7:45AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:45AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units></LogDetails></Log>
+<Log ID = "260410MY0078">
+			<LogTime>"Apr 10 2026  7:41AM"</LogTime>
+			<LogType>"1183-Trfc Collision-Unkn Inj"</LogType>
+			<Location>"282 Maher Rd"</Location>
+			<LocationDesc>""</LocationDesc>
+			<Area>"Monterey"</Area>
+			<ThomasBrothers>""</ThomasBrothers>
+			<LATLON>"36849560:121679708"</LATLON>
+			<LogDetails>
+		<details>
+			<DetailTime>"Apr 10 2026  7:42AM"</DetailTime>
+			<IncidentDetail>"[3] POSS 1125   "</IncidentDetail>
+		</details><units>
+			<UnitTime>"Apr 10 2026  7:57AM"</UnitTime>
+			<UnitDetail>"Unit At Scene"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:47AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:47AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:44AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:44AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units></LogDetails></Log>
+<Log ID = "260410MY0070">
+			<LogTime>"Apr 10 2026  7:26AM"</LogTime>
+			<LogType>"1179-Trfc Collision-1141 Enrt"</LogType>
+			<Location>"SR1 N / TWIN BRIDGES"</Location>
+			<LocationDesc>"NB AT TWIN BRIDGES"</LocationDesc>
+			<Area>"Monterey"</Area>
+			<ThomasBrothers>""</ThomasBrothers>
+			<LATLON>"36731111:121783056"</LATLON>
+			<LogDetails>
+		<details>
+			<DetailTime>"Apr 10 2026  7:57AM"</DetailTime>
+			<IncidentDetail>"[52] A27-074 1185 97 AT SCENE  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:47AM"</DetailTime>
+			<IncidentDetail>"[49] A27-074 FIRE EXTRACATED PARTY / FSP MOVING VEH TO PEZZINI FARMS / EXITING NOW [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:39AM"</DetailTime>
+			<IncidentDetail>"[47] A27-074 OTHER UNITS CAN 1022 / SUBJ STUCK IN TEH #1 WILL BE EXTRICATED BY FIRE / CONT FIRE FIRE / 74 AND FSP SHUTTING DOWN #1 / #2 IS OPEN / 1185 FORD MUST MACH BO RT REAR TIRE [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:38AM"</DetailTime>
+			<IncidentDetail>"[46] [Rotation Request Comment] 1039 ADVANCED TOW 831-633-1714 [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:33AM"</DetailTime>
+			<IncidentDetail>"[45] A27-074 FSP 97 / FIRE NOT YET 97 WILL ADV ON INJS [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:33AM"</DetailTime>
+			<IncidentDetail>"[44] A27-074 NB JNO TWIN BRIDGES / ONE VEH 1125 #1 LN / OTHER ON RHS / WILL ADV [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:32AM"</DetailTime>
+			<IncidentDetail>"[43] A27-074 CPD 97 AREA COMING IN WITH A BREAK  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:32AM"</DetailTime>
+			<IncidentDetail>"[42] LN 28 / XRAY IN MUSTANG [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:31AM"</DetailTime>
+			<IncidentDetail>"[25] [Notification] [CHP]-DUPE CALLER ON THE BRIDGE  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:30AM"</DetailTime>
+			<IncidentDetail>"[39] [Appended, 07:32:01] [7] PARTIAL 1125 IN LEFT "</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:29AM"</DetailTime>
+			<IncidentDetail>"[34] [Appended, 07:32:01] [2] VEH HYDROPLANED "</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:28AM"</DetailTime>
+			<IncidentDetail>"[22] DUP LOG ADV ON THE BRIDGE  (TWIN BRIDGES ) [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:28AM"</DetailTime>
+			<IncidentDetail>"[21] 1039 FSPC1 CPD ENRT FROM IMJIN  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:28AM"</DetailTime>
+			<IncidentDetail>"[15] 1039 MTYR COMM  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:28AM"</DetailTime>
+			<IncidentDetail>"[14] PER RP MUSTANG HYDROPLANED, SPUN OUT THEN TC'D INTO CD  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:27AM"</DetailTime>
+			<IncidentDetail>"[12] 1125 #1 AND CD  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:27AM"</DetailTime>
+			<IncidentDetail>"[11] [Notification] [CHP]-Problem changed from 1183-Trfc Collision-Unkn Inj to 1179-Trfc Collision-1141 Enrt by CHP [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:27AM"</DetailTime>
+			<IncidentDetail>"[10] [Notification] [CHP]-XRAY ON RHS LOOKS UNRESPONSIVE IN WHI SUV  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:27AM"</DetailTime>
+			<IncidentDetail>"[8] ONES IN CD FACING WW  AND 1 IN RHS  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:26AM"</DetailTime>
+			<IncidentDetail>"[5] WHI SML SUVS VS DRK SML SD  [Shared]"</IncidentDetail>
+		</details>
+		<details>
+			<DetailTime>"Apr 10 2026  7:26AM"</DetailTime>
+			<IncidentDetail>"[3] [Appended, 07:26:48] [3] VS CD "</IncidentDetail>
+		</details><units>
+			<UnitTime>"Apr 10 2026  7:36AM"</UnitTime>
+			<UnitDetail>"Unit At Scene"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:28AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:28AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:45AM"</UnitTime>
+			<UnitDetail>"Unit Cleared"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:28AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:28AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:33AM"</UnitTime>
+			<UnitDetail>"Unit At Scene"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:27AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:27AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units></LogDetails></Log>
+<Log ID = "260410MY0065">
+			<LogTime>"Apr 10 2026  7:04AM"</LogTime>
+			<LogType>"CZP-Assist with Construction"</LogType>
+			<Location>"11155 No Name Uno"</Location>
+			<LocationDesc>"MASTEN CALTRANS YARD"</LocationDesc>
+			<Area>"Hollister Gilroy"</Area>
+			<ThomasBrothers>""</ThomasBrothers>
+			<LATLON>"37062681:121584640"</LATLON>
+			<LogDetails><details/><units>
+			<UnitTime>"Apr 10 2026  7:41AM"</UnitTime>
+			<UnitDetail>"Unit At Scene"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:41AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:04AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units></LogDetails></Log>
+<Log ID = "260410MY0063">
+			<LogTime>"Apr 10 2026  6:50AM"</LogTime>
+			<LogType>"DOT-Request CalTrans Notify"</LogType>
+			<Location>"Sr17 N / Summit"</Location>
+			<LocationDesc>"NB 17 AT THE SUMMIT"</LocationDesc>
+			<Area>"Santa Cruz"</Area>
+			<ThomasBrothers>""</ThomasBrothers>
+			<LATLON>"37143411:121984839"</LATLON>
+			<LogDetails>
+		<details>
+			<DetailTime>"Apr 10 2026  6:50AM"</DetailTime>
+			<IncidentDetail>"[1] ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,TURN SIGNS ADVS WET RDWY  DRIVE W/ CAUTION"</IncidentDetail>
+		</details><units>
+			<UnitTime>"Apr 10 2026  7:33AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  7:33AM"</UnitTime>
+			<UnitDetail>"Unit Cleared"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  6:50AM"</UnitTime>
+			<UnitDetail>"Unit At Scene"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  6:50AM"</UnitTime>
+			<UnitDetail>"Unit Enroute"</UnitDetail></units><units>
+			<UnitTime>"Apr 10 2026  6:50AM"</UnitTime>
+			<UnitDetail>"Unit Assigned"</UnitDetail></units></LogDetails></Log>
+</Dispatch>
+</Center>
+</State>

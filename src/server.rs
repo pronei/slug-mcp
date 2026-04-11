@@ -20,11 +20,15 @@ use crate::config::Config;
 use crate::degrees::{DegreeProgressRequest, DegreeRequirementsRequest, DegreeService};
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
 use crate::events::{EventsService, SearchEventbriteRequest, SearchEventsRequest, UpcomingEventsRequest};
+use crate::fire::{FireDetectionsRequest, FireService};
 #[cfg(feature = "auth")]
 use crate::library::BookStudyRoomRequest;
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
+use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest};
 use crate::recreation::{FacilityOccupancyRequest, FacilityScheduleRequest, RecreationService};
+use crate::traffic::{TrafficRequest, TrafficService};
 use crate::transit::TransitService;
+use crate::weather::{WeatherForecastRequest, WeatherService};
 
 fn internal_err(e: impl std::fmt::Display) -> ErrorData {
     ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
@@ -45,6 +49,10 @@ pub struct ServiceContext {
     pub academics: Arc<AcademicsService>,
     pub classrooms: Arc<ClassroomService>,
     pub transit: Arc<TransitService>,
+    pub weather: Arc<WeatherService>,
+    pub marine: Arc<MarineService>,
+    pub fire: Arc<FireService>,
+    pub traffic: Arc<TrafficService>,
 }
 
 #[derive(Clone)]
@@ -66,6 +74,10 @@ pub struct SlugMcpServer {
     academics: Arc<AcademicsService>,
     classrooms: Arc<ClassroomService>,
     transit: Arc<TransitService>,
+    weather: Arc<WeatherService>,
+    marine: Arc<MarineService>,
+    fire: Arc<FireService>,
+    traffic: Arc<TrafficService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -86,6 +98,10 @@ impl SlugMcpServer {
             academics: ctx.academics,
             classrooms: ctx.classrooms,
             transit: ctx.transit,
+            weather: ctx.weather,
+            marine: ctx.marine,
+            fire: ctx.fire,
+            traffic: ctx.traffic,
             tool_router: Self::tool_router(),
         }
     }
@@ -129,6 +145,12 @@ pub struct ServiceAlertRequest {
     pub route: Option<String>,
     /// Stop ID to check alerts for (e.g., "1234"). At least one of route or stop_id should be specified.
     pub stop_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TransitRouteRequest {
+    /// Route number to filter (e.g. "10", "17", "20"). If omitted, shows all routes.
+    pub route: Option<String>,
 }
 
 // ─── Tool definitions ───
@@ -395,7 +417,7 @@ macro_rules! define_tools {
 
             // ─── Transit Tools ───
 
-            #[tool(description = "Get real-time bus arrival predictions for a Santa Cruz Metro stop. Shows ETAs, delays, passenger load, and trip status (canceled/express). Search by stop name; optionally filter by route. All UCSC students ride free with student ID.")]
+            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name; optionally filter by route. Primary source is GTFS-RT (no per-call API key, rich vehicle positions and occupancy). Automatically falls back to BusTime when GTFS-RT has no absolute-time data for the matched stop — BusTime adds destination headsigns, DUE/DLY countdown labels, and canceled/express trip flags. Output footer shows which backend answered. Both sources report passenger load and delays. For system-wide queries (no specific stop) prefer `get_system_service_alerts`, `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
             async fn get_bus_predictions(
                 &self,
                 Parameters(req): Parameters<BusPredictionRequest>,
@@ -409,7 +431,7 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
-            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes. Shows detours, disruptions, and schedule changes. Specify a route number or stop ID.")]
+            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes. Shows detours, disruptions, and schedule changes. Specify a route number or stop ID. Backed by the BusTime bulletin API (requires key).")]
             async fn get_service_alerts(
                 &self,
                 Parameters(req): Parameters<ServiceAlertRequest>,
@@ -420,6 +442,150 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get system-wide Santa Cruz Metro service alerts via the GTFS-RT alerts feed. No API key required, covers all active alerts across the system.")]
+            async fn get_system_service_alerts(&self) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .transit
+                    .get_system_alerts()
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get live Santa Cruz Metro bus positions via the GTFS-RT vehicles feed. Shows lat/lon, speed, and occupancy for active buses. Optionally filter by route. No API key required.")]
+            async fn get_vehicle_positions(
+                &self,
+                Parameters(req): Parameters<TransitRouteRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .transit
+                    .get_vehicle_positions(req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get per-route delay statistics for Santa Cruz Metro via GTFS-RT trip updates. Shows average and max delay per route across all currently-active trips. Optionally filter by route. No API key required.")]
+            async fn get_route_delays(
+                &self,
+                Parameters(req): Parameters<TransitRouteRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .transit
+                    .get_route_delays(req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Weather Tools ───
+
+            #[tool(description = "Get the multi-period NOAA National Weather Service forecast for Santa Cruz. Covers the next several days (NWS returns ~2 periods per day: daytime + overnight) with temperature, wind, short/long descriptions, and precipitation probability.")]
+            async fn get_weather_forecast(
+                &self,
+                Parameters(req): Parameters<WeatherForecastRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let periods = req.periods.unwrap_or(7);
+                let result = self
+                    .weather
+                    .get_forecast(periods)
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get active NOAA NWS weather alerts for Santa Cruz coastal (CAZ529) and mountain (CAZ512) public forecast zones. Covers high-wind, flood, winter storm, fire-weather, marine, and other watch/warning/advisory events.")]
+            async fn get_weather_alerts(&self) -> Result<CallToolResult, ErrorData> {
+                let result = self.weather.get_alerts().await.map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Marine / Surf Tools ───
+
+            #[tool(description = "Get current surf conditions for Santa Cruz. Without `spot`, compares all known SC surf spots (Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa) side-by-side. With `spot`, returns detailed conditions for a single named spot. Shows wave/swell height in feet, period, direction, and local wind.")]
+            async fn get_surf_conditions(
+                &self,
+                Parameters(req): Parameters<SurfConditionsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .marine
+                    .get_surf_conditions(req.spot.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get the full Open-Meteo marine forecast (next 12 hourly timesteps) for a named Santa Cruz surf spot or custom lat/lon. Includes wave height, period, direction, and swell components. Useful for planning surf or water activities further out than the 'now' snapshot.")]
+            async fn get_marine_forecast(
+                &self,
+                Parameters(req): Parameters<MarineForecastRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .marine
+                    .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Fire Detection Tools ───
+
+            #[tool(description = "Get NASA FIRMS satellite fire/thermal-anomaly detections in Santa Cruz County for the last 1-5 days. Uses VIIRS_SNPP_NRT (375m resolution, ~60s latency). Detections include industrial heat sources (quarries, flares) as well as wildfires — cross-check with CAL FIRE before acting. Requires a free FIRMS map key (SLUG_MCP_FIRMS_KEY).")]
+            async fn get_fire_detections(
+                &self,
+                Parameters(req): Parameters<FireDetectionsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let days = req.days.unwrap_or(1);
+                let result = self
+                    .fire
+                    .get_detections(days)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Traffic Tools ───
+
+            #[tool(description = "Get active CHP incidents in Santa Cruz County. Pulls from the CHP CAD XML feed (Monterey comm center / MYCC dispatch) and filters to SC County areas. Optionally filter by route number (e.g. '1', '9', '17').")]
+            async fn get_traffic_incidents(
+                &self,
+                Parameters(req): Parameters<TrafficRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .traffic
+                    .get_chp_incidents(req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get active Caltrans District 5 lane closures in Santa Cruz County, including planned and emergency closures. Optionally filter by route number (e.g. '1', '9', '17').")]
+            async fn get_lane_closures(
+                &self,
+                Parameters(req): Parameters<TrafficRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .traffic
+                    .get_lane_closures(req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get a combined Santa Cruz County traffic summary: active CHP incidents plus Caltrans D5 lane closures, fetched in parallel. If one source is unavailable, the other is still rendered with a warning. Use this for 'should I drive Hwy 17 right now?' style questions.")]
+            async fn get_traffic_summary(
+                &self,
+                Parameters(req): Parameters<TrafficRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .traffic
+                    .get_traffic_summary(req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
@@ -591,22 +757,39 @@ define_tools!({});
 impl ServerHandler for SlugMcpServer {
     fn get_info(&self) -> ServerInfo {
         let instructions = if cfg!(feature = "auth") {
-            "UCSC campus services MCP server. Provides dining menus, nutrition info, \
-             meal plan balances, campus events and Eventbrite community events \
-             (use both event tools together for complete coverage), recreation \
-             facility occupancy, library study room availability and booking, \
-             class schedule search, campus directory lookup, classroom search, \
-             real-time bus arrival predictions, transit service alerts, \
-             degree requirements lookup, and degree progress tracking for \
-             UC Santa Cruz students."
+            "UCSC + Santa Cruz MCP server. Campus services: dining menus, \
+             nutrition info, meal plan balances, campus events and Eventbrite \
+             community events (use both event tools together for complete \
+             coverage), recreation facility occupancy, library study room \
+             availability and booking, class schedule search, campus directory \
+             lookup, classroom search, real-time bus arrival predictions via \
+             GTFS-RT, transit service alerts, system-wide SC Metro service \
+             alerts, live vehicle positions, and per-route delay stats, \
+             degree requirements lookup, and degree progress tracking. \
+             Santa Cruz city/county services: 7-day NOAA NWS weather forecasts \
+             and active alerts (coastal CAZ529 + mountains CAZ512), CHP \
+             incidents and Caltrans District 5 lane closures for Hwy 1 / 9 / \
+             17 / 101 (individually and combined), Open-Meteo marine forecasts \
+             and surf conditions for Steamer Lane / Pleasure Point / Cowell's \
+             / Natural Bridges / The Hook / Manresa, and NASA FIRMS satellite \
+             wildfire detections for Santa Cruz County."
         } else {
-            "UCSC campus services MCP server (public mode). Provides dining menus, \
-             nutrition info, campus events and Eventbrite community events \
-             (use both event tools together for complete coverage), recreation \
-             facility occupancy, library study room availability, class schedule \
-             search, campus directory lookup, classroom search, real-time bus \
-             arrival predictions, transit service alerts, degree requirements \
-             lookup, and degree progress tracking for UC Santa Cruz students."
+            "UCSC + Santa Cruz MCP server (public mode). Campus services: \
+             dining menus, nutrition info, campus events and Eventbrite \
+             community events (use both event tools together for complete \
+             coverage), recreation facility occupancy, library study room \
+             availability, class schedule search, campus directory lookup, \
+             classroom search, real-time bus arrival predictions via GTFS-RT, \
+             transit service alerts, system-wide SC Metro service alerts, \
+             live vehicle positions, and per-route delay stats, degree \
+             requirements lookup, and degree progress tracking. Santa Cruz \
+             city/county services: 7-day NOAA NWS weather forecasts and \
+             active alerts (coastal CAZ529 + mountains CAZ512), CHP incidents \
+             and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101, \
+             Open-Meteo marine forecasts and surf conditions for the six \
+             named SC surf spots (Steamer Lane, Pleasure Point, Cowell's, \
+             Natural Bridges, The Hook, Manresa), and NASA FIRMS satellite \
+             wildfire detections for Santa Cruz County."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

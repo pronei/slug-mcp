@@ -1,3 +1,10 @@
+// BusTime API client. As of 2026-04-10, `get_predictions` is the fallback
+// path in `TransitService::get_predictions` (GTFS-RT is primary; BusTime
+// takes over when GTFS-RT has no absolute-time data for a matched stop).
+// `get_service_bulletins` remains the backend for `get_service_alerts` —
+// GTFS-RT's alerts feed exists but doesn't support per-route/per-stop
+// filtering as cleanly as BusTime's bulletin API.
+
 use anyhow::{bail, Context, Result};
 use chrono::{Local, NaiveDateTime};
 use serde::Deserialize;

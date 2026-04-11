@@ -1,0 +1,289 @@
+{
+  "data": [
+    {
+      "lcs": {
+        "index": "C1JC-0001-2026-04-11-07:01:53",
+        "recordTimestamp": {
+          "recordDate": "2026-04-10",
+          "recordTime": "17:23:02",
+          "recordEpoch": "1775866982"
+        },
+        "location": {
+          "travelFlowDirection": "North / South",
+          "begin": {
+            "beginDistrict": "5",
+            "beginLocationName": "Swanton Road",
+            "beginFreeFormDescription": "",
+            "beginNearbyPlace": "Davenport",
+            "beginLongitude": "-122.277424",
+            "beginLatitude": "37.095899",
+            "beginElevation": "0",
+            "beginDirection": "",
+            "beginCounty": "Santa Cruz",
+            "beginRoute": "SR-1",
+            "beginRouteSuffix": "",
+            "beginPostmilePrefix": "",
+            "beginPostmile": "36.259",
+            "beginAlignment": "",
+            "beginMilepost": "372.703"
+          },
+          "end": {
+            "endDistrict": "5",
+            "endLocationName": "Waddell Creek Bridge",
+            "endFreeFormDescription": "",
+            "endNearbyPlace": "Davenport",
+            "endLongitude": "-122.279794",
+            "endLatitude": "37.097191",
+            "endElevation": "36",
+            "endDirection": "",
+            "endCounty": "Santa Cruz",
+            "endRoute": "SR-1",
+            "endRouteSuffix": "",
+            "endPostmilePrefix": "",
+            "endPostmile": "36.419",
+            "endAlignment": "",
+            "endMilepost": "372.863"
+          }
+        },
+        "closure": {
+          "closureID": "C1JC",
+          "logNumber": "1",
+          "closureTimestamp": {
+            "closureRequestDate": "2026-03-16",
+            "closureRequestTime": "14:59:54",
+            "closureRequestEpoch": "1773698394",
+            "closureStartDate": "2026-04-11",
+            "closureStartTime": "07:01:53",
+            "closureStartEpoch": "1775916113",
+            "closureEndDate": "2026-04-11",
+            "closureEndTime": "18:01:53",
+            "closureEndEpoch": "1775955713",
+            "isClosureEndIndefinite": "false"
+          },
+          "facility": "Conventional Hwy",
+          "typeOfClosure": "One-Way Traffic",
+          "typeOfWork": "Emergency Work",
+          "durationOfClosure": "Standard",
+          "estimatedDelay": "3",
+          "lanesClosed": "1",
+          "totalExistingLanes": "2",
+          "isCHINReportable": "true",
+          "code1097": {
+            "isCode1097": "false",
+            "code1097Timestamp": {
+              "code1097Date": "",
+              "code1097Time": "",
+              "code1097Epoch": ""
+            }
+          },
+          "code1098": {
+            "isCode1098": "false",
+            "code1098Timestamp": {
+              "code1098Date": "",
+              "code1098Time": "",
+              "code1098Epoch": ""
+            }
+          },
+          "code1022": {
+            "isCode1022": "false",
+            "code1022Timestamp": {
+              "code1022Date": "",
+              "code1022Time": "",
+              "code1022Epoch": ""
+            }
+          }
+        }
+      }
+    },
+    {
+      "lcs": {
+        "index": "C1JC-0002-2026-04-13-07:01:31",
+        "recordTimestamp": {
+          "recordDate": "2026-04-10",
+          "recordTime": "17:23:02",
+          "recordEpoch": "1775866982"
+        },
+        "location": {
+          "travelFlowDirection": "North / South",
+          "begin": {
+            "beginDistrict": "5",
+            "beginLocationName": "Swanton Road",
+            "beginFreeFormDescription": "",
+            "beginNearbyPlace": "Davenport",
+            "beginLongitude": "-122.277424",
+            "beginLatitude": "37.095899",
+            "beginElevation": "0",
+            "beginDirection": "",
+            "beginCounty": "Santa Cruz",
+            "beginRoute": "SR-1",
+            "beginRouteSuffix": "",
+            "beginPostmilePrefix": "",
+            "beginPostmile": "36.259",
+            "beginAlignment": "",
+            "beginMilepost": "372.703"
+          },
+          "end": {
+            "endDistrict": "5",
+            "endLocationName": "Waddell Creek Bridge",
+            "endFreeFormDescription": "",
+            "endNearbyPlace": "Davenport",
+            "endLongitude": "-122.279794",
+            "endLatitude": "37.097191",
+            "endElevation": "36",
+            "endDirection": "",
+            "endCounty": "Santa Cruz",
+            "endRoute": "SR-1",
+            "endRouteSuffix": "",
+            "endPostmilePrefix": "",
+            "endPostmile": "36.419",
+            "endAlignment": "",
+            "endMilepost": "372.863"
+          }
+        },
+        "closure": {
+          "closureID": "C1JC",
+          "logNumber": "2",
+          "closureTimestamp": {
+            "closureRequestDate": "2026-03-23",
+            "closureRequestTime": "08:38:32",
+            "closureRequestEpoch": "1774280312",
+            "closureStartDate": "2026-04-13",
+            "closureStartTime": "07:01:31",
+            "closureStartEpoch": "1776088891",
+            "closureEndDate": "2026-04-13",
+            "closureEndTime": "18:01:31",
+            "closureEndEpoch": "1776128491",
+            "isClosureEndIndefinite": "false"
+          },
+          "facility": "Conventional Hwy",
+          "typeOfClosure": "One-Way Traffic",
+          "typeOfWork": "Emergency Work",
+          "durationOfClosure": "Standard",
+          "estimatedDelay": "3",
+          "lanesClosed": "1",
+          "totalExistingLanes": "2",
+          "isCHINReportable": "true",
+          "code1097": {
+            "isCode1097": "false",
+            "code1097Timestamp": {
+              "code1097Date": "",
+              "code1097Time": "",
+              "code1097Epoch": ""
+            }
+          },
+          "code1098": {
+            "isCode1098": "false",
+            "code1098Timestamp": {
+              "code1098Date": "",
+              "code1098Time": "",
+              "code1098Epoch": ""
+            }
+          },
+          "code1022": {
+            "isCode1022": "false",
+            "code1022Timestamp": {
+              "code1022Date": "",
+              "code1022Time": "",
+              "code1022Epoch": ""
+            }
+          }
+        }
+      }
+    },
+    {
+      "lcs": {
+        "index": "C1JC-0003-2026-04-14-07:01:31",
+        "recordTimestamp": {
+          "recordDate": "2026-04-10",
+          "recordTime": "17:23:02",
+          "recordEpoch": "1775866982"
+        },
+        "location": {
+          "travelFlowDirection": "North / South",
+          "begin": {
+            "beginDistrict": "5",
+            "beginLocationName": "Swanton Road",
+            "beginFreeFormDescription": "",
+            "beginNearbyPlace": "Davenport",
+            "beginLongitude": "-122.277424",
+            "beginLatitude": "37.095899",
+            "beginElevation": "0",
+            "beginDirection": "",
+            "beginCounty": "Santa Cruz",
+            "beginRoute": "SR-1",
+            "beginRouteSuffix": "",
+            "beginPostmilePrefix": "",
+            "beginPostmile": "36.259",
+            "beginAlignment": "",
+            "beginMilepost": "372.703"
+          },
+          "end": {
+            "endDistrict": "5",
+            "endLocationName": "Waddell Creek Bridge",
+            "endFreeFormDescription": "",
+            "endNearbyPlace": "Davenport",
+            "endLongitude": "-122.279794",
+            "endLatitude": "37.097191",
+            "endElevation": "36",
+            "endDirection": "",
+            "endCounty": "Santa Cruz",
+            "endRoute": "SR-1",
+            "endRouteSuffix": "",
+            "endPostmilePrefix": "",
+            "endPostmile": "36.419",
+            "endAlignment": "",
+            "endMilepost": "372.863"
+          }
+        },
+        "closure": {
+          "closureID": "C1JC",
+          "logNumber": "3",
+          "closureTimestamp": {
+            "closureRequestDate": "2026-03-23",
+            "closureRequestTime": "08:38:32",
+            "closureRequestEpoch": "1774280312",
+            "closureStartDate": "2026-04-14",
+            "closureStartTime": "07:01:31",
+            "closureStartEpoch": "1776175291",
+            "closureEndDate": "2026-04-14",
+            "closureEndTime": "18:01:31",
+            "closureEndEpoch": "1776214891",
+            "isClosureEndIndefinite": "false"
+          },
+          "facility": "Conventional Hwy",
+          "typeOfClosure": "One-Way Traffic",
+          "typeOfWork": "Emergency Work",
+          "durationOfClosure": "Standard",
+          "estimatedDelay": "3",
+          "lanesClosed": "1",
+          "totalExistingLanes": "2",
+          "isCHINReportable": "true",
+          "code1097": {
+            "isCode1097": "false",
+            "code1097Timestamp": {
+              "code1097Date": "",
+              "code1097Time": "",
+              "code1097Epoch": ""
+            }
+          },
+          "code1098": {
+            "isCode1098": "false",
+            "code1098Timestamp": {
+              "code1098Date": "",
+              "code1098Time": "",
+              "code1098Epoch": ""
+            }
+          },
+          "code1022": {
+            "isCode1022": "false",
+            "code1022Timestamp": {
+              "code1022Date": "",
+              "code1022Time": "",
+              "code1022Epoch": ""
+            }
+          }
+        }
+      }
+    }
+  ]
+}

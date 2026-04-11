@@ -15,7 +15,7 @@ axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
-reqwest = { version = "0.12", features = ["cookies", "json"] }
+reqwest = { version = "0.12", features = ["cookies", "json", "gzip"] }
 moka = { version = "0.12", features = ["future"] }
 scraper = "0.22"
 clap = { version = "4", features = ["derive"] }
@@ -30,11 +30,14 @@ urlencoding = "2"
 chrono = "0.4"
 chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
-base64 = { version = "0.22", optional = true }
+base64 = "0.22"
+quick-xml = { version = "0.39", features = ["serialize"] }
+gtfs-realtime = "0.2"
+prost = "0.14"
 
 [features]
 default = ["auth"]
-auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname", "dep:base64"]
+auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -17,11 +17,15 @@ mod config;
 mod degrees;
 mod dining;
 mod events;
+mod fire;
 mod library;
+mod marine;
 mod recreation;
 mod server;
+mod traffic;
 mod transit;
 mod util;
+mod weather;
 
 #[derive(Parser)]
 #[command(name = "slug-mcp", about = "MCP server for UCSC campus services")]
@@ -119,10 +123,18 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let config = Arc::new(config::Config::load()?);
     let cache = Arc::new(cache::CacheStore::new(10_000));
 
-    let http = reqwest::Client::new();
+    // Shared HTTP client: gzip for smaller responses, explicit User-Agent so
+    // public upstream APIs (notably NOAA NWS, which rejects blank UAs) can
+    // identify us. All services clone from this single client.
+    let http = reqwest::Client::builder()
+        .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
+        .gzip(true)
+        .build()
+        .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {}", e))?;
     #[cfg(feature = "auth")]
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
     let bustime_key = config.bustime_api_key.clone();
+    let firms_key = config.firms_map_key.clone();
     let ctx = server::ServiceContext {
         config,
         cache: cache.clone(),
@@ -136,6 +148,10 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         academics: Arc::new(academics::AcademicsService::new(http.clone(), cache.clone())),
         classrooms: Arc::new(classrooms::ClassroomService::new(http.clone(), cache.clone())),
         transit: Arc::new(transit::TransitService::new(http.clone(), cache.clone(), bustime_key)),
+        weather: Arc::new(weather::WeatherService::new(http.clone(), cache.clone())),
+        marine: Arc::new(marine::MarineService::new(http.clone(), cache.clone())),
+        fire: Arc::new(fire::FireService::new(http.clone(), cache.clone(), firms_key)),
+        traffic: Arc::new(traffic::TrafficService::new(http.clone(), cache.clone())),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

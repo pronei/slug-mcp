@@ -1,6 +1,7 @@
 use std::fmt;
 
 use anyhow::{Context, Result};
+use regex::Regex;
 use scraper::{Html, Selector};
 
 use crate::util::{sel, selectors};
@@ -269,4 +270,262 @@ fn parse_schedule(html: &str, facility_id: &str) -> FacilitySchedule {
         facility_id: facility_id.to_string(),
         entries,
     }
+}
+
+// ───── Group Exercise Classes ─────
+
+const GROUP_EXERCISE_URL: &str =
+    "https://goslugs.com/sports/2026/2/26/groupexercise_schedules_spring26";
+
+/// Location abbreviation expansion.
+fn expand_location(abbr: &str) -> &str {
+    match abbr.to_uppercase().as_str() {
+        "MAS" => "Martial Arts Studio",
+        "DNC" => "Dance Studio",
+        "ACT" => "Activity Room",
+        _ => abbr,
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GroupExerciseClass {
+    pub name: String,
+    pub day: String,
+    pub time: String,
+    pub instructor: String,
+    pub location: String,
+    pub location_full: String,
+    pub registration_url: Option<String>,
+}
+
+impl fmt::Display for GroupExerciseClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "- **{}** {} — {} w/ {} @ {} ({})",
+            self.time, self.name, self.day, self.instructor, self.location, self.location_full,
+        )?;
+        if let Some(url) = &self.registration_url {
+            write!(f, " [Register]({})", url)?;
+        }
+        Ok(())
+    }
+}
+
+pub async fn scrape_group_exercise(client: &reqwest::Client) -> Result<Vec<GroupExerciseClass>> {
+    let resp = client
+        .get(GROUP_EXERCISE_URL)
+        .send()
+        .await
+        .context("Failed to fetch group exercise schedule")?;
+
+    let html = resp
+        .text()
+        .await
+        .context("Failed to read group exercise body")?;
+
+    Ok(parse_group_exercise(&html))
+}
+
+fn parse_group_exercise(html: &str) -> Vec<GroupExerciseClass> {
+    let document = Html::parse_document(html);
+    let td_sel = Selector::parse("td").unwrap();
+
+    // Day names we expect as column headers (the page uses "MONDAYS", "TUESDAYS", etc.)
+    let day_names = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+
+    // Collect all <td> cells. The first row with day-name cells gives us the column→day mapping.
+    // Subsequent rows align by column index.
+    let all_rows: Vec<Vec<scraper::ElementRef>> = {
+        let tr_sel = Selector::parse("tr").unwrap();
+        document
+            .select(&tr_sel)
+            .map(|tr| tr.select(&td_sel).collect::<Vec<_>>())
+            .filter(|cells| !cells.is_empty())
+            .collect()
+    };
+
+    // Find the header row: the row where cells contain day names.
+    let mut day_columns: Vec<(usize, String)> = Vec::new(); // (col_index, day_name)
+    let mut header_row_idx = None;
+
+    for (row_idx, row) in all_rows.iter().enumerate() {
+        let mut found_days = Vec::new();
+        for (col_idx, cell) in row.iter().enumerate() {
+            let text = cell.text().collect::<String>();
+            let text_lower = text.trim().to_lowercase();
+            for day in &day_names {
+                if text_lower.contains(&day.to_lowercase()) {
+                    found_days.push((col_idx, day.to_string()));
+                    break;
+                }
+            }
+        }
+        if found_days.len() >= 3 {
+            // Found the header row
+            day_columns = found_days;
+            header_row_idx = Some(row_idx);
+            break;
+        }
+    }
+
+    let header_row_idx = match header_row_idx {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+
+    let link_sel = Selector::parse(r#"a[href*="GetProgramDetails"]"#).unwrap();
+    let time_re = Regex::new(r"(\d{1,2}:\d{2}[ap])").unwrap();
+
+    let mut classes = Vec::new();
+
+    // Parse data rows after the header. Each cell has at most one class entry.
+    // The real HTML nests class names in <strong><span>NAME</span></strong> inside
+    // the <a> tag, and uses "w/INSTRUCTOR" and "@ LOCATION" in surrounding text.
+    for row in all_rows.iter().skip(header_row_idx + 1) {
+        for &(col_idx, ref day) in &day_columns {
+            if let Some(cell) = row.get(col_idx) {
+                let link = match cell.select(&link_sel).next() {
+                    Some(l) => l,
+                    None => continue,
+                };
+
+                let reg_url = link.value().attr("href").map(String::from);
+                let class_name: String = link
+                    .text()
+                    .collect::<String>()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                if class_name.is_empty() {
+                    continue;
+                }
+
+                // Extract time, instructor, and location from the cell's full text.
+                let full_text: String = cell
+                    .text()
+                    .collect::<String>()
+                    .chars()
+                    .map(|c| if c == '\n' { ' ' } else { c })
+                    .collect();
+                // Collapse runs of whitespace
+                let full_text = full_text.split_whitespace().collect::<Vec<_>>().join(" ");
+
+                let time = time_re
+                    .find(&full_text)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+
+                // Instructor: text between "w/" and "@" (or end of string)
+                let instructor = full_text
+                    .find("w/")
+                    .map(|i| {
+                        let after = &full_text[i + 2..];
+                        let end = after.find('@').unwrap_or(after.len());
+                        after[..end].trim().to_string()
+                    })
+                    .unwrap_or_default();
+
+                // Location: word after "@"
+                let location = full_text
+                    .rfind('@')
+                    .map(|i| full_text[i + 1..].trim().split_whitespace().next().unwrap_or(""))
+                    .unwrap_or("")
+                    .to_string();
+
+                classes.push(GroupExerciseClass {
+                    name: class_name,
+                    day: day.clone(),
+                    time,
+                    instructor,
+                    location_full: expand_location(&location).to_string(),
+                    location,
+                    registration_url: reg_url,
+                });
+            }
+        }
+    }
+
+    classes
+}
+
+#[cfg(test)]
+mod group_exercise_tests {
+    use super::*;
+
+    #[test]
+    fn parse_schedule_table() {
+        // Matches the real goslugs.com HTML structure: one class per cell,
+        // nested <strong><span> with <br /> inside class names.
+        let html = r#"<html><body><table>
+<tr>
+<td style="text-align: center;"><strong><strong>MONDAYS</strong></strong></td>
+<td style="text-align: center;"><strong><strong>TUESDAYS</strong></strong></td>
+<td style="text-align: center;"><strong><strong>WEDNESDAYS</strong></strong></td>
+</tr>
+<tr>
+<td style="vertical-align: text-top;"><strong>7:30a<br />
+<a href="https://campusrec.ucsc.edu/Program/GetProgramDetails?courseId=abc-123"><strong><span style="font-size: 1.25vw; color: green;">SUNRISE<br />
+YOGA</span></strong></a><br />
+<span style="font-size: 1vw;"><strong>w/<a href="/bio#padma">Padma</a></strong><br />
+@ MAS</span></strong></td>
+<td style="vertical-align: text-top;"><strong>10:45a<br />
+<a href="https://campusrec.ucsc.edu/Program/GetProgramDetails?courseId=def-456"><strong><span style="font-size: 1.25vw; color: red;">MAT<br />
+PILATES</span></strong></a><br />
+<span style="font-size: 1vw;"><strong>w/<a href="/bio#sam">Sam</a></strong><br />
+@ DNC</span></strong></td>
+<td style="vertical-align: text-top;"></td>
+</tr>
+<tr>
+<td style="vertical-align: text-top;"><strong>10:45a<br />
+<a href="https://campusrec.ucsc.edu/Program/GetProgramDetails?courseId=ghi-789"><strong><span style="font-size: 1.25vw; color: blue;">INDOOR<br />
+CYCLING</span></strong></a><br />
+<span style="font-size: 1vw;"><strong>w/<a href="/bio#alex">Alex</a></strong><br />
+@ ACT</span></strong></td>
+<td style="vertical-align: text-top;"></td>
+<td style="vertical-align: text-top;"></td>
+</tr>
+</table></body></html>"#;
+
+        let classes = parse_group_exercise(html);
+        assert_eq!(classes.len(), 3, "got: {:?}", classes);
+
+        assert_eq!(classes[0].name, "SUNRISE YOGA");
+        assert_eq!(classes[0].day, "Monday");
+        assert_eq!(classes[0].time, "7:30a");
+        assert_eq!(classes[0].instructor, "Padma");
+        assert_eq!(classes[0].location, "MAS");
+        assert_eq!(classes[0].location_full, "Martial Arts Studio");
+        assert!(classes[0].registration_url.as_ref().unwrap().contains("abc-123"));
+
+        assert_eq!(classes[1].name, "MAT PILATES");
+        assert_eq!(classes[1].day, "Tuesday");
+        assert_eq!(classes[1].time, "10:45a");
+        assert_eq!(classes[1].instructor, "Sam");
+        assert_eq!(classes[1].location, "DNC");
+        assert_eq!(classes[1].location_full, "Dance Studio");
+
+        assert_eq!(classes[2].name, "INDOOR CYCLING");
+        assert_eq!(classes[2].day, "Monday");
+        assert_eq!(classes[2].time, "10:45a");
+        assert_eq!(classes[2].instructor, "Alex");
+        assert_eq!(classes[2].location, "ACT");
+        assert_eq!(classes[2].location_full, "Activity Room");
+    }
+
+    #[test]
+    fn parse_empty_html() {
+        let classes = parse_group_exercise("<html><body></body></html>");
+        assert!(classes.is_empty());
+    }
+
 }

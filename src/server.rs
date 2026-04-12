@@ -25,7 +25,9 @@ use crate::fire::{FireDetectionsRequest, FireService};
 use crate::library::BookStudyRoomRequest;
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
 use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest};
-use crate::recreation::{FacilityOccupancyRequest, FacilityScheduleRequest, RecreationService};
+use crate::recreation::{
+    FacilityOccupancyRequest, FacilityScheduleRequest, GroupExerciseRequest, RecreationService,
+};
 use crate::traffic::{TrafficRequest, TrafficService};
 use crate::transit::TransitService;
 use crate::weather::{WeatherForecastRequest, WeatherService};
@@ -319,6 +321,20 @@ macro_rules! define_tools {
                 let result = self
                     .recreation
                     .get_schedule(&req.facility_id)
+                    .await
+                    .map_err(internal_err)?;
+
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get UCSC group exercise class schedule (Spring 2026). Classes include yoga, pilates, cycling, kickboxing, Zumba, conditioning, and self-defense. Filter by day of week and/or class name.")]
+            async fn get_group_exercise_classes(
+                &self,
+                Parameters(req): Parameters<GroupExerciseRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .recreation
+                    .get_group_exercise(req.day.as_deref(), req.class_name.as_deref())
                     .await
                     .map_err(internal_err)?;
 
@@ -762,8 +778,9 @@ impl ServerHandler for SlugMcpServer {
             "UCSC + Santa Cruz MCP server. Campus services: dining menus, \
              nutrition info, meal plan balances, campus events and Eventbrite \
              community events (use both event tools together for complete \
-             coverage), recreation facility occupancy, library study room \
-             availability and booking, class schedule search, campus directory \
+             coverage), recreation facility occupancy, group exercise class \
+             schedules, library study room availability and booking, class \
+             schedule search, campus directory \
              lookup, classroom search, real-time bus arrival predictions via \
              GTFS-RT, transit service alerts, system-wide SC Metro service \
              alerts, live vehicle positions, and per-route delay stats, \
@@ -779,8 +796,9 @@ impl ServerHandler for SlugMcpServer {
             "UCSC + Santa Cruz MCP server (public mode). Campus services: \
              dining menus, nutrition info, campus events and Eventbrite \
              community events (use both event tools together for complete \
-             coverage), recreation facility occupancy, library study room \
-             availability, class schedule search, campus directory lookup, \
+             coverage), recreation facility occupancy, group exercise class \
+             schedules, library study room availability, class schedule \
+             search, campus directory lookup, \
              classroom search, real-time bus arrival predictions via GTFS-RT, \
              transit service alerts, system-wide SC Metro service alerts, \
              live vehicle positions, and per-route delay stats, degree \

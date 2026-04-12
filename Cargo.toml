@@ -34,6 +34,7 @@ base64 = "0.22"
 quick-xml = { version = "0.39", features = ["serialize"] }
 gtfs-realtime = "0.2"
 prost = "0.14"
+regex = "1"
 
 [features]
 default = ["auth"]

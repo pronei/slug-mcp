@@ -506,14 +506,19 @@ macro_rules! define_tools {
 
             // ─── Marine / Surf Tools ───
 
-            #[tool(description = "Get current surf conditions for Santa Cruz. Without `spot`, compares all known SC surf spots (Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa) side-by-side. With `spot`, returns detailed conditions for a single named spot. Shows wave/swell height in feet, period, direction, and local wind.")]
+            #[tool(description = "Get current surf conditions. Without any parameters, compares all known SC surf spots side-by-side. With `spot`, returns conditions for a named spot (Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa). With `lat`+`lon`, returns conditions for any coastal coordinates — use `label` to give it a name. Shows wave/swell height in feet, period, direction, and local wind.")]
             async fn get_surf_conditions(
                 &self,
                 Parameters(req): Parameters<SurfConditionsRequest>,
             ) -> Result<CallToolResult, ErrorData> {
                 let result = self
                     .marine
-                    .get_surf_conditions(req.spot.as_deref())
+                    .get_surf_conditions(
+                        req.spot.as_deref(),
+                        req.lat,
+                        req.lon,
+                        req.label.as_deref(),
+                    )
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -736,12 +741,9 @@ define_tools!({
             }
         };
 
-        let client =
-            crate::auth::build_authenticated_client(&session.cookies).map_err(internal_err)?;
-
         let result = self
             .library
-            .book(&client, req.space_id, &req.date, &req.start_time, &req.end_time)
+            .book(&session.cookies, req.space_id, &req.date, &req.start_time, &req.end_time)
             .await
             .map_err(internal_err)?;
 

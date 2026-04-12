@@ -17,8 +17,14 @@ use spots::SurfSpot;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SurfConditionsRequest {
-    /// Surf spot name or slug (e.g., "Steamer Lane", "pleasure-point", "Cowell's"). If omitted, compares all known Santa Cruz spots.
+    /// Surf spot name or slug (e.g., "Steamer Lane", "pleasure-point", "Cowell's"). If omitted and no lat/lon given, compares all known Santa Cruz spots.
     pub spot: Option<String>,
+    /// Custom latitude (use with lon). Ignored if `spot` is set.
+    pub lat: Option<f64>,
+    /// Custom longitude (use with lat). Ignored if `spot` is set.
+    pub lon: Option<f64>,
+    /// Optional display label for custom coordinates (e.g., "Twin Lakes State Beach").
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -47,8 +53,15 @@ impl MarineService {
         Self { http, cache }
     }
 
-    /// Compare all known SC surf spots, or return conditions for a single named spot.
-    pub async fn get_surf_conditions(&self, spot_query: Option<&str>) -> Result<String> {
+    /// Compare all known SC surf spots, return conditions for a single named spot,
+    /// or fetch conditions for custom lat/lon coordinates.
+    pub async fn get_surf_conditions(
+        &self,
+        spot_query: Option<&str>,
+        lat: Option<f64>,
+        lon: Option<f64>,
+        label: Option<&str>,
+    ) -> Result<String> {
         if let Some(q) = spot_query {
             let spot = match spots::find(q) {
                 Some(s) => s,
@@ -62,6 +75,14 @@ impl MarineService {
             };
             let conditions = self.load_spot(spot).await?;
             return Ok(format_single_spot(spot, &conditions));
+        }
+
+        // Custom coordinates
+        if let (Some(lat), Some(lon)) = (lat, lon) {
+            let name = label.unwrap_or("Custom spot");
+            let slug = format!("custom-{:.4}-{:.4}", lat, lon);
+            let conditions = self.load_by_coords(&slug, lat, lon).await?;
+            return Ok(format_custom_spot(name, lat, lon, &conditions));
         }
 
         // No spot filter: fetch all known spots in parallel
@@ -123,6 +144,24 @@ impl MarineService {
             .await
     }
 
+    async fn load_by_coords(&self, slug: &str, lat: f64, lon: f64) -> Result<SpotConditions> {
+        let key = format!("marine:spot:{}", slug);
+        let http = self.http.clone();
+        self.cache
+            .get_or_fetch::<SpotConditions, _, _>(&key, 1800, move || async move {
+                let (marine, wind) = futures_util::future::join(
+                    open_meteo::get_marine(&http, lat, lon),
+                    open_meteo::get_forecast(&http, lat, lon),
+                )
+                .await;
+                Ok(SpotConditions {
+                    marine: marine?,
+                    wind: wind?,
+                })
+            })
+            .await
+    }
+
     async fn load_marine_by_coords(&self, lat: f64, lon: f64) -> Result<MarineResponse> {
         let key = format!("marine:coords:{:.4},{:.4}", lat, lon);
         let http = self.http.clone();
@@ -167,6 +206,17 @@ fn degrees_to_compass(deg: f64) -> &'static str {
 fn format_single_spot(spot: &SurfSpot, c: &SpotConditions) -> String {
     let mut out = format!("# {} ({})\n\n", spot.name, spot.slug);
     out.push_str(&format!("_{}_\n\n", spot.notes));
+    write_spot_body(&mut out, c);
+    let now = chrono::Local::now();
+    out.push_str(&format!(
+        "\n_Source: Open-Meteo marine + forecast. Last updated: {}_\n",
+        now.format("%-I:%M %p")
+    ));
+    out
+}
+
+fn format_custom_spot(name: &str, lat: f64, lon: f64, c: &SpotConditions) -> String {
+    let mut out = format!("# {} ({:.4}, {:.4})\n\n", name, lat, lon);
     write_spot_body(&mut out, c);
     let now = chrono::Local::now();
     out.push_str(&format!(

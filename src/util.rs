@@ -46,6 +46,32 @@ pub fn truncate(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Convert a compass bearing in degrees (0-360, wrapping) to a 16-point cardinal
+/// direction string (e.g. 45° -> "NE"). Used by marine/buoy/tides modules.
+pub fn degrees_to_compass(deg: f64) -> &'static str {
+    let d = ((deg % 360.0) + 360.0) % 360.0;
+    if !(11.25..348.75).contains(&d) {
+        return "N";
+    }
+    match d {
+        d if d < 33.75 => "NNE",
+        d if d < 56.25 => "NE",
+        d if d < 78.75 => "ENE",
+        d if d < 101.25 => "E",
+        d if d < 123.75 => "ESE",
+        d if d < 146.25 => "SE",
+        d if d < 168.75 => "SSE",
+        d if d < 191.25 => "S",
+        d if d < 213.75 => "SSW",
+        d if d < 236.25 => "SW",
+        d if d < 258.75 => "WSW",
+        d if d < 281.25 => "W",
+        d if d < 303.75 => "WNW",
+        d if d < 326.25 => "NW",
+        _ => "NNW",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +97,19 @@ mod tests {
         let s1 = sel(&TEST_SEL, "div.test");
         let s2 = sel(&TEST_SEL, "div.test");
         assert!(std::ptr::eq(s1, s2)); // same pointer = memoized
+    }
+
+    #[test]
+    fn test_degrees_to_compass() {
+        assert_eq!(degrees_to_compass(0.0), "N");
+        assert_eq!(degrees_to_compass(90.0), "E");
+        assert_eq!(degrees_to_compass(180.0), "S");
+        assert_eq!(degrees_to_compass(270.0), "W");
+        assert_eq!(degrees_to_compass(45.0), "NE");
+        assert_eq!(degrees_to_compass(225.0), "SW");
+        // wrap-around
+        assert_eq!(degrees_to_compass(360.0), "N");
+        assert_eq!(degrees_to_compass(-90.0), "W");
+        assert_eq!(degrees_to_compass(720.0 + 180.0), "S");
     }
 }

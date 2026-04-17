@@ -10,6 +10,7 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
+use crate::buoy::{BuoyRequest, BuoyService};
 #[cfg(feature = "auth")]
 use crate::auth::session::SessionData;
 #[cfg(feature = "auth")]
@@ -57,6 +58,7 @@ pub struct ServiceContext {
     pub fire: Arc<FireService>,
     pub traffic: Arc<TrafficService>,
     pub tides: Arc<TidesService>,
+    pub buoy: Arc<BuoyService>,
 }
 
 #[derive(Clone)]
@@ -83,6 +85,7 @@ pub struct SlugMcpServer {
     fire: Arc<FireService>,
     traffic: Arc<TrafficService>,
     tides: Arc<TidesService>,
+    buoy: Arc<BuoyService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -108,6 +111,7 @@ impl SlugMcpServer {
             fire: ctx.fire,
             traffic: ctx.traffic,
             tides: ctx.tides,
+            buoy: ctx.buoy,
             tool_router: Self::tool_router(),
         }
     }
@@ -552,6 +556,21 @@ macro_rules! define_tools {
                 let result = self
                     .marine
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Buoy Tools ───
+
+            #[tool(description = "Get real-time observations from an NDBC weather/ocean buoy. Defaults to station 46042 (Monterey Bay, the NOAA 3-meter discus offshore of Santa Cruz). Pass another NDBC station ID for other locations. Returns latest wind, significant wave height/period, air+water temperature, pressure, and dew point, plus a ~3h water-temp trend.")]
+            async fn get_buoy_observations(
+                &self,
+                Parameters(req): Parameters<BuoyRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .buoy
+                    .get_observations(req.station.as_deref())
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))

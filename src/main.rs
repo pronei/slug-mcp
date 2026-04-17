@@ -11,6 +11,7 @@ use rmcp::ServiceExt;
 mod academics;
 #[cfg(feature = "auth")]
 mod auth;
+mod buoy;
 mod cache;
 mod classrooms;
 mod config;
@@ -154,6 +155,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         fire: Arc::new(fire::FireService::new(http.clone(), cache.clone(), firms_key)),
         traffic: Arc::new(traffic::TrafficService::new(http.clone(), cache.clone())),
         tides: Arc::new(tides::TidesService::new(http.clone(), cache.clone())),
+        buoy: Arc::new(buoy::BuoyService::new(http.clone(), cache.clone())),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

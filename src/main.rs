@@ -27,6 +27,7 @@ mod tides;
 mod traffic;
 mod transit;
 mod util;
+mod wave_buoy;
 mod weather;
 
 #[derive(Parser)]
@@ -156,6 +157,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         traffic: Arc::new(traffic::TrafficService::new(http.clone(), cache.clone())),
         tides: Arc::new(tides::TidesService::new(http.clone(), cache.clone())),
         buoy: Arc::new(buoy::BuoyService::new(http.clone(), cache.clone())),
+        wave_buoy: Arc::new(wave_buoy::WaveBuoyService::new(http.clone(), cache.clone())),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

@@ -31,6 +31,7 @@ use crate::recreation::{
 };
 use crate::tides::{TidesRequest, TidesService};
 use crate::traffic::{TrafficRequest, TrafficService};
+use crate::wave_buoy::{WaveBuoyRequest, WaveBuoyService};
 use crate::transit::TransitService;
 use crate::weather::{WeatherForecastRequest, WeatherService};
 
@@ -59,6 +60,7 @@ pub struct ServiceContext {
     pub traffic: Arc<TrafficService>,
     pub tides: Arc<TidesService>,
     pub buoy: Arc<BuoyService>,
+    pub wave_buoy: Arc<WaveBuoyService>,
 }
 
 #[derive(Clone)]
@@ -86,6 +88,7 @@ pub struct SlugMcpServer {
     traffic: Arc<TrafficService>,
     tides: Arc<TidesService>,
     buoy: Arc<BuoyService>,
+    wave_buoy: Arc<WaveBuoyService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -112,6 +115,7 @@ impl SlugMcpServer {
             traffic: ctx.traffic,
             tides: ctx.tides,
             buoy: ctx.buoy,
+            wave_buoy: ctx.wave_buoy,
             tool_router: Self::tool_router(),
         }
     }
@@ -556,6 +560,21 @@ macro_rules! define_tools {
                 let result = self
                     .marine
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Wave Buoy (CDIP) Tools ───
+
+            #[tool(description = "Get swell vs wind-wave spectral summary from CDIP/NDBC waverider buoys. Unlike get_buoy_observations (single station, met+ocean summary), this compares multiple waveriders and separates swell height/period/direction from local wind-wave energy. Defaults to Monterey-area stations 46114 (CDIP 158 Pt. Sur), 46236 (CDIP 185 Monterey Canyon), 46042 (Monterey). Pass `stations` as comma-separated NDBC IDs to override.")]
+            async fn get_wave_buoy(
+                &self,
+                Parameters(req): Parameters<WaveBuoyRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .wave_buoy
+                    .get_wave_data(req.stations.as_deref())
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))

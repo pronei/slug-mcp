@@ -10,6 +10,7 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
+use crate::biodiversity::{BiodiversityService, BirdRequest, SpeciesRequest};
 use crate::buoy::{BuoyRequest, BuoyService};
 #[cfg(feature = "auth")]
 use crate::auth::session::SessionData;
@@ -63,6 +64,7 @@ pub struct ServiceContext {
     pub buoy: Arc<BuoyService>,
     pub wave_buoy: Arc<WaveBuoyService>,
     pub usgs_water: Arc<UsgsWaterService>,
+    pub biodiversity: Arc<BiodiversityService>,
 }
 
 #[derive(Clone)]
@@ -92,6 +94,7 @@ pub struct SlugMcpServer {
     buoy: Arc<BuoyService>,
     wave_buoy: Arc<WaveBuoyService>,
     usgs_water: Arc<UsgsWaterService>,
+    biodiversity: Arc<BiodiversityService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -120,6 +123,7 @@ impl SlugMcpServer {
             buoy: ctx.buoy,
             wave_buoy: ctx.wave_buoy,
             usgs_water: ctx.usgs_water,
+            biodiversity: ctx.biodiversity,
             tool_router: Self::tool_router(),
         }
     }
@@ -564,6 +568,42 @@ macro_rules! define_tools {
                 let result = self
                     .marine
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Biodiversity Tools ───
+
+            #[tool(description = "Search iNaturalist for recent species observations in the Santa Cruz area (default 25 km around downtown). Filter by free-text query, iconic taxon (Plantae/Animalia/Fungi/Mollusca/Aves/Mammalia/Reptilia/etc.), days back, or custom lat/lon. No API key required. Returns observer, date, location, and a link to each observation.")]
+            async fn search_species_observations(
+                &self,
+                Parameters(req): Parameters<SpeciesRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .biodiversity
+                    .search_species(
+                        req.query.as_deref(),
+                        req.lat,
+                        req.lon,
+                        req.radius_km,
+                        req.days,
+                        req.iconic_taxon.as_deref(),
+                        req.limit,
+                    )
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Search eBird for recent bird observations around Santa Cruz (default 25 km, 7 days). Returns species, count, location, and observation date. Requires a free eBird API key (set EBIRD_API_KEY) — otherwise this tool returns registration instructions instead of erroring.")]
+            async fn search_bird_observations(
+                &self,
+                Parameters(req): Parameters<BirdRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .biodiversity
+                    .search_birds(req.lat, req.lon, req.radius_km, req.days, req.limit)
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))

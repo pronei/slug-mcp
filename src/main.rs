@@ -11,6 +11,7 @@ use rmcp::ServiceExt;
 mod academics;
 #[cfg(feature = "auth")]
 mod auth;
+mod biodiversity;
 mod buoy;
 mod cache;
 mod classrooms;
@@ -139,6 +140,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
     let bustime_key = config.bustime_api_key.clone();
     let firms_key = config.firms_map_key.clone();
+    let ebird_key = config.ebird_api_key.clone();
     let ctx = server::ServiceContext {
         config,
         cache: cache.clone(),
@@ -160,6 +162,11 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         buoy: Arc::new(buoy::BuoyService::new(http.clone(), cache.clone())),
         wave_buoy: Arc::new(wave_buoy::WaveBuoyService::new(http.clone(), cache.clone())),
         usgs_water: Arc::new(usgs_water::UsgsWaterService::new(http.clone(), cache.clone())),
+        biodiversity: Arc::new(biodiversity::BiodiversityService::new(
+            http.clone(),
+            cache.clone(),
+            ebird_key,
+        )),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

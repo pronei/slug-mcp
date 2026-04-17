@@ -31,6 +31,7 @@ use crate::recreation::{
 };
 use crate::tides::{TidesRequest, TidesService};
 use crate::traffic::{TrafficRequest, TrafficService};
+use crate::usgs_water::{StreamConditionsRequest, UsgsWaterService};
 use crate::wave_buoy::{WaveBuoyRequest, WaveBuoyService};
 use crate::transit::TransitService;
 use crate::weather::{WeatherForecastRequest, WeatherService};
@@ -61,6 +62,7 @@ pub struct ServiceContext {
     pub tides: Arc<TidesService>,
     pub buoy: Arc<BuoyService>,
     pub wave_buoy: Arc<WaveBuoyService>,
+    pub usgs_water: Arc<UsgsWaterService>,
 }
 
 #[derive(Clone)]
@@ -89,6 +91,7 @@ pub struct SlugMcpServer {
     tides: Arc<TidesService>,
     buoy: Arc<BuoyService>,
     wave_buoy: Arc<WaveBuoyService>,
+    usgs_water: Arc<UsgsWaterService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -116,6 +119,7 @@ impl SlugMcpServer {
             tides: ctx.tides,
             buoy: ctx.buoy,
             wave_buoy: ctx.wave_buoy,
+            usgs_water: ctx.usgs_water,
             tool_router: Self::tool_router(),
         }
     }
@@ -560,6 +564,24 @@ macro_rules! define_tools {
                 let result = self
                     .marine
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── USGS Stream / Water Tools ───
+
+            #[tool(description = "Get real-time stream conditions from a USGS gauge (discharge in cfs, gage height in ft, water temperature). Defaults to site 11160500 (San Lorenzo River at Big Trees, the Santa Cruz County reference gauge). Pass a different USGS site ID or override parameter codes (`00060`=discharge, `00065`=gage height, `00010`=water temp).")]
+            async fn get_stream_conditions(
+                &self,
+                Parameters(req): Parameters<StreamConditionsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .usgs_water
+                    .get_stream_conditions(
+                        req.site.as_deref(),
+                        req.parameters.as_deref(),
+                    )
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))

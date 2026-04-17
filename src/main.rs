@@ -22,6 +22,7 @@ mod library;
 mod marine;
 mod recreation;
 mod server;
+mod tides;
 mod traffic;
 mod transit;
 mod util;
@@ -152,6 +153,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         marine: Arc::new(marine::MarineService::new(http.clone(), cache.clone())),
         fire: Arc::new(fire::FireService::new(http.clone(), cache.clone(), firms_key)),
         traffic: Arc::new(traffic::TrafficService::new(http.clone(), cache.clone())),
+        tides: Arc::new(tides::TidesService::new(http.clone(), cache.clone())),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific

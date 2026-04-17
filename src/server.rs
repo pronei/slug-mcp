@@ -28,6 +28,7 @@ use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest}
 use crate::recreation::{
     FacilityOccupancyRequest, FacilityScheduleRequest, GroupExerciseRequest, RecreationService,
 };
+use crate::tides::{TidesRequest, TidesService};
 use crate::traffic::{TrafficRequest, TrafficService};
 use crate::transit::TransitService;
 use crate::weather::{WeatherForecastRequest, WeatherService};
@@ -55,6 +56,7 @@ pub struct ServiceContext {
     pub marine: Arc<MarineService>,
     pub fire: Arc<FireService>,
     pub traffic: Arc<TrafficService>,
+    pub tides: Arc<TidesService>,
 }
 
 #[derive(Clone)]
@@ -80,6 +82,7 @@ pub struct SlugMcpServer {
     marine: Arc<MarineService>,
     fire: Arc<FireService>,
     traffic: Arc<TrafficService>,
+    tides: Arc<TidesService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -104,6 +107,7 @@ impl SlugMcpServer {
             marine: ctx.marine,
             fire: ctx.fire,
             traffic: ctx.traffic,
+            tides: ctx.tides,
             tool_router: Self::tool_router(),
         }
     }
@@ -548,6 +552,21 @@ macro_rules! define_tools {
                 let result = self
                     .marine
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Tide Tools ───
+
+            #[tool(description = "Get NOAA tide predictions (high/low) for a coastal station. Defaults to Monterey (station 9413450), the closest official tide station to Santa Cruz. Pass a different NOAA CO-OPS station ID for other locations. Returns up to 7 days (default 3) grouped by day with heights in feet above MLLW.")]
+            async fn get_tides(
+                &self,
+                Parameters(req): Parameters<TidesRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .tides
+                    .get_tides(req.station.as_deref(), req.days)
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))

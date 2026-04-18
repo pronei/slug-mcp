@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 
 mod academics;
+mod air_quality;
 #[cfg(feature = "auth")]
 mod auth;
 mod biodiversity;
@@ -141,6 +142,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let bustime_key = config.bustime_api_key.clone();
     let firms_key = config.firms_map_key.clone();
     let ebird_key = config.ebird_api_key.clone();
+    let airnow_key = config.airnow_api_key.clone();
     let ctx = server::ServiceContext {
         config,
         cache: cache.clone(),
@@ -166,6 +168,11 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
             http.clone(),
             cache.clone(),
             ebird_key,
+        )),
+        air_quality: Arc::new(air_quality::AirQualityService::new(
+            http.clone(),
+            cache.clone(),
+            airnow_key,
         )),
     };
 

@@ -10,6 +10,7 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
+use crate::air_quality::{AirQualityRequest, AirQualityService};
 use crate::biodiversity::{BiodiversityService, BirdRequest, SpeciesRequest};
 use crate::buoy::{BuoyRequest, BuoyService};
 #[cfg(feature = "auth")]
@@ -65,6 +66,7 @@ pub struct ServiceContext {
     pub wave_buoy: Arc<WaveBuoyService>,
     pub usgs_water: Arc<UsgsWaterService>,
     pub biodiversity: Arc<BiodiversityService>,
+    pub air_quality: Arc<AirQualityService>,
 }
 
 #[derive(Clone)]
@@ -95,6 +97,7 @@ pub struct SlugMcpServer {
     wave_buoy: Arc<WaveBuoyService>,
     usgs_water: Arc<UsgsWaterService>,
     biodiversity: Arc<BiodiversityService>,
+    air_quality: Arc<AirQualityService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -124,6 +127,7 @@ impl SlugMcpServer {
             wave_buoy: ctx.wave_buoy,
             usgs_water: ctx.usgs_water,
             biodiversity: ctx.biodiversity,
+            air_quality: ctx.air_quality,
             tool_router: Self::tool_router(),
         }
     }
@@ -568,6 +572,21 @@ macro_rules! define_tools {
                 let result = self
                     .marine
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Air Quality Tools ───
+
+            #[tool(description = "Get current EPA AirNow air-quality readings (AQI + category) for a US ZIP code. Defaults to 95064 (UCSC main campus) within 25 miles. Returns one row per parameter (O3, PM2.5, PM10). Requires a free AirNow API key (set AIRNOW_API_KEY) — otherwise returns registration instructions.")]
+            async fn get_air_quality(
+                &self,
+                Parameters(req): Parameters<AirQualityRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .air_quality
+                    .get_current(req.zip_code.as_deref(), req.distance_miles)
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))

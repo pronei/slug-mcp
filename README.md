@@ -47,6 +47,7 @@ These prompts show what's possible when campus services are connected:
 | **Academics** | Class search by subject, instructor, GE, course number, career level — enrollment counts, meeting times, instruction mode; faculty/staff directory |
 | **Classrooms** | Find rooms by capacity, building, AV equipment, seating style, accessibility |
 | **Transit** | Real-time bus arrival predictions by stop and route via Santa Cruz Metro |
+| **Field Research** | NOAA tide predictions, NDBC buoy observations, CDIP waverider spectra, USGS real-time stream conditions, iNaturalist + eBird species observations, AirNow current AQI |
 
 ## Quick Start
 
@@ -147,8 +148,26 @@ src/
 ├── library/             # LibCal study room availability + booking
 ├── academics/           # PISA class search + campus directory
 ├── classrooms/          # Classroom directory + campus locations
-└── transit/             # Santa Cruz Metro real-time predictions
+├── transit/             # Santa Cruz Metro real-time predictions
+├── tides/               # NOAA CO-OPS tide predictions
+├── buoy/                # NDBC realtime2 weather + ocean buoys
+├── wave_buoy/           # CDIP/NDBC .spec swell vs wind-wave
+├── usgs_water/          # USGS NWIS instantaneous stream conditions
+├── biodiversity/        # iNaturalist + eBird species observations
+└── air_quality/         # EPA AirNow current AQI by ZIP
 ```
+
+### Optional API keys
+
+Several Santa Cruz / field-research tools need free registration with the
+upstream provider. Missing keys produce a friendly "not configured" message
+instead of erroring.
+
+| Env var | Needed by | Get one |
+|---------|-----------|---------|
+| `SLUG_MCP_FIRMS_KEY` | `get_fire_detections` | <https://firms.modaps.eosdis.nasa.gov/api/area/> |
+| `AIRNOW_API_KEY` | `get_air_quality` | <https://docs.airnowapi.org/> |
+| `EBIRD_API_KEY` | `search_bird_observations` | <https://ebird.org/api/keygen> |
 
 Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) > `mod.rs` (service layer with caching) > `server.rs` (MCP tool handler).
 

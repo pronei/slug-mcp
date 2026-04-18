@@ -4,6 +4,16 @@
 
 ### Added
 
+#### Field Research Tools
+- **`get_tides`** — NOAA CO-OPS high/low tide predictions for any coastal station (default 9413450 Monterey). Heights in feet above MLLW, grouped by date, up to 7 days.
+- **`get_buoy_observations`** — NDBC realtime2 text feed renderer: latest wind, significant wave height/period, air + water temperature, pressure, and a ~3h water-temp trend. Default station 46042 (Monterey Bay).
+- **`get_wave_buoy`** — CDIP/NDBC `.spec` swell vs wind-wave breakdown (height, period, direction, steepness) across Monterey-area waveriders (default 46114 Pt. Sur, 46236 Monterey Canyon, 46042 Monterey).
+- **`get_stream_conditions`** — USGS NWIS Instantaneous Values API for discharge (cfs), gage height (ft), and water temperature. Default gauge 11160500 (San Lorenzo River at Big Trees). Overridable parameter codes.
+- **`search_species_observations`** — iNaturalist v1 API (no auth) for recent species observations near Santa Cruz. Filters by free-text query, iconic taxon, days back, custom lat/lon.
+- **`search_bird_observations`** — eBird API 2.0 recent observations near Santa Cruz. Requires `EBIRD_API_KEY` (graceful-disable with registration link).
+- **`get_air_quality`** — EPA AirNow current AQI by ZIP code (default 95064 UCSC) with one row per pollutant. Requires `AIRNOW_API_KEY` (graceful-disable).
+- Shared `degrees_to_compass` helper moved to `src/util.rs` so tides/buoy/wave_buoy/marine all format direction labels consistently.
+
 #### Campus Service Modules
 - **Eventbrite event search** — search community events, concerts, meetups, and workshops near Santa Cruz (25-mile radius) via Eventbrite scraper. Returns event details with direct registration links.
 - **Recreation facility occupancy** — live headcounts for UCSC gym, pool, fields, climbing wall, and wellness center from `campusrec.ucsc.edu`. Includes facility schedule lookup.

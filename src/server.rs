@@ -462,7 +462,7 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
-            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes. Shows detours, disruptions, and schedule changes. Specify a route number or stop ID. Backed by the BusTime bulletin API (requires key).")]
+            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes via the BusTime bulletin API (requires key). Specify a route number or stop ID. Prefer `get_system_service_alerts` for general 'are there alerts?' questions — it covers the same bulletins via GTFS-RT with no API key. Use this tool only when you need BusTime-specific per-route or per-stop filtering at the API level.")]
             async fn get_service_alerts(
                 &self,
                 Parameters(req): Parameters<ServiceAlertRequest>,

@@ -42,3 +42,21 @@ auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname"]
 
 [dev-dependencies]
 tempfile = "3"
+
+# Inherits from `release` but cranks up cross-crate optimization.
+# Build with: cargo build --profile release-optimized --no-default-features
+# Output:    target/release-optimized/slug-mcp
+#
+# Tradeoffs vs `release`:
+#   - lto = "fat"          - ~10-20% perf, ~30% smaller binary; 3-5× slower builds
+#   - codegen-units = 1    - extra few % on top of LTO; slower builds
+#   - strip = "symbols"    - smaller binary; less useful panic backtraces
+#   - panic = "unwind"     - kept (default) so tokio task panics don't kill the server
+[profile.release-optimized]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+debug = false
+overflow-checks = false

@@ -12,6 +12,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::cache::CacheStore;
+use crate::util::degrees_to_compass;
 use open_meteo::{ForecastResponse, MarineResponse};
 use spots::SurfSpot;
 
@@ -177,30 +178,6 @@ impl MarineService {
 
 fn m_to_ft(m: f64) -> f64 {
     m * 3.28084
-}
-
-fn degrees_to_compass(deg: f64) -> &'static str {
-    let d = ((deg % 360.0) + 360.0) % 360.0;
-    if !(11.25..348.75).contains(&d) {
-        return "N";
-    }
-    match d {
-        d if d < 33.75 => "NNE",
-        d if d < 56.25 => "NE",
-        d if d < 78.75 => "ENE",
-        d if d < 101.25 => "E",
-        d if d < 123.75 => "ESE",
-        d if d < 146.25 => "SE",
-        d if d < 168.75 => "SSE",
-        d if d < 191.25 => "S",
-        d if d < 213.75 => "SSW",
-        d if d < 236.25 => "SW",
-        d if d < 258.75 => "WSW",
-        d if d < 281.25 => "W",
-        d if d < 303.75 => "WNW",
-        d if d < 326.25 => "NW",
-        _ => "NNW",
-    }
 }
 
 fn format_single_spot(spot: &SurfSpot, c: &SpotConditions) -> String {
@@ -433,16 +410,6 @@ fn format_marine_detail(label: &str, notes: Option<&str>, m: &MarineResponse) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn degrees_to_compass_cardinals() {
-        assert_eq!(degrees_to_compass(0.0), "N");
-        assert_eq!(degrees_to_compass(90.0), "E");
-        assert_eq!(degrees_to_compass(180.0), "S");
-        assert_eq!(degrees_to_compass(270.0), "W");
-        assert_eq!(degrees_to_compass(225.0), "SW");
-        assert_eq!(degrees_to_compass(45.0), "NE");
-    }
 
     #[test]
     fn meters_to_feet() {

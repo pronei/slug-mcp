@@ -10,6 +10,8 @@ pub struct Config {
     pub eventbrite_api_key: Option<String>,
     pub bustime_api_key: Option<String>,
     pub firms_map_key: Option<String>,
+    pub airnow_api_key: Option<String>,
+    pub ebird_api_key: Option<String>,
 }
 
 impl Config {
@@ -31,6 +33,8 @@ impl Config {
             eventbrite_api_key: std::env::var("SLUG_MCP_EVENTBRITE_KEY").ok(),
             bustime_api_key: std::env::var("SLUG_MCP_BUSTIME_KEY").ok(),
             firms_map_key: std::env::var("SLUG_MCP_FIRMS_KEY").ok(),
+            airnow_api_key: std::env::var("AIRNOW_API_KEY").ok(),
+            ebird_api_key: std::env::var("EBIRD_API_KEY").ok(),
         })
     }
 

@@ -10,6 +10,9 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
+use crate::air_quality::{AirQualityRequest, AirQualityService};
+use crate::biodiversity::{BiodiversityService, BirdRequest, SpeciesRequest};
+use crate::buoy::{BuoyRequest, BuoyService};
 #[cfg(feature = "auth")]
 use crate::auth::session::SessionData;
 #[cfg(feature = "auth")]
@@ -27,7 +30,10 @@ use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest}
 use crate::recreation::{
     FacilityOccupancyRequest, FacilityScheduleRequest, GroupExerciseRequest, RecreationService,
 };
+use crate::tides::{TidesRequest, TidesService};
 use crate::traffic::{TrafficRequest, TrafficService};
+use crate::usgs_water::{StreamConditionsRequest, UsgsWaterService};
+use crate::wave_buoy::{WaveBuoyRequest, WaveBuoyService};
 use crate::transit::TransitService;
 use crate::weather::{WeatherForecastRequest, WeatherService};
 
@@ -53,6 +59,12 @@ pub struct ServiceContext {
     pub marine: Arc<MarineService>,
     pub fire: Arc<FireService>,
     pub traffic: Arc<TrafficService>,
+    pub tides: Arc<TidesService>,
+    pub buoy: Arc<BuoyService>,
+    pub wave_buoy: Arc<WaveBuoyService>,
+    pub usgs_water: Arc<UsgsWaterService>,
+    pub biodiversity: Arc<BiodiversityService>,
+    pub air_quality: Arc<AirQualityService>,
 }
 
 #[derive(Clone)]
@@ -74,6 +86,12 @@ pub struct SlugMcpServer {
     marine: Arc<MarineService>,
     fire: Arc<FireService>,
     traffic: Arc<TrafficService>,
+    tides: Arc<TidesService>,
+    buoy: Arc<BuoyService>,
+    wave_buoy: Arc<WaveBuoyService>,
+    usgs_water: Arc<UsgsWaterService>,
+    biodiversity: Arc<BiodiversityService>,
+    air_quality: Arc<AirQualityService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -96,6 +114,12 @@ impl SlugMcpServer {
             marine: ctx.marine,
             fire: ctx.fire,
             traffic: ctx.traffic,
+            tides: ctx.tides,
+            buoy: ctx.buoy,
+            wave_buoy: ctx.wave_buoy,
+            usgs_water: ctx.usgs_water,
+            biodiversity: ctx.biodiversity,
+            air_quality: ctx.air_quality,
             tool_router: Self::tool_router(),
         }
     }
@@ -438,7 +462,7 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
-            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes. Shows detours, disruptions, and schedule changes. Specify a route number or stop ID. Backed by the BusTime bulletin API (requires key).")]
+            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes via the BusTime bulletin API (requires key). Specify a route number or stop ID. Prefer `get_system_service_alerts` for general 'are there alerts?' questions — it covers the same bulletins via GTFS-RT with no API key. Use this tool only when you need BusTime-specific per-route or per-stop filtering at the API level.")]
             async fn get_service_alerts(
                 &self,
                 Parameters(req): Parameters<ServiceAlertRequest>,
@@ -539,6 +563,120 @@ macro_rules! define_tools {
                 let result = self
                     .marine
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Air Quality Tools ───
+
+            #[tool(description = "Get current EPA AirNow air-quality readings (AQI + category) for a US ZIP code. Defaults to 95064 (UCSC main campus) within 25 miles. Returns one row per parameter (O3, PM2.5, PM10). Requires a free AirNow API key (set AIRNOW_API_KEY) — otherwise returns registration instructions.")]
+            async fn get_air_quality(
+                &self,
+                Parameters(req): Parameters<AirQualityRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .air_quality
+                    .get_current(req.zip_code.as_deref(), req.distance_miles)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Biodiversity Tools ───
+
+            #[tool(description = "Search iNaturalist for recent species observations in the Santa Cruz area (default 25 km around downtown). Filter by free-text query, iconic taxon (Plantae/Animalia/Fungi/Mollusca/Aves/Mammalia/Reptilia/etc.), days back, or custom lat/lon. No API key required. Returns observer, date, location, and a link to each observation.")]
+            async fn search_species_observations(
+                &self,
+                Parameters(req): Parameters<SpeciesRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .biodiversity
+                    .search_species(
+                        req.query.as_deref(),
+                        req.lat,
+                        req.lon,
+                        req.radius_km,
+                        req.days,
+                        req.iconic_taxon.as_deref(),
+                        req.limit,
+                    )
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Search eBird for recent bird observations around Santa Cruz (default 25 km, 7 days). Returns species, count, location, and observation date. Requires a free eBird API key (set EBIRD_API_KEY) — otherwise this tool returns registration instructions instead of erroring.")]
+            async fn search_bird_observations(
+                &self,
+                Parameters(req): Parameters<BirdRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .biodiversity
+                    .search_birds(req.lat, req.lon, req.radius_km, req.days, req.limit)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── USGS Stream / Water Tools ───
+
+            #[tool(description = "Get real-time stream conditions from a USGS gauge (discharge in cfs, gage height in ft, water temperature). Defaults to site 11160500 (San Lorenzo River at Big Trees, the Santa Cruz County reference gauge). Pass a different USGS site ID or override parameter codes (`00060`=discharge, `00065`=gage height, `00010`=water temp).")]
+            async fn get_stream_conditions(
+                &self,
+                Parameters(req): Parameters<StreamConditionsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .usgs_water
+                    .get_stream_conditions(
+                        req.site.as_deref(),
+                        req.parameters.as_deref(),
+                    )
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Wave Buoy (CDIP) Tools ───
+
+            #[tool(description = "Get swell vs wind-wave spectral summary from CDIP/NDBC waverider buoys. Unlike get_buoy_observations (single station, met+ocean summary), this compares multiple waveriders and separates swell height/period/direction from local wind-wave energy. Defaults to Monterey-area stations 46114 (CDIP 158 Pt. Sur), 46236 (CDIP 185 Monterey Canyon), 46042 (Monterey). Pass `stations` as comma-separated NDBC IDs to override.")]
+            async fn get_wave_buoy(
+                &self,
+                Parameters(req): Parameters<WaveBuoyRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .wave_buoy
+                    .get_wave_data(req.stations.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Buoy Tools ───
+
+            #[tool(description = "Get real-time observations from an NDBC weather/ocean buoy. Defaults to station 46042 (Monterey Bay, the NOAA 3-meter discus offshore of Santa Cruz). Pass another NDBC station ID for other locations. Returns latest wind, significant wave height/period, air+water temperature, pressure, and dew point, plus a ~3h water-temp trend.")]
+            async fn get_buoy_observations(
+                &self,
+                Parameters(req): Parameters<BuoyRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .buoy
+                    .get_observations(req.station.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Tide Tools ───
+
+            #[tool(description = "Get NOAA tide predictions (high/low) for a coastal station. Defaults to Monterey (station 9413450), the closest official tide station to Santa Cruz. Pass a different NOAA CO-OPS station ID for other locations. Returns up to 7 days (default 3) grouped by day with heights in feet above MLLW.")]
+            async fn get_tides(
+                &self,
+                Parameters(req): Parameters<TidesRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .tides
+                    .get_tides(req.station.as_deref(), req.days)
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))

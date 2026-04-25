@@ -11,7 +11,9 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use chrono::{Duration, Local, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime};
+
+use crate::util::now_pacific;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -91,7 +93,7 @@ async fn fetch_predictions(
     station: &str,
     days: u32,
 ) -> Result<Vec<TidePrediction>> {
-    let today = Local::now().date_naive();
+    let today = now_pacific().date_naive();
     let end = today + Duration::days(days as i64 - 1);
     let begin_date = today.format("%Y%m%d").to_string();
     let end_date = end.format("%Y%m%d").to_string();
@@ -196,7 +198,7 @@ fn format_tides(bundle: &TideBundle, days: u32) -> String {
 
     out.push_str(&format!(
         "\n_Source: NOAA CO-OPS. Last updated: {}_\n",
-        Local::now().format("%-I:%M %p")
+        now_pacific().format("%-I:%M %p")
     ));
     out
 }

@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use chrono::Local;
+use crate::util::now_pacific;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -196,7 +196,7 @@ fn format_readings(zip: &str, readings: &[AirReading]) -> String {
 
     out.push_str(&format!(
         "\n_Source: EPA AirNow. Last updated: {}_\n",
-        Local::now().format("%-I:%M %p")
+        now_pacific().format("%-I:%M %p")
     ));
     out
 }

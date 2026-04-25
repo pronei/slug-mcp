@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use chrono::Local;
+use crate::util::now_pacific;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -371,7 +371,7 @@ fn format_species(
 
     out.push_str(&format!(
         "\n_Source: iNaturalist v1 API. Last updated: {}_\n",
-        Local::now().format("%-I:%M %p")
+        now_pacific().format("%-I:%M %p")
     ));
     out
 }
@@ -419,7 +419,7 @@ fn format_birds(
 
     out.push_str(&format!(
         "\n_Source: eBird API 2.0. Last updated: {}_\n",
-        Local::now().format("%-I:%M %p")
+        now_pacific().format("%-I:%M %p")
     ));
     out
 }

@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use chrono::Local;
+use crate::util::now_pacific;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -281,7 +281,7 @@ fn format_observations(name: &str, obs: &[BuoyObservation]) -> String {
 
     out.push_str(&format!(
         "\n_Source: NDBC realtime2. Last updated: {}_\n",
-        Local::now().format("%-I:%M %p")
+        now_pacific().format("%-I:%M %p")
     ));
     out
 }

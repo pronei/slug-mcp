@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use chrono::Local;
+use crate::util::now_pacific;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -287,7 +287,7 @@ fn format_results(results: &[(String, String, Result<SpectralObservation>)]) -> 
 
     out.push_str(&format!(
         "_Source: NDBC .spec feeds (CDIP-owned stations mirrored). Last updated: {}_\n",
-        Local::now().format("%-I:%M %p")
+        now_pacific().format("%-I:%M %p")
     ));
     out
 }

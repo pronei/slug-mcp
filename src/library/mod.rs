@@ -47,7 +47,7 @@ impl LibraryService {
         library: Option<&str>,
         date: Option<&str>,
     ) -> Result<String> {
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let today = crate::util::now_pacific().format("%Y-%m-%d").to_string();
         let date = date.unwrap_or(&today);
 
         let lids: Vec<(u32, &str)> = if let Some(query) = library {
@@ -85,7 +85,7 @@ impl LibraryService {
 
         let output = availabilities
             .iter()
-            .map(|a| a.to_string())
+            .map(|a| a.format())
             .collect::<Vec<_>>()
             .join("\n\n");
 
@@ -109,6 +109,6 @@ impl LibraryService {
             self.cache.invalidate(&cache_key).await;
         }
 
-        Ok(result.to_string())
+        Ok(result.format())
     }
 }

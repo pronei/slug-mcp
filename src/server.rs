@@ -16,7 +16,6 @@ use crate::auth::session::SessionData;
 use crate::auth::AuthManager;
 use crate::cache::CacheStore;
 use crate::classrooms::{ClassroomService, SearchClassroomsRequest};
-use crate::config::Config;
 use crate::degrees::{DegreeProgressRequest, DegreeRequirementsRequest, DegreeService};
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
 use crate::events::{EventsService, SearchEventbriteRequest, SearchEventsRequest, UpcomingEventsRequest};
@@ -39,7 +38,6 @@ fn internal_err(e: impl std::fmt::Display) -> ErrorData {
 /// Shared service dependencies, constructed once and cloned into each MCP session.
 #[derive(Clone)]
 pub struct ServiceContext {
-    pub config: Arc<Config>,
     pub cache: Arc<CacheStore>,
     #[cfg(feature = "auth")]
     pub auth: Arc<AuthManager>,
@@ -59,10 +57,6 @@ pub struct ServiceContext {
 
 #[derive(Clone)]
 pub struct SlugMcpServer {
-    #[allow(dead_code)]
-    config: Arc<Config>,
-    #[allow(dead_code)]
-    cache: Arc<CacheStore>,
     #[cfg(feature = "auth")]
     auth: Arc<AuthManager>,
     #[cfg(feature = "auth")]
@@ -86,8 +80,6 @@ pub struct SlugMcpServer {
 impl SlugMcpServer {
     pub fn new(ctx: ServiceContext) -> Self {
         Self {
-            config: ctx.config,
-            cache: ctx.cache,
             #[cfg(feature = "auth")]
             auth: ctx.auth,
             #[cfg(feature = "auth")]
@@ -225,7 +217,6 @@ macro_rules! define_tools {
                     .events
                     .search_events(
                         req.query.as_deref(),
-                        None,
                         req.category.as_deref(),
                         req.limit,
                     )
@@ -730,7 +721,7 @@ define_tools!({
 
         let result = self.dining.get_balance(&client).await.map_err(internal_err)?;
 
-        let mut output = result.balance.to_string();
+        let mut output = result.balance.format();
 
         // If parsing failed, include page snippet for debugging
         if let Some(snippet) = &result.debug_snippet {
@@ -757,9 +748,12 @@ define_tools!({
             }
         };
 
+        let client =
+            crate::auth::build_authenticated_client(&session.cookies).map_err(internal_err)?;
+
         let result = self
             .library
-            .book(&session.cookies, req.space_id, &req.date, &req.start_time, &req.end_time)
+            .book(&client, req.space_id, &req.date, &req.start_time, &req.end_time)
             .await
             .map_err(internal_err)?;
 

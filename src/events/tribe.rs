@@ -6,14 +6,14 @@ use crate::util;
 const EVENTS_API_URL: &str =
     "https://events.ucsc.edu/wp-json/tribe/events/v1/events";
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeEventsResponse {
     pub events: Vec<TribeEvent>,
     pub total: u64,
     pub total_pages: u64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeEvent {
     pub id: u64,
     pub title: String,
@@ -29,32 +29,32 @@ pub struct TribeEvent {
     pub tags: Vec<TribeTag>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum TribeVenueField {
     Venue(TribeVenue),
     Empty(Vec<()>),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeVenue {
     pub venue: String,
     pub address: Option<String>,
     pub city: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeOrganizer {
     pub organizer: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeCategory {
     pub name: String,
     pub slug: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeTag {
     pub name: String,
 }

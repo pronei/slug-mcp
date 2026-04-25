@@ -206,7 +206,7 @@ impl TransitService {
             stop_id.unwrap_or("")
         );
 
-        if let Some(cached) = self.cache.get(&cache_key).await {
+        if let Some(cached) = self.cache.get::<String>(&cache_key).await {
             return Ok(cached);
         }
 
@@ -235,35 +235,32 @@ impl TransitService {
             }
         };
 
-        self.cache.set(&cache_key, &output, 300).await;
+        self.cache
+            .set(&cache_key, output.clone(), std::time::Duration::from_secs(300))
+            .await;
 
         Ok(output)
     }
 
     async fn load_stops(&self, api_key: &str) -> Result<Vec<Stop>> {
         let cache_key = "transit:bustime:stops";
-
-        if let Some(cached) = self.cache.get(cache_key).await {
-            if let Ok(stops) = serde_json::from_str::<Vec<Stop>>(&cached) {
-                return Ok(stops);
-            }
-        }
-
-        let stops = stops::fetch_all_stops(&self.http, api_key)
+        let http = self.http.clone();
+        let api_key = api_key.to_string();
+        self.cache
+            .get_or_fetch(cache_key, 86400, || async move {
+                let stops = stops::fetch_all_stops(&http, &api_key)
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to load stops from BusTime API: {}", e)
+                    })?;
+                if stops.is_empty() {
+                    bail!(
+                        "BusTime API returned no stops — the API may be temporarily unavailable."
+                    );
+                }
+                Ok(stops)
+            })
             .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to load stops from BusTime API: {}", e)
-            })?;
-
-        if stops.is_empty() {
-            bail!("BusTime API returned no stops — the API may be temporarily unavailable.");
-        }
-
-        if let Ok(json) = serde_json::to_string(&stops) {
-            self.cache.set(cache_key, &json, 86400).await; // 24h
-        }
-
-        Ok(stops)
     }
 }
 
@@ -346,7 +343,7 @@ fn format_bustime_predictions(
         }
     }
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\nLast updated: {} · source: BusTime (fallback)\n",
         now.format("%-I:%M %p")
@@ -402,7 +399,7 @@ fn format_service_bulletins(bulletins: &[bustime::ServiceBulletin]) -> String {
         out.push('\n');
     }
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!("Last checked: {}\n", now.format("%-I:%M %p")));
 
     out

@@ -142,7 +142,7 @@ impl TrafficService {
             }
         }
 
-        let now = chrono::Local::now();
+        let now = crate::util::now_pacific();
         out.push_str(&format!(
             "_Sources: CHP CAD + Caltrans CWWP2 District 5. Last updated: {}_\n",
             now.format("%-I:%M %p")
@@ -191,7 +191,7 @@ fn format_chp(filtered: &[&Incident], route: Option<&str>, total: usize) -> Stri
         write_chp_body(&mut out, filtered);
     }
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\n_Source: CHP CAD (media.chp.ca.gov). Last updated: {}_\n",
         now.format("%-I:%M %p")
@@ -234,7 +234,7 @@ fn format_caltrans(filtered: &[&LaneClosure], route: Option<&str>, total: usize)
         write_caltrans_body(&mut out, filtered);
     }
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\n_Source: Caltrans CWWP2 District 5. Last updated: {}_\n",
         now.format("%-I:%M %p")

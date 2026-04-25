@@ -34,13 +34,17 @@ pub struct DiningHoursRequest {
 use std::time::Duration;
 
 use crate::cache::CacheStore;
+use crate::util::FuzzyMatcher;
 #[cfg(feature = "auth")]
 use scraper::{scrape_balance, BalanceResult, MealBalance};
 use scraper::{
     find_hall, hall_names, scrape_hours, scrape_menu, scrape_nutrition,
-    DiningLocation, DINING_HALLS,
+    DiningLocation, HallKind, DINING_HALLS,
 };
 
+/// Category names we hide by default (condiments, beverages, etc.) so the menu
+/// surfaces actual food. Matched fuzzily — case-insensitive, whitespace-collapsed
+/// — so minor upstream renames don't break the filter silently.
 const FILTERED_CATEGORIES: &[&str] = &[
     "condiments",
     "all day",
@@ -95,7 +99,7 @@ impl DiningService {
             })?;
             vec![hall]
         } else {
-            DINING_HALLS.iter().take(5).collect()
+            DINING_HALLS.iter().filter(|h| h.kind == HallKind::Full).collect()
         };
 
         let futures: Vec<_> = halls
@@ -128,18 +132,19 @@ impl DiningService {
 
         // Filter out noisy categories (condiments, beverages, etc.) by default
         if !include_all {
+            let denylist = FuzzyMatcher::new(FILTERED_CATEGORIES.iter().copied())
+                .case_insensitive()
+                .whitespace_collapsed();
             for menu in &mut menus {
                 for meal in &mut menu.meals {
-                    meal.categories.retain(|c| {
-                        !FILTERED_CATEGORIES.contains(&c.name.to_lowercase().as_str())
-                    });
+                    meal.categories.retain(|c| !denylist.matches(&c.name));
                 }
             }
         }
 
         let output: String = menus
             .iter()
-            .map(|m| m.to_string())
+            .map(|m| m.format())
             .collect::<Vec<_>>()
             .join("\n---\n\n");
 
@@ -152,7 +157,7 @@ impl DiningService {
 
     pub async fn get_nutrition(&self, recipe_id: &str) -> Result<String> {
         let info = scrape_nutrition(&self.http, recipe_id).await?;
-        Ok(info.to_string())
+        Ok(info.format())
     }
 
     pub async fn get_hours(&self, location: Option<&str>) -> Result<String> {
@@ -162,7 +167,7 @@ impl DiningService {
             .get_or_fetch("dining:hours", 21600, || scrape_hours(http))
             .await?;
 
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let today = crate::util::now_pacific().format("%Y-%m-%d").to_string();
 
         let filtered: Vec<&DiningLocation> = if let Some(query) = location {
             let q = query.to_lowercase();
@@ -191,20 +196,23 @@ impl DiningService {
 
     #[cfg(feature = "auth")]
     pub async fn get_balance(&self, auth_client: &reqwest::Client) -> Result<BalanceResult> {
-        // Balance uses conditional caching (only cache on success), so we don't
-        // use get_or_fetch here.
-        if let Some(cached) = self.cache.get("dining:balance").await {
-            if let Ok(balance) = serde_json::from_str::<MealBalance>(&cached) {
-                return Ok(BalanceResult { balance, debug_snippet: None });
-            }
+        // Balance uses conditional caching (only cache on success), so we
+        // don't use get_or_fetch here — debug_snippet means parse failed and
+        // we want to refetch next time.
+        if let Some(balance) = self.cache.get::<MealBalance>("dining:balance").await {
+            return Ok(BalanceResult { balance, debug_snippet: None });
         }
 
         let result = scrape_balance(auth_client).await?;
 
         if result.debug_snippet.is_none() {
-            if let Ok(json) = serde_json::to_string(&result.balance) {
-                self.cache.set("dining:balance", &json, 300).await;
-            }
+            self.cache
+                .set(
+                    "dining:balance",
+                    result.balance.clone(),
+                    std::time::Duration::from_secs(300),
+                )
+                .await;
         }
 
         Ok(result)
@@ -222,17 +230,15 @@ pub fn start_cache_refresher(
             tracing::info!("Next dining cache refresh in {}h {}m", delay.as_secs() / 3600, (delay.as_secs() % 3600) / 60);
             tokio::time::sleep(delay).await;
 
-            let now = chrono::Local::now();
+            let now = crate::util::now_pacific();
             let scraper_date = format!("{}/{}/{}", now.month(), now.day(), now.year());
             let iso_date = now.format("%Y-%m-%d").to_string();
 
-            for hall in DINING_HALLS.iter().take(5) {
+            for hall in DINING_HALLS.iter().filter(|h| h.kind == HallKind::Full) {
                 match scrape_menu(&http, hall, Some(&scraper_date)).await {
                     Ok(menu) => {
-                        if let Ok(json) = serde_json::to_string(&menu) {
-                            let key = format!("dining:menu:{}:{}", hall.location_num, iso_date);
-                            cache.set(&key, &json, 3600).await;
-                        }
+                        let key = format!("dining:menu:{}:{}", hall.location_num, iso_date);
+                        cache.set(&key, menu, Duration::from_secs(3600)).await;
                         tracing::info!("Refreshed dining cache for {}", hall.name);
                     }
                     Err(e) => tracing::warn!("Cache refresh failed for {}: {}", hall.name, e),
@@ -243,19 +249,23 @@ pub fn start_cache_refresher(
 }
 
 fn duration_until_next_5am() -> Duration {
-    use chrono::Local;
-    let now = Local::now();
+    let now = crate::util::now_pacific();
     let today_5am = now.date_naive().and_hms_opt(5, 0, 0).unwrap();
     let next_5am = if now.time() < chrono::NaiveTime::from_hms_opt(5, 0, 0).unwrap() {
         today_5am
     } else {
         today_5am + chrono::Duration::days(1)
     };
-    let local_next = next_5am
-        .and_local_timezone(Local)
-        .single()
-        .expect("ambiguous local time");
-    (local_next - now)
-        .to_std()
-        .unwrap_or(Duration::from_secs(3600))
+    // 5 AM Pacific is never ambiguous (DST transitions happen at 2 AM); on the
+    // off chance chrono returns Ambiguous/None, fall back to 1h to retry.
+    let pacific_next = next_5am
+        .and_local_timezone(chrono_tz::US::Pacific)
+        .single();
+    match pacific_next {
+        Some(t) => (t - now).to_std().unwrap_or(Duration::from_secs(3600)),
+        None => {
+            tracing::warn!("ambiguous Pacific time at 5 AM; retrying in 1h");
+            Duration::from_secs(3600)
+        }
+    }
 }

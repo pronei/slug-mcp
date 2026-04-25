@@ -29,7 +29,7 @@ pub struct GroupExerciseRequest {
 use crate::cache::CacheStore;
 use scraper::{
     find_facility, scrape_group_exercise, scrape_occupancy, scrape_schedule, FacilityOccupancy,
-    GroupExerciseClass,
+    FacilitySchedule, GroupExerciseClass,
 };
 
 pub struct RecreationService {
@@ -61,22 +61,18 @@ impl RecreationService {
         };
 
         let header = "## UCSC Recreation Facility Occupancy\n".to_string();
-        let body: Vec<String> = display.iter().map(|f| f.to_string()).collect();
+        let body: Vec<String> = display.iter().map(|f| f.format()).collect();
         Ok(format!("{}{}", header, body.join("\n\n")))
     }
 
     pub async fn get_schedule(&self, facility_id: &str) -> Result<String> {
         let cache_key = format!("recreation:schedule:{}", facility_id);
-
-        if let Some(cached) = self.cache.get(&cache_key).await {
-            return Ok(cached);
-        }
-
-        let schedule = scrape_schedule(&self.http, facility_id).await?;
-        let output = schedule.to_string();
-
-        self.cache.set(&cache_key, &output, 3600).await; // 1 hour
-        Ok(output)
+        let http = &self.http;
+        let schedule: FacilitySchedule = self
+            .cache
+            .get_or_fetch(&cache_key, 3600, || scrape_schedule(http, facility_id))
+            .await?;
+        Ok(schedule.format())
     }
 
     pub async fn get_group_exercise(
@@ -115,7 +111,10 @@ impl RecreationService {
             return Ok(msg);
         }
 
-        let mut out = String::from("## UCSC Group Exercise Schedule (Spring 2026)\n\n");
+        let mut out = format!(
+            "## UCSC Group Exercise Schedule ({})\n\n",
+            crate::academics::scraper::current_term_name()
+        );
         let mut current_day = "";
         for class in &filtered {
             if class.day != current_day {
@@ -125,7 +124,8 @@ impl RecreationService {
                 out.push_str(&format!("### {}\n", class.day));
                 current_day = &class.day;
             }
-            out.push_str(&format!("{}\n", class));
+            out.push_str(&class.format());
+            out.push('\n');
         }
         out.push_str("\n_Source: goslugs.com group exercise schedule_\n");
         Ok(out)

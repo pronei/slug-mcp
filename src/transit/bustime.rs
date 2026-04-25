@@ -6,7 +6,7 @@
 // filtering as cleanly as BusTime's bulletin API.
 
 use anyhow::{bail, Context, Result};
-use chrono::{Local, NaiveDateTime};
+use chrono::NaiveDateTime;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,7 +95,7 @@ pub async fn get_predictions(
         return Ok(Vec::new());
     };
 
-    let now = Local::now().naive_local();
+    let now = crate::util::now_pacific().naive_local();
 
     let results = predictions
         .into_iter()

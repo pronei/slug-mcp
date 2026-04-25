@@ -63,7 +63,6 @@ impl EventsService {
     pub async fn search_events(
         &self,
         query: Option<&str>,
-        _days: Option<u32>,
         category: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Vec<TribeEvent>> {
@@ -98,7 +97,7 @@ impl EventsService {
 
     /// Get upcoming UCSC campus events.
     pub async fn get_upcoming_events(&self, limit: u32) -> Result<Vec<TribeEvent>> {
-        self.search_events(None, None, None, Some(limit)).await
+        self.search_events(None, None, Some(limit)).await
     }
 
     /// Search Eventbrite for events around a location (default: Santa Cruz, CA).

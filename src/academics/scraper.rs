@@ -1,18 +1,19 @@
-use std::fmt;
+use std::fmt::Write;
 
 use anyhow::{Context, Result};
-use scraper::{Html, Selector};
+use scraper::Html;
 
-use crate::util::{sel, selectors};
+use crate::util::selectors;
 
 selectors! {
-    SEL_PANEL => "div.panel.panel-default",
+    SEL_PANEL => "div.panel.panel-default.row",
     SEL_CLASS_LINK => "a[id^='class_id_']",
-    SEL_STATUS_IMG => "img[alt]",
+    SEL_STATUS_IMG => "img",
     SEL_PANEL_BODY => "div.panel-body",
-    SEL_BOLD => "b",
+    SEL_BOLD => "b, strong",
     SEL_DIR_ROW => "tr",
-    SEL_DIR_LINK => "a[href]",
+    SEL_DIR_LINK => "a[href*='cd_detail']",
+    SEL_DIR_RESULT => ".cd-result, .search-result, .result-row",
 }
 
 const CLASS_SEARCH_URL: &str = "https://pisa.ucsc.edu/class_search/index.php";
@@ -42,41 +43,41 @@ pub struct ClassEntry {
     pub mode: Option<String>,
 }
 
-impl fmt::Display for ClassSearchResult {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "## Class Search Results ({})", self.term)?;
-        writeln!(f, "Showing {} results", self.classes.len())?;
+impl ClassSearchResult {
+    pub fn format(&self) -> String {
+        let mut out = format!("## Class Search Results ({})\n", self.term);
+        let _ = writeln!(out, "Showing {} results", self.classes.len());
         for class in &self.classes {
-            write!(f, "\n{}", class)?;
+            out.push('\n');
+            out.push_str(&class.format());
         }
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for ClassEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
+impl ClassEntry {
+    pub fn format(&self) -> String {
+        let mut out = format!(
             "### {} {} - {} {}\n- **Status**: {}",
             self.subject, self.catalog_number, self.section, self.title, self.status
-        )?;
+        );
         if !self.instructor.is_empty() {
-            write!(f, "\n- **Instructor**: {}", self.instructor)?;
+            let _ = write!(out, "\n- **Instructor**: {}", self.instructor);
         }
         if let Some(sched) = &self.schedule {
-            write!(f, "\n- **Schedule**: {}", sched)?;
+            let _ = write!(out, "\n- **Schedule**: {}", sched);
         }
         if let Some(loc) = &self.location {
-            write!(f, "\n- **Location**: {}", loc)?;
+            let _ = write!(out, "\n- **Location**: {}", loc);
         }
         if let Some(enr) = &self.enrolled {
-            write!(f, "\n- **Enrollment**: {}", enr)?;
+            let _ = write!(out, "\n- **Enrollment**: {}", enr);
         }
         if let Some(mode) = &self.mode {
-            write!(f, "\n- **Mode**: {}", mode)?;
+            let _ = write!(out, "\n- **Mode**: {}", mode);
         }
-        write!(f, "\n- **Class #**: {}", self.class_number)?;
-        Ok(())
+        let _ = write!(out, "\n- **Class #**: {}", self.class_number);
+        out
     }
 }
 
@@ -159,15 +160,10 @@ pub async fn scrape_class_search(
 
 fn parse_class_results(html: &str) -> Vec<ClassEntry> {
     let document = Html::parse_document(html);
-    let panel_sel = sel(&SEL_PANEL, "div.panel.panel-default.row");
-    let link_sel = sel(&SEL_CLASS_LINK, "a[id^='class_id_']");
-    let img_sel = sel(&SEL_STATUS_IMG, "img");
-    let body_sel = sel(&SEL_PANEL_BODY, "div.panel-body");
-    let bold_sel = sel(&SEL_BOLD, "b, strong");
 
     let mut classes = Vec::new();
 
-    for panel in document.select(panel_sel) {
+    for panel in document.select(&SEL_PANEL) {
         // Check if this is a class panel (has an id starting with rowpanel_)
         let panel_id = panel.value().attr("id").unwrap_or("");
         if !panel_id.starts_with("rowpanel_") {
@@ -176,7 +172,7 @@ fn parse_class_results(html: &str) -> Vec<ClassEntry> {
 
         // Extract course info from the link text
         let (subject, catalog_number, section, title, class_number) =
-            if let Some(link) = panel.select(link_sel).next() {
+            if let Some(link) = panel.select(&SEL_CLASS_LINK).next() {
                 let text = link.text().collect::<String>();
                 let id = link.value().attr("id").unwrap_or("");
                 let class_num = id.strip_prefix("class_id_").unwrap_or("").to_string();
@@ -187,7 +183,7 @@ fn parse_class_results(html: &str) -> Vec<ClassEntry> {
 
         // Extract status from img alt
         let status = panel
-            .select(img_sel)
+            .select(&SEL_STATUS_IMG)
             .find_map(|img| {
                 let alt = img.value().attr("alt").unwrap_or("");
                 if alt.contains("Open") || alt.contains("Closed") || alt.contains("Wait") {
@@ -199,7 +195,7 @@ fn parse_class_results(html: &str) -> Vec<ClassEntry> {
             .unwrap_or_default();
 
         // Extract details from panel body text
-        let body_text = if let Some(body) = panel.select(body_sel).next() {
+        let body_text = if let Some(body) = panel.select(&SEL_PANEL_BODY).next() {
             body.text().collect::<String>()
         } else {
             String::new()
@@ -211,7 +207,7 @@ fn parse_class_results(html: &str) -> Vec<ClassEntry> {
         let enrolled = extract_enrollment(&body_text);
 
         // Extract instruction mode from bold text
-        let mode = panel.select(bold_sel).find_map(|b| {
+        let mode = panel.select(&SEL_BOLD).find_map(|b| {
             let text = b.text().collect::<String>().trim().to_string();
             if text.contains("In Person")
                 || text.contains("Online")
@@ -356,70 +352,60 @@ fn extract_enrollment(body: &str) -> Option<String> {
 /// Determine the current/upcoming UCSC term code.
 /// UCSC uses: 2260=Winter 2026, 2262=Spring 2026, 2264=Summer 2026, 2268=Fall 2026
 pub fn current_term_code() -> String {
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     let year = now.year();
     let month = now.month();
 
-    // Determine which term we're in or approaching
-    let (term_year, term_suffix) = match month {
-        1..=3 => (year, 60),   // Winter → show current quarter (Spring registration likely open)
-        4..=6 => (year, 62),   // Spring
-        7..=8 => (year, 64),   // Summer
-        9..=12 => (year, 68),  // Fall
-        _ => (year, 62),
-    };
+    let (term_digit, term_year) = TERMS
+        .iter()
+        .find(|t| t.month_range.contains(&month))
+        .map(|t| (t.digit, year))
+        .unwrap_or((2, year)); // fallback to Spring if month is somehow out of range
 
-    // UCSC term code: century_offset + last2digits * 10 + suffix_ones_digit
-    // 2026 → "22" prefix, then suffix: 60,62,64,68
-    // Actually the pattern is: first 3 digits = year encoding, last digit = term
-    // 2260 → year=2026, term=Winter(0)
-    // 2262 → year=2026, term=Spring(2)
-    // Formula: (year - 1900) * 10 + term_digit... let's just do: year * 10 - 18740 + term_digit
-    // 2026: 2026*10 - 18740 = 20260-18740 = 1520 ... that's not right
-    // Let me use: 2260 for 2026 Winter: (year - 1900 - 100) * 10 + 2000 + term_digit
-    // Simpler: for 2026: base = 2260, then +2=spring, +4=summer, +8=fall
-    // For 2027: base = 2270
-    // Pattern: base = (year - 1900) * 10 + 600... no
-    // 2024: Fall = 2248, 2025: Winter=2250, Spring=2252, Summer=2254, Fall=2258
-    // 2026: Winter=2260, Spring=2262
-    // Pattern: (year - 2000 + 100) * 10 + term_digit = (year - 1900) * 10 + term_digit
-    // 2026: 126 * 10 = 1260... no
-    // Actually: 2260 for 2026 Winter. 2260 / 10 = 226. 226 + 1900 = 2126? No.
-    // Let me just look at the raw numbers:
-    // 2250 = Winter 2025, 2252 = Spring 2025, 2254 = Summer 2025, 2258 = Fall 2025
-    // 2260 = Winter 2026, 2262 = Spring 2026
-    // Diff between years: 2260 - 2250 = 10
-    // So: base = 2200 + (year - 2020) * 10 = 2200 + 60 = 2260 for 2026 ✓
-    // term_digits: Winter=0, Spring=2, Summer=4, Fall=8
+    // UCSC term codes encode (year, term) in 4 digits: e.g. 2262 = Spring 2026,
+    // 2260 = Winter 2026, 2270 = Winter 2027. The arithmetic below is anchored
+    // by the table — bumping `Term::base_year` is the only thing that needs to
+    // change as years roll forward.
+    let base = TERM_BASE_OFFSET + (term_year - TERM_BASE_YEAR) * 10;
+    format!("{}", base + term_digit as i32)
+}
 
-    let base = 2200 + (term_year - 2020) * 10;
-    let term_digit = match term_suffix {
-        60 => 0,
-        62 => 2,
-        64 => 4,
-        68 => 8,
-        _ => 2,
-    };
+/// Calendar-year → UCSC term mapping. The base year/offset anchor the encoding;
+/// see `current_term_code` for the formula.
+const TERM_BASE_YEAR: i32 = 2020;
+const TERM_BASE_OFFSET: i32 = 2200; // i.e. 2200 = Winter 2020
 
-    format!("{}", base + term_digit)
+struct Term {
+    digit: u8,
+    name: &'static str,
+    month_range: std::ops::RangeInclusive<u32>,
+}
+
+const TERMS: &[Term] = &[
+    Term { digit: 0, name: "Winter", month_range: 1..=3 },
+    Term { digit: 2, name: "Spring", month_range: 4..=6 },
+    Term { digit: 4, name: "Summer", month_range: 7..=8 },
+    Term { digit: 8, name: "Fall",   month_range: 9..=12 },
+];
+
+/// Convenience: compute the human-readable name of the current/upcoming term
+/// (e.g. "Spring 2026"). Useful for output headers in other modules.
+pub fn current_term_name() -> String {
+    term_code_to_name(&current_term_code())
 }
 
 fn term_code_to_name(code: &str) -> String {
-    if let Ok(num) = code.parse::<i32>() {
-        let term_digit = num % 10;
-        let year_part = num / 10;
-        let year = 2020 + (year_part - 220);
-        let term = match term_digit {
-            0 => "Winter",
-            2 => "Spring",
-            4 => "Summer",
-            8 => "Fall",
-            _ => "Unknown",
-        };
-        format!("{} {}", term, year)
-    } else {
-        code.to_string()
-    }
+    let Ok(num) = code.parse::<i32>() else {
+        return code.to_string();
+    };
+    let term_digit = (num % 10) as u8;
+    let year = TERM_BASE_YEAR + (num - TERM_BASE_OFFSET) / 10;
+    let term = TERMS
+        .iter()
+        .find(|t| t.digit == term_digit)
+        .map(|t| t.name)
+        .unwrap_or("Unknown");
+    format!("{} {}", term, year)
 }
 
 // ─── Campus Directory ───
@@ -440,37 +426,37 @@ pub struct DirectoryEntry {
     pub phone: Option<String>,
 }
 
-impl fmt::Display for DirectoryResult {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
+impl DirectoryResult {
+    pub fn format(&self) -> String {
+        let mut out = format!(
             "## Directory Search: \"{}\"\n{} results\n",
             self.query,
             self.entries.len()
-        )?;
+        );
         for entry in &self.entries {
-            write!(f, "\n{}", entry)?;
+            out.push('\n');
+            out.push_str(&entry.format());
         }
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for DirectoryEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "### {}", self.name)?;
+impl DirectoryEntry {
+    pub fn format(&self) -> String {
+        let mut out = format!("### {}", self.name);
         if let Some(t) = &self.title {
-            write!(f, "\n- **Title**: {}", t)?;
+            let _ = write!(out, "\n- **Title**: {}", t);
         }
         if let Some(d) = &self.department {
-            write!(f, "\n- **Department**: {}", d)?;
+            let _ = write!(out, "\n- **Department**: {}", d);
         }
         if let Some(e) = &self.email {
-            write!(f, "\n- **Email**: {}", e)?;
+            let _ = write!(out, "\n- **Email**: {}", e);
         }
         if let Some(p) = &self.phone {
-            write!(f, "\n- **Phone**: {}", p)?;
+            let _ = write!(out, "\n- **Phone**: {}", p);
         }
-        Ok(())
+        out
     }
 }
 
@@ -502,13 +488,11 @@ pub async fn scrape_directory(
 
 fn parse_directory(html: &str, query: &str) -> DirectoryResult {
     let document = Html::parse_document(html);
-    let row_sel = sel(&SEL_DIR_ROW, "tr");
-    let link_sel = sel(&SEL_DIR_LINK, "a[href*='cd_detail']");
 
     let mut entries = Vec::new();
 
     // Try to find results in table rows (common directory pattern)
-    for row in document.select(row_sel) {
+    for row in document.select(&SEL_DIR_ROW) {
         let cells: Vec<String> = row
             .children()
             .filter_map(|child| {
@@ -522,7 +506,7 @@ fn parse_directory(html: &str, query: &str) -> DirectoryResult {
         }
 
         // Extract link for uid
-        let uid = row.select(link_sel).next().and_then(|a| {
+        let uid = row.select(&SEL_DIR_LINK).next().and_then(|a| {
             a.value()
                 .attr("href")
                 .and_then(|h| h.split("uid=").nth(1))
@@ -551,20 +535,18 @@ fn parse_directory(html: &str, query: &str) -> DirectoryResult {
 
     // If table parsing found nothing, try div-based layout
     if entries.is_empty() {
-        if let Ok(result_sel) = Selector::parse(".cd-result, .search-result, .result-row") {
-            for el in document.select(&result_sel) {
-                let text = el.text().collect::<String>();
-                let lines: Vec<&str> = text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-                if let Some(name) = lines.first() {
-                    entries.push(DirectoryEntry {
-                        name: name.to_string(),
-                        uid: None,
-                        title: lines.get(1).map(|s| s.to_string()),
-                        department: lines.get(2).map(|s| s.to_string()),
-                        email: lines.iter().find(|s| s.contains('@')).map(|s| s.to_string()),
-                        phone: None,
-                    });
-                }
+        for el in document.select(&SEL_DIR_RESULT) {
+            let text = el.text().collect::<String>();
+            let lines: Vec<&str> = text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+            if let Some(name) = lines.first() {
+                entries.push(DirectoryEntry {
+                    name: name.to_string(),
+                    uid: None,
+                    title: lines.get(1).map(|s| s.to_string()),
+                    department: lines.get(2).map(|s| s.to_string()),
+                    email: lines.iter().find(|s| s.contains('@')).map(|s| s.to_string()),
+                    phone: None,
+                });
             }
         }
     }

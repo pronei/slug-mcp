@@ -1,19 +1,20 @@
-use std::fmt;
+use std::fmt::Write;
 
 use anyhow::{Context, Result};
-use scraper::{ElementRef, Html, Selector};
+use scraper::{ElementRef, Html};
 
-use crate::util::{sel, selectors};
+use crate::util::{selectors, FuzzyMatcher};
 
 selectors! {
     SEL_REQ_CONTAINER => "div#degree-req-2",
+    SEL_MAIN => "div#main",
     SEL_TR => "tr",
     SEL_COURSE_NUM => "td.sc-coursenumber",
     SEL_COURSE_LINK => "a.sc-courselink",
     SEL_COURSE_TITLE => "td.sc-coursetitle",
     SEL_CREDITS => "p.credits",
     SEL_CROSSLISTED => "div.sc-crosslisted",
-    SEL_PROGRAM_LINK => "div#main ul li a",
+    SEL_PROGRAM_LINK => "div#main > ul > li > a",
 }
 
 const CATALOG_BASE: &str = "https://catalog.ucsc.edu";
@@ -248,11 +249,10 @@ pub struct ProgramEntry {
 
 fn parse_program_list(html: &str) -> Vec<ProgramEntry> {
     let document = Html::parse_document(html);
-    let link_sel = sel(&SEL_PROGRAM_LINK, "div#main > ul > li > a");
 
     let mut entries = Vec::new();
 
-    for link in document.select(link_sel) {
+    for link in document.select(&SEL_PROGRAM_LINK) {
         let name = link.text().collect::<String>().trim().to_string();
         let href = link.value().attr("href").unwrap_or("").to_string();
 
@@ -308,18 +308,10 @@ fn parse_requirements(
     let document = Html::parse_document(html);
 
     // Try to find the requirements container (div#degree-req-2 for undergrad, or just div#main)
-    let container_sel = sel(&SEL_REQ_CONTAINER, "div#degree-req-2");
     let container = document
-        .select(container_sel)
+        .select(&SEL_REQ_CONTAINER)
         .next()
-        .or_else(|| {
-            // Fallback: use div#main for grad programs that may not have degree-req-2
-            if let Ok(main_sel) = Selector::parse("div#main") {
-                document.select(&main_sel).next()
-            } else {
-                None
-            }
-        })
+        .or_else(|| document.select(&SEL_MAIN).next())
         .with_context(|| {
             format!(
                 "Could not find requirements container for {}. The catalog page structure may have changed.",
@@ -329,10 +321,18 @@ fn parse_requirements(
 
     let sections = parse_heading_hierarchy(container);
 
-    // Filter out "Planners" section — it's informational, not requirements
+    // Drop "Planners" sections — they're informational per-quarter schedule grids,
+    // not actual requirements. We classify each heading against a set of section
+    // types; only drop if the heading lands unambiguously on "planner". Anything
+    // ambiguous (e.g. "Course Planners and Requirements") gets kept so we don't
+    // hide real reqs behind a fuzzy match. We deliberately omit `word_boundary`
+    // here so "Planners" / "Planner" both match the needle "planner".
+    let classifier = FuzzyMatcher::new(["planner", "requirement", "course", "elective"])
+        .case_insensitive()
+        .whitespace_collapsed();
     let sections: Vec<RequirementSection> = sections
         .into_iter()
-        .filter(|s| !s.heading.eq_ignore_ascii_case("Planners"))
+        .filter(|s| classifier.matches_unambiguously(&s.heading) != Some("planner"))
         .collect();
 
     let general_education = if degree_type.is_undergraduate() {
@@ -479,7 +479,6 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
         } else if tag == "ol" || tag == "ul" {
             // Parse <ol>/<ul> items: extract structured rules from <li> items
             // that contain course links (or course codes in plain text).
-            let link_sel = sel(&SEL_COURSE_LINK, "a.sc-courselink");
             let mut note_items: Vec<String> = Vec::new();
 
             for li in element
@@ -494,7 +493,7 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
 
                 // Check if this <li> contains course links
                 let mut courses: Vec<Course> = li
-                    .select(link_sel)
+                    .select(&SEL_COURSE_LINK)
                     .filter_map(|a| {
                         let href = a.value().attr("href").unwrap_or("");
                         if href.contains("narrative-courses")
@@ -601,7 +600,7 @@ fn has_class(element: ElementRef, class: &str) -> bool {
     element
         .value()
         .attr("class")
-        .map_or(false, |c| c.split_whitespace().any(|c| c == class))
+        .is_some_and(|c| c.split_whitespace().any(|c| c == class))
 }
 
 fn ensure_group(group: &mut Option<RequirementGroup>) {
@@ -622,7 +621,7 @@ fn flush_group(
     if let Some(g) = group.take() {
         if !g.rules.is_empty() || !g.notes.is_empty() {
             ensure_subsection(subsection, rule_heading);
-            if let Some(ref mut sub) = subsection {
+            if let Some(sub) = subsection.as_mut() {
                 sub.groups.push(g);
             }
         }
@@ -646,7 +645,7 @@ fn flush_subsection(
     if let Some(sub) = subsection.take() {
         if !sub.groups.is_empty() || !sub.notes.is_empty() {
             ensure_section(section);
-            if let Some(ref mut sec) = section {
+            if let Some(sec) = section.as_mut() {
                 sec.subsections.push(sub);
             }
         }
@@ -676,22 +675,15 @@ fn flush_section(
 
 /// Parse a course table, handling either/or narrative rows.
 fn parse_course_table(table: ElementRef) -> Vec<ParsedRow> {
-    let tr_sel = sel(&SEL_TR, "tr");
-    let num_sel = sel(&SEL_COURSE_NUM, "td.sc-coursenumber");
-    let link_sel = sel(&SEL_COURSE_LINK, "a.sc-courselink");
-    let title_sel = sel(&SEL_COURSE_TITLE, "td.sc-coursetitle");
-    let credits_sel = sel(&SEL_CREDITS, "p.credits");
-    let crosslist_sel = sel(&SEL_CROSSLISTED, "div.sc-crosslisted");
-
     let mut rows = Vec::new();
 
-    for tr in table.select(tr_sel) {
+    for tr in table.select(&SEL_TR) {
         // Check for narrative row
-        if let Some(link) = tr.select(link_sel).next() {
+        if let Some(link) = tr.select(&SEL_COURSE_LINK).next() {
             let href = link.value().attr("href").unwrap_or("");
             if href.contains("/narrative-courses/") {
                 let title_text = tr
-                    .select(title_sel)
+                    .select(&SEL_COURSE_TITLE)
                     .next()
                     .map(|t| t.text().collect::<String>().trim().to_string())
                     .unwrap_or_default();
@@ -701,13 +693,13 @@ fn parse_course_table(table: ElementRef) -> Vec<ParsedRow> {
         }
 
         // Regular course row
-        let num_cell = tr.select(num_sel).next();
+        let num_cell = tr.select(&SEL_COURSE_NUM).next();
         let Some(num_cell) = num_cell else {
             continue;
         };
 
         let code = num_cell
-            .select(link_sel)
+            .select(&SEL_COURSE_LINK)
             .next()
             .map(|a| a.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
@@ -717,24 +709,24 @@ fn parse_course_table(table: ElementRef) -> Vec<ParsedRow> {
         }
 
         let url = num_cell
-            .select(link_sel)
+            .select(&SEL_COURSE_LINK)
             .next()
             .and_then(|a| a.value().attr("href"))
             .map(|h| format!("{}{}", CATALOG_BASE, h));
 
         let cross_listed = num_cell
-            .select(crosslist_sel)
+            .select(&SEL_CROSSLISTED)
             .next()
             .map(|d| d.text().collect::<String>().trim().trim_start_matches('/').trim().to_string());
 
         let title = tr
-            .select(title_sel)
+            .select(&SEL_COURSE_TITLE)
             .next()
             .map(|t| t.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
 
         let credits = tr
-            .select(credits_sel)
+            .select(&SEL_CREDITS)
             .next()
             .and_then(|p| {
                 let text = p.text().collect::<String>().trim().to_string();
@@ -1020,178 +1012,167 @@ fn parse_credits_from_prose(text: &str) -> Option<RuleType> {
     None
 }
 
-// ─── Display Implementations ───
+// ─── Markdown rendering ───
 
-impl fmt::Display for DegreeRequirements {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "# {} Requirements\n", self.program_name)?;
-
+impl DegreeRequirements {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
+        let _ = writeln!(out, "# {} Requirements\n", self.program_name);
         for section in &self.sections {
-            write!(f, "{}", section)?;
+            out.push_str(&section.format());
         }
-
-        if let Some(ref ge) = self.general_education {
-            writeln!(f, "\n## General Education Requirements\n")?;
-            write!(f, "{}", ge)?;
+        if let Some(ge) = self.general_education.as_ref() {
+            out.push_str("\n## General Education Requirements\n\n");
+            out.push_str(&ge.format());
         }
-
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for RequirementSection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl RequirementSection {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
         if !self.heading.is_empty() {
-            writeln!(f, "## {}\n", self.heading)?;
+            let _ = writeln!(out, "## {}\n", self.heading);
         }
-
         for note in &self.notes {
-            writeln!(f, "> {}\n", note)?;
+            let _ = writeln!(out, "> {}\n", note);
         }
-
         for subsection in &self.subsections {
-            write!(f, "{}", subsection)?;
+            out.push_str(&subsection.format());
         }
-
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for RequirementSubsection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl RequirementSubsection {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
         if !self.heading.is_empty() {
-            writeln!(f, "### {}\n", self.heading)?;
+            let _ = writeln!(out, "### {}\n", self.heading);
         }
-
         for note in &self.notes {
-            writeln!(f, "> {}\n", note)?;
+            let _ = writeln!(out, "> {}\n", note);
         }
-
         for group in &self.groups {
-            write!(f, "{}", group)?;
+            out.push_str(&group.format());
         }
-
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for RequirementGroup {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ref heading) = self.heading {
-            writeln!(f, "#### {}\n", heading)?;
+impl RequirementGroup {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
+        if let Some(heading) = self.heading.as_ref() {
+            let _ = writeln!(out, "#### {}\n", heading);
         }
-
         for note in &self.notes {
-            writeln!(f, "> {}\n", note)?;
+            let _ = writeln!(out, "> {}\n", note);
         }
-
         for rule in &self.rules {
-            write!(f, "{}", rule)?;
+            out.push_str(&rule.format());
         }
-
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for CourseRule {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl CourseRule {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
         // Show the rule heading/type
         match &self.rule_type {
             RuleType::AllOf => {
-                if let Some(ref h) = self.heading {
-                    writeln!(f, "**{}:**", h)?;
+                if let Some(h) = self.heading.as_ref() {
+                    let _ = writeln!(out, "**{}:**", h);
                 }
             }
             RuleType::OneOf => {
-                writeln!(
-                    f,
+                let _ = writeln!(
+                    out,
                     "**{}:**",
                     self.heading.as_deref().unwrap_or("One of the following")
-                )?;
+                );
             }
             RuleType::NOf(n) => {
-                writeln!(
-                    f,
+                let _ = writeln!(
+                    out,
                     "**{}:**",
                     self.heading
                         .as_deref()
                         .unwrap_or(&format!("{} of the following", n))
-                )?;
+                );
             }
             RuleType::EitherOr => {
-                writeln!(f, "**Either these courses:**")?;
+                let _ = writeln!(out, "**Either these courses:**");
             }
             RuleType::CreditsFrom(n) => {
-                writeln!(
-                    f,
+                let _ = writeln!(
+                    out,
                     "**{}:**",
                     self.heading
                         .as_deref()
                         .unwrap_or(&format!("{} credits from the following", n))
-                )?;
+                );
             }
             RuleType::Prose => {
-                if let Some(ref desc) = self.description {
-                    writeln!(f, "*{}*\n", desc)?;
+                if let Some(desc) = self.description.as_ref() {
+                    let _ = writeln!(out, "*{}*\n", desc);
                 }
-                return Ok(());
+                return out;
             }
         }
 
         for course in &self.courses {
-            write!(f, "{}", course)?;
+            out.push_str(&course.format());
         }
 
-        if let Some(ref alt) = self.alternative {
-            writeln!(f, "\n**Or these courses:**")?;
+        if let Some(alt) = self.alternative.as_ref() {
+            let _ = writeln!(out, "\n**Or these courses:**");
             for course in alt {
-                write!(f, "{}", course)?;
+                out.push_str(&course.format());
             }
         }
 
-        writeln!(f)?;
-        Ok(())
+        out.push('\n');
+        out
     }
 }
 
-impl fmt::Display for Course {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "- {} — {}", self.code, self.title)?;
+impl Course {
+    pub fn format(&self) -> String {
+        let mut out = format!("- {} — {}", self.code, self.title);
         if let Some(credits) = self.credits {
-            write!(f, " ({} credits)", credits)?;
+            let _ = write!(out, " ({} credits)", credits);
         }
-        if let Some(ref cross) = self.cross_listed {
-            write!(f, " [also {}]", cross)?;
+        if let Some(cross) = self.cross_listed.as_ref() {
+            let _ = write!(out, " [also {}]", cross);
         }
-        writeln!(f)?;
-        Ok(())
+        out.push('\n');
+        out
     }
 }
 
-impl fmt::Display for GeRequirements {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "**Required (all of the following):**")?;
+impl GeRequirements {
+    pub fn format(&self) -> String {
+        let mut out = String::from("**Required (all of the following):**\n");
         for area in &self.required {
-            writeln!(f, "- {} — {} ({} credits)", area.code, area.name, area.credits)?;
+            let _ = writeln!(out, "- {} — {} ({} credits)", area.code, area.name, area.credits);
         }
-
-        writeln!(f, "\n**Perspectives (one of the following):**")?;
+        out.push_str("\n**Perspectives (one of the following):**\n");
         for area in &self.perspectives {
-            writeln!(f, "- {} — {} ({} credits)", area.code, area.name, area.credits)?;
+            let _ = writeln!(out, "- {} — {} ({} credits)", area.code, area.name, area.credits);
         }
-
-        writeln!(f, "\n**Practice (one of the following):**")?;
+        out.push_str("\n**Practice (one of the following):**\n");
         for area in &self.practice {
-            writeln!(f, "- {} — {} ({} credits)", area.code, area.name, area.credits)?;
+            let _ = writeln!(out, "- {} — {} ({} credits)", area.code, area.name, area.credits);
         }
-
-        writeln!(
-            f,
+        let _ = writeln!(
+            out,
             "\n**Writing:**\n- {} — {} ({} credits)\n- DC — Disciplinary Communication (satisfied via major)",
             self.composition.code, self.composition.name, self.composition.credits
-        )?;
-
-        Ok(())
+        );
+        out
     }
 }
 

@@ -1,37 +1,45 @@
-use std::fmt;
 use std::fmt::Write;
-
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use scraper::Html;
 
-use crate::util::{sel, selectors};
+use crate::util::{selectors, FuzzyMatcher};
 
 selectors! {
-    SEL_ANCHOR => "a",
+    SEL_ANCHOR_NAME => "a[name]",
     SEL_LINK => "a[href]",
     SEL_IMG => "img",
     SEL_TD => "td",
-    SEL_ALL_MENU => "div.shortmenumeals, div.shortmenucats, div.shortmenurecipes",
-    SEL_RECIPE => "a[href*='recipe']",
+    SEL_LONG_MENU => "td.longmenugridheader, div.longmenucolmenucat, div.longmenucoldispname",
+    SEL_RECIPE => "div.labelrecipe",
     SEL_INGREDIENTS => "span.labelingredientsvalue",
     SEL_ALLERGENS => "span.labelallergensvalue",
-    SEL_SHORT_MENU => "div.shortmenumeals",
-    SEL_SCHEMA => "div[itemtype='http://schema.org/FoodEstablishment']",
-    SEL_NAME => "meta[itemprop='name']",
-    SEL_HOURS => "meta[itemprop='openingHours']",
-    SEL_SPEC => "div[itemtype='http://schema.org/OpeningHoursSpecification']",
+    SEL_SHORT_MENU => "div.shortmenumeals, div.shortmenucats, div.shortmenurecipes",
+    SEL_SCHEMA => "div[itemtype]",
+    SEL_NAME => "meta[itemprop=\"name\"]",
+    SEL_HOURS => "meta[itemprop=\"openingHours\"]",
+    SEL_SPEC => "div[itemprop=\"openingHoursSpecification\"]",
     SEL_TIME => "time",
 }
 
 // --- Dining hall definitions ---
+
+/// Distinguishes full-service residential dining halls (which serve multi-meal
+/// menus we scrape) from cafes (which don't). The pre-warmer and "all halls"
+/// queries default to `Full` so cafes don't pollute the menu output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HallKind {
+    Full,
+    Cafe,
+}
 
 pub struct DiningHall {
     pub name: &'static str,
     pub short_names: &'static [&'static str],
     pub location_num: &'static str,
     pub location_name: &'static str,
+    pub kind: HallKind,
 }
 
 pub static DINING_HALLS: &[DiningHall] = &[
@@ -40,60 +48,70 @@ pub static DINING_HALLS: &[DiningHall] = &[
         short_names: &["lewis", "college nine", "c9", "nine"],
         location_num: "40",
         location_name: "John+R.+Lewis+%26+College+Nine+Dining+Hall",
+        kind: HallKind::Full,
     },
     DiningHall {
         name: "Cowell & Stevenson Dining Hall",
         short_names: &["cowell", "stevenson"],
         location_num: "05",
         location_name: "Cowell+%26+Stevenson+Dining+Hall",
+        kind: HallKind::Full,
     },
     DiningHall {
         name: "Crown & Merrill Dining Hall",
         short_names: &["crown", "merrill"],
         location_num: "20",
         location_name: "Crown+%26+Merrill+Dining+Hall",
+        kind: HallKind::Full,
     },
     DiningHall {
         name: "Porter & Kresge Dining Hall",
         short_names: &["porter", "kresge"],
         location_num: "25",
         location_name: "Porter+%26+Kresge+Dining+Hall",
+        kind: HallKind::Full,
     },
     DiningHall {
         name: "Rachel Carson & Oakes Dining Hall",
         short_names: &["carson", "oakes", "rco"],
         location_num: "30",
         location_name: "Rachel+Carson+%26+Oakes+Dining+Hall",
+        kind: HallKind::Full,
     },
     DiningHall {
         name: "Banana Joe's",
         short_names: &["banana joe", "banana"],
         location_num: "21",
         location_name: "Banana+Joe%27s",
+        kind: HallKind::Cafe,
     },
     DiningHall {
         name: "Oakes Cafe",
         short_names: &["oakes cafe"],
         location_num: "23",
         location_name: "Oakes+Cafe",
+        kind: HallKind::Cafe,
     },
     DiningHall {
         name: "Global Village Cafe",
         short_names: &["global village", "global"],
         location_num: "46",
         location_name: "Global+Village+Cafe",
+        kind: HallKind::Cafe,
     },
     DiningHall {
         name: "Owl's Nest Cafe",
         short_names: &["owl", "owls nest"],
         location_num: "24",
         location_name: "Owl%27s+Nest+Cafe",
+        kind: HallKind::Cafe,
     },
     DiningHall {
         name: "Perk Coffee Bar",
         short_names: &["perk"],
         location_num: "22",
         location_name: "Perk+Coffee+Bar",
+        kind: HallKind::Cafe,
     },
 ];
 
@@ -102,44 +120,33 @@ const LONGMENU_BASE: &str = "https://nutrition.sa.ucsc.edu/longmenu.aspx";
 const USER_AGENT: &str = "Mozilla/5.0 (compatible; SlugMCP/0.1)";
 
 pub fn find_hall(query: &str) -> Option<&'static DiningHall> {
-    let q = query.to_lowercase();
-
-    // Exact match on name (no allocation — ASCII-safe)
-    for hall in DINING_HALLS {
-        if hall.name.eq_ignore_ascii_case(&q) {
-            return Some(hall);
+    let q_matcher = FuzzyMatcher::new([query]).case_insensitive();
+    DINING_HALLS.iter().find(|hall| {
+        let labels: Vec<&str> = std::iter::once(hall.name)
+            .chain(hall.short_names.iter().copied())
+            .collect();
+        // Forward: the user query contains one of this hall's labels (e.g.
+        // "Cowell Stevenson Dining" contains "cowell").
+        let label_matcher = FuzzyMatcher::new(labels.iter().copied()).case_insensitive();
+        if label_matcher.matches(query) {
+            return true;
         }
-    }
-
-    // Short name match
-    for hall in DINING_HALLS {
-        for short in hall.short_names {
-            if q.contains(short) || short.contains(&*q) {
-                return Some(hall);
-            }
-        }
-    }
-
-    // Substring match on full name
-    for hall in DINING_HALLS {
-        if hall.name.to_lowercase().contains(&q) {
-            return Some(hall);
-        }
-    }
-
-    None
+        // Reverse: a label contains the user query (e.g. query "rc" inside
+        // short_name "rco", or query "cow" inside "cowell").
+        labels.iter().any(|label| q_matcher.matches(label))
+    })
 }
 
-static HALL_NAMES: OnceLock<String> = OnceLock::new();
+static HALL_NAMES: LazyLock<String> = LazyLock::new(|| {
+    DINING_HALLS
+        .iter()
+        .map(|h| h.name)
+        .collect::<Vec<_>>()
+        .join(", ")
+});
 
 pub fn hall_names() -> &'static str {
-    HALL_NAMES.get_or_init(|| {
-        DINING_HALLS
-            .iter()
-            .map(|h| h.name)
-            .collect::<Vec<_>>()
-            .join(", ")
-    })
+    &HALL_NAMES
 }
 
 /// Build menu URL. Accepts date in `M/D/YYYY` format (the nutrition site's native format).
@@ -163,26 +170,26 @@ fn menu_url(base: &str, hall: &DiningHall, date: Option<&str>, meal_name: Option
 
 // --- Menu data types ---
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MenuItem {
     pub name: String,
     pub dietary_tags: Vec<String>,
     pub recipe_id: Option<String>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Meal {
     pub name: String,
     pub categories: Vec<Category>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Category {
     pub name: String,
     pub items: Vec<MenuItem>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DiningMenu {
     pub hall_name: String,
     pub date: Option<String>,
@@ -211,34 +218,34 @@ fn icon_to_tag(icon_filename: &str) -> Option<&'static str> {
     }
 }
 
-impl fmt::Display for DiningMenu {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.date {
-            Some(ref d) => write!(f, "## {} ({})\n\n", self.hall_name, d)?,
-            None => write!(f, "## {}\n\n", self.hall_name)?,
-        }
+impl DiningMenu {
+    pub fn format(&self) -> String {
+        let mut out = match self.date.as_ref() {
+            Some(d) => format!("## {} ({})\n\n", self.hall_name, d),
+            None => format!("## {}\n\n", self.hall_name),
+        };
         if self.meals.is_empty() {
-            write!(f, "No menu items available.\n")?;
-            return Ok(());
+            out.push_str("No menu items available.\n");
+            return out;
         }
         for meal in &self.meals {
-            write!(f, "### {}\n", meal.name)?;
+            let _ = writeln!(out, "### {}", meal.name);
             for cat in &meal.categories {
-                write!(f, "**{}**\n", cat.name)?;
+                let _ = writeln!(out, "**{}**", cat.name);
                 for item in &cat.items {
-                    write!(f, "- {}", item.name)?;
+                    let _ = write!(out, "- {}", item.name);
                     if !item.dietary_tags.is_empty() {
-                        write!(f, " [{}]", item.dietary_tags.join(", "))?;
+                        let _ = write!(out, " [{}]", item.dietary_tags.join(", "));
                     }
-                    if let Some(ref id) = item.recipe_id {
-                        write!(f, " (recipe: {})", id)?;
+                    if let Some(id) = item.recipe_id.as_ref() {
+                        let _ = write!(out, " (recipe: {})", id);
                     }
-                    writeln!(f)?;
+                    out.push('\n');
                 }
-                writeln!(f)?;
+                out.push('\n');
             }
         }
-        Ok(())
+        out
     }
 }
 
@@ -301,18 +308,11 @@ pub async fn scrape_menu(
 fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
     let document = Html::parse_document(html);
 
-    let img_sel = sel(&SEL_IMG, "img");
-    let td_sel = sel(&SEL_TD, "td");
-    let all_sel = sel(
-        &SEL_SHORT_MENU,
-        "div.shortmenumeals, div.shortmenucats, div.shortmenurecipes",
-    );
-
     let mut meals: Vec<Meal> = Vec::new();
     let mut current_meal: Option<Meal> = None;
     let mut current_cat: Option<Category> = None;
 
-    for element in document.select(all_sel) {
+    for element in document.select(&SEL_SHORT_MENU) {
         let classes: Vec<&str> = element.value().classes().collect();
 
         if classes.contains(&"shortmenumeals") {
@@ -377,8 +377,8 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
                         if let Some(outer_td) = parent_tr.parent() {
                             if let Some(outer_tr) = outer_td.parent() {
                                 if let Some(outer_el) = scraper::ElementRef::wrap(outer_tr) {
-                                    for td in outer_el.select(td_sel) {
-                                        for img in td.select(img_sel) {
+                                    for td in outer_el.select(&SEL_TD) {
+                                        for img in td.select(&SEL_IMG) {
                                             if let Some(src) = img.value().attr("src") {
                                                 if let Some(icon_name) = src
                                                     .strip_prefix("LegendImages/")
@@ -460,20 +460,11 @@ fn enrich_recipe_ids(menu: &mut DiningMenu, long_menu: &DiningMenu) {
 fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
     let document = Html::parse_document(html);
 
-    let anchor_sel = sel(&SEL_ANCHOR, "a[name]");
-    let link_sel = sel(&SEL_LINK, "a[href]");
-    let img_sel = sel(&SEL_IMG, "img");
-    let td_sel = sel(&SEL_TD, "td");
-    let all_sel = sel(
-        &SEL_ALL_MENU,
-        "td.longmenugridheader, div.longmenucolmenucat, div.longmenucoldispname",
-    );
-
     let mut meals: Vec<Meal> = Vec::new();
     let mut current_meal: Option<Meal> = None;
     let mut current_cat: Option<Category> = None;
 
-    for element in document.select(all_sel) {
+    for element in document.select(&SEL_LONG_MENU) {
         let classes: Vec<&str> = element.value().classes().collect();
 
         if classes.contains(&"longmenugridheader") {
@@ -493,7 +484,7 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
 
             // Extract meal name from <a name="MealName">
             let meal_name = element
-                .select(anchor_sel)
+                .select(&SEL_ANCHOR_NAME)
                 .next()
                 .and_then(|a| a.value().attr("name"))
                 .unwrap_or("Unknown")
@@ -530,7 +521,7 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
         } else if classes.contains(&"longmenucoldispname") {
             if let Some(cat) = current_cat.as_mut() {
                 // Extract item name and recipe ID from <a> link
-                let (item_name, recipe_id) = if let Some(a) = element.select(link_sel).next() {
+                let (item_name, recipe_id) = if let Some(a) = element.select(&SEL_LINK).next() {
                     let name = a.text().collect::<String>().trim().to_string();
                     let href = a.value().attr("href").unwrap_or("");
                     let rid = href
@@ -549,8 +540,8 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
                     .and_then(|n| n.parent()) // tr (inner)
                 {
                     if let Some(parent_el) = scraper::ElementRef::wrap(parent_tr) {
-                        for td in parent_el.select(td_sel) {
-                            for img in td.select(img_sel) {
+                        for td in parent_el.select(&SEL_TD) {
+                            for img in td.select(&SEL_IMG) {
                                 if let Some(src) = img.value().attr("src") {
                                     if let Some(icon_name) = src
                                         .strip_prefix("LegendImages/")
@@ -601,7 +592,7 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
 // --- Meal balance ---
 
 #[cfg(feature = "auth")]
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MealBalance {
     pub slug_points: Option<f64>,
     pub banana_bucks: Option<f64>,
@@ -609,22 +600,22 @@ pub struct MealBalance {
 }
 
 #[cfg(feature = "auth")]
-impl fmt::Display for MealBalance {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "# Meal Plan Balance\n\n")?;
+impl MealBalance {
+    pub fn format(&self) -> String {
+        let mut out = String::from("# Meal Plan Balance\n\n");
         if let Some(sp) = self.slug_points {
-            write!(f, "- **Slug Points**: ${:.2}\n", sp)?;
+            let _ = writeln!(out, "- **Slug Points**: ${:.2}", sp);
         }
         if let Some(bb) = self.banana_bucks {
-            write!(f, "- **Banana Bucks**: ${:.2}\n", bb)?;
+            let _ = writeln!(out, "- **Banana Bucks**: ${:.2}", bb);
         }
         if let Some(ms) = self.meal_swipes {
-            write!(f, "- **Meal Swipes Remaining**: {}\n", ms)?;
+            let _ = writeln!(out, "- **Meal Swipes Remaining**: {}", ms);
         }
         if self.slug_points.is_none() && self.banana_bucks.is_none() && self.meal_swipes.is_none() {
-            write!(f, "Could not retrieve balance information. The balance page may have changed.\n")?;
+            out.push_str("Could not retrieve balance information. The balance page may have changed.\n");
         }
-        Ok(())
+        out
     }
 }
 
@@ -803,23 +794,20 @@ pub async fn scrape_nutrition(
 fn parse_nutrition_label(html: &str) -> NutritionInfo {
     let document = Html::parse_document(html);
 
-    let recipe_sel = sel(&SEL_RECIPE, "div.labelrecipe");
     let item_name = document
-        .select(recipe_sel)
+        .select(&SEL_RECIPE)
         .next()
         .map(|e| e.text().collect::<String>().trim().to_string())
         .unwrap_or_default();
 
-    let ingredients_sel = sel(&SEL_INGREDIENTS, "span.labelingredientsvalue");
     let ingredients = document
-        .select(ingredients_sel)
+        .select(&SEL_INGREDIENTS)
         .next()
         .map(|e| e.text().collect::<String>().trim().to_string())
         .unwrap_or_default();
 
-    let allergens_sel = sel(&SEL_ALLERGENS, "span.labelallergensvalue");
     let allergens = document
-        .select(allergens_sel)
+        .select(&SEL_ALLERGENS)
         .next()
         .map(|e| e.text().collect::<String>().trim().to_string())
         .unwrap_or_default();
@@ -856,35 +844,41 @@ fn extract_after(text: &str, label: &str) -> Option<String> {
     if value.is_empty() { None } else { Some(value) }
 }
 
-fn display_nutrient(f: &mut fmt::Formatter<'_>, label: &str, value: &Option<String>) -> fmt::Result {
+fn write_nutrient(out: &mut String, label: &str, value: &Option<String>) {
     match value {
-        Some(v) => write!(f, "| {} | {} |\n", label, v),
-        None => write!(f, "| {} | N/A |\n", label),
+        Some(v) => {
+            let _ = writeln!(out, "| {} | {} |", label, v);
+        }
+        None => {
+            let _ = writeln!(out, "| {} | N/A |", label);
+        }
     }
 }
 
-impl fmt::Display for NutritionInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "# {}\n\n", self.item_name)?;
-        write!(f, "**Serving Size:** {}\n", self.serving_size)?;
-        match self.calories {
-            Some(ref c) => write!(f, "**Calories:** {}\n\n", c)?,
-            None => write!(f, "**Calories:** N/A\n\n")?,
+impl NutritionInfo {
+    pub fn format(&self) -> String {
+        let mut out = format!("# {}\n\n", self.item_name);
+        let _ = writeln!(out, "**Serving Size:** {}", self.serving_size);
+        match self.calories.as_ref() {
+            Some(c) => {
+                let _ = writeln!(out, "**Calories:** {}\n", c);
+            }
+            None => out.push_str("**Calories:** N/A\n\n"),
         }
-        write!(f, "| Nutrient | Amount |\n")?;
-        write!(f, "|----------|--------|\n")?;
-        display_nutrient(f, "Total Fat", &self.total_fat)?;
-        display_nutrient(f, "Saturated Fat", &self.saturated_fat)?;
-        display_nutrient(f, "Trans Fat", &self.trans_fat)?;
-        display_nutrient(f, "Cholesterol", &self.cholesterol)?;
-        display_nutrient(f, "Sodium", &self.sodium)?;
-        display_nutrient(f, "Total Carbs", &self.total_carbs)?;
-        display_nutrient(f, "Dietary Fiber", &self.dietary_fiber)?;
-        display_nutrient(f, "Sugars", &self.sugars)?;
-        display_nutrient(f, "Protein", &self.protein)?;
-        write!(f, "\n**Ingredients:** {}\n\n", self.ingredients)?;
-        write!(f, "**Allergens:** {}\n", self.allergens)?;
-        Ok(())
+        out.push_str("| Nutrient | Amount |\n");
+        out.push_str("|----------|--------|\n");
+        write_nutrient(&mut out, "Total Fat", &self.total_fat);
+        write_nutrient(&mut out, "Saturated Fat", &self.saturated_fat);
+        write_nutrient(&mut out, "Trans Fat", &self.trans_fat);
+        write_nutrient(&mut out, "Cholesterol", &self.cholesterol);
+        write_nutrient(&mut out, "Sodium", &self.sodium);
+        write_nutrient(&mut out, "Total Carbs", &self.total_carbs);
+        write_nutrient(&mut out, "Dietary Fiber", &self.dietary_fiber);
+        write_nutrient(&mut out, "Sugars", &self.sugars);
+        write_nutrient(&mut out, "Protein", &self.protein);
+        let _ = writeln!(out, "\n**Ingredients:** {}\n", self.ingredients);
+        let _ = writeln!(out, "**Allergens:** {}", self.allergens);
+        out
     }
 }
 
@@ -929,15 +923,9 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
     let document = Html::parse_document(&cleaned);
     let mut locations = Vec::new();
 
-    let schema_sel = sel(&SEL_SCHEMA, r#"div[itemtype]"#);
-    let name_sel = sel(&SEL_NAME, r#"meta[itemprop="name"]"#);
-    let hours_sel = sel(&SEL_HOURS, r#"meta[itemprop="openingHours"]"#);
-    let spec_sel = sel(&SEL_SPEC, r#"div[itemprop="openingHoursSpecification"]"#);
-    let time_sel = sel(&SEL_TIME, "time");
-
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for schema_div in document.select(schema_sel) {
+    for schema_div in document.select(&SEL_SCHEMA) {
         let itemtype = schema_div.value().attr("itemtype").unwrap_or("");
         if !itemtype.contains("schema.org/Restaurant")
             && !itemtype.contains("schema.org/FoodEstablishment")
@@ -946,7 +934,7 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
             continue;
         }
 
-        let name = match schema_div.select(name_sel).next() {
+        let name = match schema_div.select(&SEL_NAME).next() {
             Some(el) => el.value().attr("content").unwrap_or("").to_string(),
             None => continue,
         };
@@ -964,13 +952,13 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
         .to_string();
 
         let regular_hours: Vec<String> = schema_div
-            .select(hours_sel)
+            .select(&SEL_HOURS)
             .filter_map(|el| el.value().attr("content").map(|s| s.to_string()))
             .collect();
 
         let mut date_hours = Vec::new();
-        for spec in schema_div.select(spec_sel) {
-            let times: Vec<_> = spec.select(time_sel).collect();
+        for spec in schema_div.select(&SEL_SPEC) {
+            let times: Vec<_> = spec.select(&SEL_TIME).collect();
             if times.is_empty() {
                 continue;
             }
@@ -1044,12 +1032,6 @@ impl DiningLocation {
     }
 }
 
-impl fmt::Display for DiningLocation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        f.write_str(&self.format_with_date(&today))
-    }
-}
 
 #[cfg(test)]
 mod tests {

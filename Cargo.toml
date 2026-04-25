@@ -1,7 +1,7 @@
 [package]
 name = "slug-mcp"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "MCP server for UCSC campus services"
 
 [[bin]]
@@ -28,6 +28,7 @@ sha2 = { version = "0.10", optional = true }
 hostname = { version = "0.4", optional = true }
 urlencoding = "2"
 chrono = "0.4"
+chrono-tz = "0.10"
 chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
 base64 = "0.22"

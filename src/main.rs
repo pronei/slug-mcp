@@ -135,8 +135,8 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let auth = Arc::new(auth::AuthManager::new(config.session_path()));
     let bustime_key = config.bustime_api_key.clone();
     let firms_key = config.firms_map_key.clone();
+    // `config` was consumed above to extract auth/transit/fire keys; not stored in ctx.
     let ctx = server::ServiceContext {
-        config,
         cache: cache.clone(),
         #[cfg(feature = "auth")]
         auth,
@@ -154,8 +154,16 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         traffic: Arc::new(traffic::TrafficService::new(http.clone(), cache.clone())),
     };
 
-    // Pre-warm dining menu cache daily at 5 AM Pacific
-    let _refresher = dining::start_cache_refresher(http, ctx.cache.clone());
+    // Pre-warm dining menu cache daily at 5 AM Pacific. The handle is watched
+    // by a sibling task so an unexpected panic surfaces in logs instead of
+    // silently leaving the cache un-refreshed.
+    let refresher_handle = dining::start_cache_refresher(http, ctx.cache.clone());
+    tokio::spawn(async move {
+        match refresher_handle.await {
+            Ok(()) => tracing::warn!("dining cache refresher exited (loop should be infinite)"),
+            Err(e) => tracing::error!("dining cache refresher task failed: {}", e),
+        }
+    });
 
     if sse {
         run_sse(port, ctx).await

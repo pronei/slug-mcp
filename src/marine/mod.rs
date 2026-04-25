@@ -184,7 +184,7 @@ fn format_single_spot(spot: &SurfSpot, c: &SpotConditions) -> String {
     let mut out = format!("# {} ({})\n\n", spot.name, spot.slug);
     out.push_str(&format!("_{}_\n\n", spot.notes));
     write_spot_body(&mut out, c);
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\n_Source: Open-Meteo marine + forecast. Last updated: {}_\n",
         now.format("%-I:%M %p")
@@ -195,7 +195,7 @@ fn format_single_spot(spot: &SurfSpot, c: &SpotConditions) -> String {
 fn format_custom_spot(name: &str, lat: f64, lon: f64, c: &SpotConditions) -> String {
     let mut out = format!("# {} ({:.4}, {:.4})\n\n", name, lat, lon);
     write_spot_body(&mut out, c);
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\n_Source: Open-Meteo marine + forecast. Last updated: {}_\n",
         now.format("%-I:%M %p")
@@ -219,7 +219,7 @@ fn format_all_spots(results: &[(&'static SurfSpot, Result<SpotConditions>)]) -> 
             }
         }
     }
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "_Source: Open-Meteo marine + forecast. Last updated: {}_\n",
         now.format("%-I:%M %p")
@@ -343,7 +343,7 @@ fn format_marine_detail(label: &str, notes: Option<&str>, m: &MarineResponse) ->
     }
 
     if let Some(hourly) = &m.hourly {
-        let now_hour = chrono::Local::now().format("%Y-%m-%dT%H:00").to_string();
+        let now_hour = crate::util::now_pacific().format("%Y-%m-%dT%H:00").to_string();
         let start = hourly
             .time
             .iter()
@@ -399,7 +399,7 @@ fn format_marine_detail(label: &str, notes: Option<&str>, m: &MarineResponse) ->
         out.push('\n');
     }
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "_Source: Open-Meteo marine. Last updated: {}_\n",
         now.format("%-I:%M %p")

@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::fmt;
+use std::fmt::Write;
 
 use super::scraper::{
     CourseRule, DegreeRequirements, GeRequirements, RequirementGroup, RequirementSection,
@@ -206,7 +206,7 @@ fn evaluate_rule(rule: &CourseRule, completed_set: &HashSet<String>) -> RuleProg
         RuleType::EitherOr => {
             let primary_done = remaining.is_empty();
             let alt_done = alt_remaining.is_empty()
-                && rule.alternative.as_ref().map_or(false, |a| !a.is_empty());
+                && rule.alternative.as_ref().is_some_and(|a| !a.is_empty());
             primary_done || alt_done
         }
         RuleType::CreditsFrom(n) => {
@@ -293,150 +293,158 @@ pub fn normalize_course_code(code: &str) -> String {
     format!("{} {}", prefix, rest)
 }
 
-// ─── Display Implementations ───
+// ─── Markdown rendering ───
 
-impl fmt::Display for ProgressReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "# Degree Progress: {}\n", self.program_name)?;
-        writeln!(
-            f,
+impl ProgressReport {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
+        let _ = writeln!(out, "# Degree Progress: {}\n", self.program_name);
+        let _ = writeln!(
+            out,
             "**Overall: {}/{} requirement groups satisfied**\n",
             self.summary.satisfied_rules, self.summary.total_rules,
-        )?;
+        );
 
         for section in &self.sections {
-            write!(f, "{}", section)?;
+            out.push_str(&section.format());
         }
 
-        if let Some(ref breadth) = self.breadth_progress {
-            write!(f, "\n{}", breadth)?;
+        if let Some(breadth) = self.breadth_progress.as_ref() {
+            out.push('\n');
+            out.push_str(&breadth.format());
         }
 
-        if let Some(ref ge) = self.ge_progress {
-            writeln!(f, "## General Education Progress\n")?;
-            write!(f, "{}", ge)?;
+        if let Some(ge) = self.ge_progress.as_ref() {
+            out.push_str("## General Education Progress\n\n");
+            out.push_str(&ge.format());
         }
 
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for SectionProgress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl SectionProgress {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
         let status = if self.satisfied { "COMPLETE" } else { "IN PROGRESS" };
         if !self.heading.is_empty() {
-            writeln!(f, "## {} [{}]\n", self.heading, status)?;
+            let _ = writeln!(out, "## {} [{}]\n", self.heading, status);
         }
-
         for sub in &self.subsections {
-            write!(f, "{}", sub)?;
+            out.push_str(&sub.format());
         }
-
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for SubsectionProgress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl SubsectionProgress {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
         if !self.heading.is_empty() {
             let satisfied_count = self.groups.iter().filter(|g| g.satisfied).count();
             let total = self.groups.len();
-            writeln!(f, "### {} ({}/{})\n", self.heading, satisfied_count, total)?;
+            let _ = writeln!(out, "### {} ({}/{})\n", self.heading, satisfied_count, total);
         }
-
         for group in &self.groups {
-            write!(f, "{}", group)?;
+            out.push_str(&group.format());
         }
-
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for GroupProgress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ref heading) = self.heading {
+impl GroupProgress {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
+        if let Some(heading) = self.heading.as_ref() {
             let status = if self.satisfied { "SATISFIED" } else { "INCOMPLETE" };
-            writeln!(f, "#### {} [{}]\n", heading, status)?;
+            let _ = writeln!(out, "#### {} [{}]\n", heading, status);
         }
-
         for rule in &self.rules {
-            write!(f, "{}", rule)?;
+            out.push_str(&rule.format());
         }
-
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for RuleProgress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl RuleProgress {
+    pub fn format(&self) -> String {
+        let mut out = String::new();
         // Show rule heading if present
-        if let Some(ref heading) = self.heading {
-            let status = if self.satisfied { "SATISFIED" } else { "" };
-            if !status.is_empty() {
-                writeln!(f, "**{} {}**", heading, status)?;
+        if let Some(heading) = self.heading.as_ref() {
+            if self.satisfied {
+                let _ = writeln!(out, "**{} SATISFIED**", heading);
             } else {
-                writeln!(f, "**{}**", heading)?;
+                let _ = writeln!(out, "**{}**", heading);
             }
         }
 
         if self.rule_type == RuleType::Prose {
-            if let Some(ref desc) = self.description {
-                writeln!(f, "- [ ] *{} (manual review needed)*", desc)?;
+            if let Some(desc) = self.description.as_ref() {
+                let _ = writeln!(out, "- [ ] *{} (manual review needed)*", desc);
             }
-            return Ok(());
+            return out;
         }
 
         // Show courses with checkboxes
         for course in &self.completed_courses {
-            writeln!(f, "- [x] {}", course)?;
+            let _ = writeln!(out, "- [x] {}", course);
         }
         for course in &self.remaining_courses {
-            writeln!(f, "- [ ] {}", course)?;
+            let _ = writeln!(out, "- [ ] {}", course);
         }
 
         // Show alternative group for either/or
-        if self.rule_type == RuleType::EitherOr && !self.alt_completed.is_empty() || !self.alt_remaining.is_empty() {
-            writeln!(f, "\n**Or:**")?;
+        if self.rule_type == RuleType::EitherOr && !self.alt_completed.is_empty()
+            || !self.alt_remaining.is_empty()
+        {
+            out.push_str("\n**Or:**\n");
             for course in &self.alt_completed {
-                writeln!(f, "- [x] {}", course)?;
+                let _ = writeln!(out, "- [x] {}", course);
             }
             for course in &self.alt_remaining {
-                writeln!(f, "- [ ] {}", course)?;
+                let _ = writeln!(out, "- [ ] {}", course);
             }
         }
 
-        writeln!(f)?;
-        Ok(())
+        out.push('\n');
+        out
     }
 }
 
-impl fmt::Display for GeProgress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "**Required areas:**")?;
+impl GeProgress {
+    pub fn format(&self) -> String {
+        let mut out = String::from("**Required areas:**\n");
         for (code, name, satisfied) in &self.required {
             let check = if *satisfied { "x" } else { " " };
-            writeln!(f, "- [{}] {} — {}", check, code, name)?;
+            let _ = writeln!(out, "- [{}] {} — {}", check, code, name);
         }
 
-        writeln!(f, "\n**Perspectives (need 1):**")?;
+        out.push_str("\n**Perspectives (need 1):**\n");
         if self.perspective_satisfied {
-            writeln!(f, "- [x] Satisfied ({})", self.perspective_completed.as_deref().unwrap_or("?"))?;
+            let _ = writeln!(
+                out,
+                "- [x] Satisfied ({})",
+                self.perspective_completed.as_deref().unwrap_or("?")
+            );
         } else {
-            writeln!(f, "- [ ] Not yet satisfied (choose PE-E, PE-H, or PE-T)")?;
+            out.push_str("- [ ] Not yet satisfied (choose PE-E, PE-H, or PE-T)\n");
         }
 
-        writeln!(f, "\n**Practice (need 1):**")?;
+        out.push_str("\n**Practice (need 1):**\n");
         if self.practice_satisfied {
-            writeln!(f, "- [x] Satisfied ({})", self.practice_completed.as_deref().unwrap_or("?"))?;
+            let _ = writeln!(
+                out,
+                "- [x] Satisfied ({})",
+                self.practice_completed.as_deref().unwrap_or("?")
+            );
         } else {
-            writeln!(f, "- [ ] Not yet satisfied (choose PR-E, PR-C, or PR-S)")?;
+            out.push_str("- [ ] Not yet satisfied (choose PR-E, PR-C, or PR-S)\n");
         }
 
-        writeln!(f, "\n**Composition:**")?;
         let check = if self.composition_satisfied { "x" } else { " " };
-        writeln!(f, "- [{}] C — Composition", check)?;
+        let _ = writeln!(out, "\n**Composition:**\n- [{}] C — Composition", check);
 
-        Ok(())
+        out
     }
 }
 

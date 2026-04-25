@@ -148,7 +148,7 @@ fn format_forecast(forecast: &ForecastResponse, max_periods: usize) -> String {
 
     out.push_str(&format!(
         "_Source: NOAA NWS. Last updated: {}_\n",
-        chrono::Local::now().format("%-I:%M %p")
+        crate::util::now_pacific().format("%-I:%M %p")
     ));
     out
 }
@@ -159,7 +159,7 @@ fn format_alerts(coastal: &AlertsResponse, mountains: &AlertsResponse) -> String
 
     if total == 0 {
         out.push_str("No active weather alerts for Santa Cruz coastal or mountain zones.\n");
-        let now = chrono::Local::now();
+        let now = crate::util::now_pacific();
         out.push_str(&format!(
             "\n_Checked: {} · Zones: {} (coastal), {} (mountains)_\n",
             now.format("%-I:%M %p"),
@@ -189,7 +189,7 @@ fn format_alerts(coastal: &AlertsResponse, mountains: &AlertsResponse) -> String
         }
     }
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\n_Source: NOAA NWS. Last checked: {}_\n",
         now.format("%-I:%M %p")

@@ -14,6 +14,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::util::FuzzyMatcher;
+
 pub const CHP_FEED_URL: &str = "https://media.chp.ca.gov/sa_xml/sa.xml";
 pub const CENTER_GGHB: &str = "GGHB";
 pub const DISPATCH_MYCC: &str = "MYCC";
@@ -174,10 +176,9 @@ pub fn filter_by_route<'a>(incidents: &'a [Incident], route: &str) -> Vec<&'a In
 }
 
 fn is_sc_county_area(area: &str) -> bool {
-    let a = area.to_lowercase();
-    SC_COUNTY_AREAS
-        .iter()
-        .any(|known| a.contains(&known.to_lowercase()))
+    FuzzyMatcher::new(SC_COUNTY_AREAS.iter().copied())
+        .case_insensitive()
+        .matches(area)
 }
 
 /// Strip literal leading/trailing `"` characters that CHP wraps values in.

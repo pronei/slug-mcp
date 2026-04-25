@@ -255,7 +255,7 @@ fn format_detections(detections: &[Detection], days: u32) -> String {
              _Source: NASA FIRMS. Last checked: {}_\n",
             days,
             day_word,
-            chrono::Local::now().format("%-I:%M %p")
+            crate::util::now_pacific().format("%-I:%M %p")
         );
     }
 
@@ -310,7 +310,7 @@ fn format_detections(detections: &[Detection], days: u32) -> String {
 
     out.push_str(&format!(
         "_Source: NASA FIRMS. Last updated: {}_\n",
-        chrono::Local::now().format("%-I:%M %p")
+        crate::util::now_pacific().format("%-I:%M %p")
     ));
     out
 }

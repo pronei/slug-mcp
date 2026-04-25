@@ -205,17 +205,23 @@ pub struct SamlResponse {
 
 /// Parse a SAML POST binding auto-submit form from HTML.
 fn parse_saml_form(html: &str) -> Option<(String, Vec<(String, String)>)> {
+    use std::sync::LazyLock;
+
     use scraper::{Html, Selector};
 
-    let document = Html::parse_document(html);
-    let form_sel = Selector::parse("form").ok()?;
-    let input_sel = Selector::parse("input[type=\"hidden\"]").ok()?;
+    static FORM_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("form").expect("hardcoded selector"));
+    static INPUT_SEL: LazyLock<Selector> = LazyLock::new(|| {
+        Selector::parse("input[type=\"hidden\"]").expect("hardcoded selector")
+    });
 
-    for form in document.select(&form_sel) {
+    let document = Html::parse_document(html);
+
+    for form in document.select(&FORM_SEL) {
         let mut fields = Vec::new();
         let mut has_saml_field = false;
 
-        for input in form.select(&input_sel) {
+        for input in form.select(&INPUT_SEL) {
             let name = input.value().attr("name").unwrap_or_default().to_string();
             let value = input.value().attr("value").unwrap_or_default().to_string();
 

@@ -17,9 +17,9 @@
 //! accurate than BusTime's pre-computed ETAs.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine};
 use prost::Message;
 use serde::{Deserialize, Serialize};
 
@@ -38,8 +38,8 @@ pub const BACKEND_NAME: &str = "GTFS-RT (no API key)";
 
 // ───── feed fetching (shared by all callers) ─────
 
-/// Fetch a feed URL, caching the raw protobuf bytes (base64-encoded) in the
-/// shared `CacheStore` so concurrent tool calls reuse a single upstream GET.
+/// Fetch a feed URL, caching the decoded `FeedMessage` so concurrent tool
+/// calls reuse a single upstream GET (no base64 / re-decode round trip).
 pub async fn fetch_feed(
     http: &reqwest::Client,
     cache: &CacheStore,
@@ -47,13 +47,8 @@ pub async fn fetch_feed(
     url: &'static str,
 ) -> Result<gtfs_realtime::FeedMessage> {
     let cache_key = format!("transit:gtfsrt:{}", feed_name);
-    if let Some(encoded) = cache.get(&cache_key).await {
-        if let Ok(bytes) = STANDARD.decode(&encoded) {
-            if let Ok(msg) = gtfs_realtime::FeedMessage::decode(&bytes[..]) {
-                return Ok(msg);
-            }
-            tracing::warn!("cached GTFS-RT {} failed to decode; refetching", feed_name);
-        }
+    if let Some(msg) = cache.get::<gtfs_realtime::FeedMessage>(&cache_key).await {
+        return Ok(msg);
     }
 
     let resp = http
@@ -69,12 +64,14 @@ pub async fn fetch_feed(
         .await
         .with_context(|| format!("reading {} body", feed_name))?;
 
+    let msg = gtfs_realtime::FeedMessage::decode(&bytes[..])
+        .with_context(|| format!("decoding {} protobuf", feed_name))?;
+
     cache
-        .set(&cache_key, &STANDARD.encode(&bytes), FEED_TTL_SECS)
+        .set(&cache_key, msg.clone(), Duration::from_secs(FEED_TTL_SECS))
         .await;
 
-    gtfs_realtime::FeedMessage::decode(&bytes[..])
-        .with_context(|| format!("decoding {} protobuf", feed_name))
+    Ok(msg)
 }
 
 // ───── predictions (replacement for bustime::get_predictions) ─────
@@ -116,7 +113,7 @@ pub async fn get_predictions_for_stop(
         }
     };
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     let now_epoch = now.timestamp();
 
     let mut predictions: Vec<Prediction> = Vec::new();
@@ -171,11 +168,13 @@ pub async fn get_predictions_for_stop(
             }
 
             let eta_minutes = ((time - now_epoch) / 60).max(0);
-            let predicted_time = chrono::DateTime::<chrono::Local>::from(
-                std::time::UNIX_EPOCH + std::time::Duration::from_secs(time as u64),
-            )
-            .format("%-I:%M %p")
-            .to_string();
+            let predicted_time = chrono::DateTime::from_timestamp(time, 0)
+                .map(|dt| {
+                    dt.with_timezone(&chrono_tz::US::Pacific)
+                        .format("%-I:%M %p")
+                        .to_string()
+                })
+                .unwrap_or_default();
 
             let is_delayed = delay_secs.map(|d| d > 60).unwrap_or(false);
 
@@ -531,7 +530,7 @@ pub fn format_predictions(
         }
     }
 
-    let now = chrono::Local::now();
+    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\nLast updated: {} · source: {}\n",
         now.format("%-I:%M %p"),
@@ -554,7 +553,7 @@ pub fn format_system_alerts(alerts: &[SystemAlert]) -> String {
             "# Santa Cruz Metro — System Service Alerts\n\n\
              No active system alerts.\n\n\
              _Source: METRO GTFS-RT. Last checked: {}_\n",
-            chrono::Local::now().format("%-I:%M %p")
+            crate::util::now_pacific().format("%-I:%M %p")
         );
     }
     let mut out = format!(
@@ -592,7 +591,7 @@ pub fn format_system_alerts(alerts: &[SystemAlert]) -> String {
     }
     out.push_str(&format!(
         "_Source: METRO GTFS-RT. Last updated: {}_\n",
-        chrono::Local::now().format("%-I:%M %p")
+        crate::util::now_pacific().format("%-I:%M %p")
     ));
     out
 }
@@ -639,7 +638,7 @@ pub fn format_vehicle_positions(
 
     out.push_str(&format!(
         "\n_Source: METRO GTFS-RT vehicles feed. Last updated: {}_\n",
-        chrono::Local::now().format("%-I:%M %p")
+        crate::util::now_pacific().format("%-I:%M %p")
     ));
     out
 }
@@ -669,7 +668,7 @@ pub fn format_route_delays(
 
     out.push_str(&format!(
         "\n_Source: METRO GTFS-RT trip_updates feed. Last updated: {}_\n",
-        chrono::Local::now().format("%-I:%M %p")
+        crate::util::now_pacific().format("%-I:%M %p")
     ));
     out
 }

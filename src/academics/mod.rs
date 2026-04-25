@@ -108,7 +108,7 @@ impl AcademicsService {
             return Ok("No classes found matching your search criteria.".to_string());
         }
 
-        Ok(result.to_string())
+        Ok(result.format())
     }
 
     pub async fn search_directory(
@@ -129,6 +129,6 @@ impl AcademicsService {
             return Ok(format!("No directory results found for \"{}\".", query));
         }
 
-        Ok(result.to_string())
+        Ok(result.format())
     }
 }

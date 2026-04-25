@@ -1,13 +1,16 @@
+use std::any::Any;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moka::future::Cache;
 use moka::Expiry;
+use moka::future::Cache;
 
-/// Cached value with a per-entry TTL.
+/// Cached value with a per-entry TTL. The value is type-erased so a single
+/// `CacheStore` can hold any `Send + Sync + 'static` type — callers `get<T>`
+/// downcasts back to the concrete type. No JSON round-trip.
 #[derive(Clone)]
 struct CacheEntry {
-    value: Arc<String>,
+    value: Arc<dyn Any + Send + Sync>,
     ttl: Duration,
 }
 
@@ -25,14 +28,15 @@ impl Expiry<String, CacheEntry> for PerEntryExpiry {
     }
 }
 
-/// In-memory TTL cache backed by moka with per-entry expiration.
+/// In-memory TTL cache with per-entry expiration. Backed by moka with
+/// type-erased `Arc<dyn Any>` storage so callers can cache any concrete type
+/// without serialization overhead.
 #[derive(Clone)]
 pub struct CacheStore {
     inner: Cache<String, CacheEntry>,
 }
 
 impl CacheStore {
-    /// Create a new in-memory cache with a max capacity.
     pub fn new(max_capacity: u64) -> Self {
         let inner = Cache::builder()
             .max_capacity(max_capacity)
@@ -41,14 +45,37 @@ impl CacheStore {
         Self { inner }
     }
 
-    pub async fn get(&self, key: &str) -> Option<String> {
-        self.inner.get(key).await.map(|e| (*e.value).clone())
+    /// Get a cloned value for `key` if present and the stored type matches `T`.
+    /// A type mismatch is treated as a miss; pair this with `get_or_fetch` and
+    /// the next call will refetch with the correct type.
+    pub async fn get<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Option<T> {
+        let arc = self.get_arc::<T>(key).await?;
+        Some((*arc).clone())
     }
 
-    pub async fn set(&self, key: &str, value: &str, ttl_secs: u64) {
+    /// Get the `Arc` directly — avoids one clone for read-only access of large
+    /// cached values. Most callers should use `get` instead.
+    pub async fn get_arc<T: Send + Sync + 'static>(&self, key: &str) -> Option<Arc<T>> {
+        let entry = self.inner.get(key).await?;
+        Arc::downcast::<T>(entry.value).ok()
+    }
+
+    /// Insert `value` under `key` with the given TTL.
+    pub async fn set<T: Send + Sync + 'static>(&self, key: &str, value: T, ttl: Duration) {
+        self.set_arc(key, Arc::new(value), ttl).await;
+    }
+
+    /// Insert an already-shared `Arc<T>` — useful when the caller wants to
+    /// retain its own reference without an extra clone of `T`.
+    pub async fn set_arc<T: Send + Sync + 'static>(
+        &self,
+        key: &str,
+        value: Arc<T>,
+        ttl: Duration,
+    ) {
         let entry = CacheEntry {
-            value: Arc::new(value.to_string()),
-            ttl: Duration::from_secs(ttl_secs),
+            value: value as Arc<dyn Any + Send + Sync>,
+            ttl,
         };
         self.inner.insert(key.to_string(), entry).await;
     }
@@ -57,8 +84,9 @@ impl CacheStore {
         self.inner.invalidate(key).await;
     }
 
-    /// Check cache for `key`, deserialize as `T`. On miss or deser failure,
-    /// call `fetch`, serialize the result back into the cache, and return it.
+    /// Cache-aside fetch: return cached `T` (cloned), or invoke `fetch` and
+    /// cache the result before returning it. Type mismatches in the cache are
+    /// treated as misses.
     pub async fn get_or_fetch<T, F, Fut>(
         &self,
         key: &str,
@@ -66,23 +94,17 @@ impl CacheStore {
         fetch: F,
     ) -> anyhow::Result<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: Clone + Send + Sync + 'static,
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = anyhow::Result<T>>,
     {
-        if let Some(cached) = self.get(key).await {
-            match serde_json::from_str::<T>(&cached) {
-                Ok(val) => return Ok(val),
-                Err(e) => tracing::warn!("Cache deser failed for {}: {}", key, e),
-            }
+        if let Some(cached) = self.get::<T>(key).await {
+            return Ok(cached);
         }
-
-        let val = fetch().await?;
-
-        if let Ok(json) = serde_json::to_string(&val) {
-            self.set(key, &json, ttl_secs).await;
-        }
-
-        Ok(val)
+        let value = fetch().await?;
+        let arc = Arc::new(value);
+        self.set_arc(key, Arc::clone(&arc), Duration::from_secs(ttl_secs))
+            .await;
+        Ok((*arc).clone())
     }
 }

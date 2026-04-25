@@ -1,7 +1,7 @@
 [package]
 name = "slug-mcp"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "MCP server for UCSC campus services"
 
 [[bin]]
@@ -28,6 +28,7 @@ sha2 = { version = "0.10", optional = true }
 hostname = { version = "0.4", optional = true }
 urlencoding = "2"
 chrono = "0.4"
+chrono-tz = "0.10"
 chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
 base64 = "0.22"
@@ -42,3 +43,21 @@ auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname"]
 
 [dev-dependencies]
 tempfile = "3"
+
+# Inherits from `release` but cranks up cross-crate optimization.
+# Build with: cargo build --profile release-optimized --no-default-features
+# Output:    target/release-optimized/slug-mcp
+#
+# Tradeoffs vs `release`:
+#   - lto = "fat"          - ~10-20% perf, ~30% smaller binary; 3-5× slower builds
+#   - codegen-units = 1    - extra few % on top of LTO; slower builds
+#   - strip = "symbols"    - smaller binary; less useful panic backtraces
+#   - panic = "unwind"     - kept (default) so tokio task panics don't kill the server
+[profile.release-optimized]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+debug = false
+overflow-checks = false

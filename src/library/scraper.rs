@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt;
+use std::fmt::Write;
 
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
@@ -31,10 +31,14 @@ pub static LIBRARIES: &[Library] = &[
 ];
 
 pub fn find_library(query: &str) -> Option<&'static Library> {
-    let q = query.to_lowercase();
+    let q_matcher = crate::util::FuzzyMatcher::new([query]).case_insensitive();
     LIBRARIES.iter().find(|lib| {
-        lib.name.to_lowercase().contains(&q)
-            || lib.short_names.iter().any(|s| s.contains(&q) || q.contains(s))
+        let labels: Vec<&str> = std::iter::once(lib.name)
+            .chain(lib.short_names.iter().copied())
+            .collect();
+        let label_matcher =
+            crate::util::FuzzyMatcher::new(labels.iter().copied()).case_insensitive();
+        label_matcher.matches(query) || labels.iter().any(|label| q_matcher.matches(label))
     })
 }
 
@@ -70,22 +74,23 @@ pub struct TimeSlot {
     pub end: String,
 }
 
-impl fmt::Display for RoomAvailability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "## {} — {}", self.library_name, self.date)?;
+impl RoomAvailability {
+    pub fn format(&self) -> String {
+        let mut out = format!("## {} — {}\n", self.library_name, self.date);
         if self.rooms.is_empty() {
-            write!(f, "No rooms found or availability data unavailable.")?;
-            return Ok(());
+            out.push_str("No rooms found or availability data unavailable.");
+            return out;
         }
         for room in &self.rooms {
-            write!(f, "\n{}", room)?;
+            out.push('\n');
+            out.push_str(&room.format());
         }
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for Room {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Room {
+    pub fn format(&self) -> String {
         let cap_str = self
             .capacity
             .map(|c| format!(" (capacity: {})", c))
@@ -94,7 +99,7 @@ impl fmt::Display for Room {
             .space_id
             .map(|id| format!(" [space_id: {}]", id))
             .unwrap_or_default();
-        write!(f, "### {}{}{}", self.name, cap_str, id_str)?;
+        let mut out = format!("### {}{}{}", self.name, cap_str, id_str);
 
         if !self.available_slots.is_empty() {
             let slots: Vec<String> = self
@@ -102,7 +107,7 @@ impl fmt::Display for Room {
                 .iter()
                 .map(|s| format!("{} - {}", s.start, s.end))
                 .collect();
-            write!(f, "\n- **Available**: {}", slots.join(", "))?;
+            let _ = write!(out, "\n- **Available**: {}", slots.join(", "));
         }
         if !self.booked_slots.is_empty() {
             let slots: Vec<String> = self
@@ -110,12 +115,12 @@ impl fmt::Display for Room {
                 .iter()
                 .map(|s| format!("{} - {}", s.start, s.end))
                 .collect();
-            write!(f, "\n- **Booked**: {}", slots.join(", "))?;
+            let _ = write!(out, "\n- **Booked**: {}", slots.join(", "));
         }
         if self.available_slots.is_empty() && self.booked_slots.is_empty() {
-            write!(f, "\n- No time slot data available")?;
+            out.push_str("\n- No time slot data available");
         }
-        Ok(())
+        out
     }
 }
 
@@ -127,12 +132,12 @@ pub struct BookingResult {
 }
 
 #[cfg(feature = "auth")]
-impl fmt::Display for BookingResult {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl BookingResult {
+    pub fn format(&self) -> String {
         if self.success {
-            write!(f, "**Booking confirmed!** {}", self.message)
+            format!("**Booking confirmed!** {}", self.message)
         } else {
-            write!(f, "**Booking failed.** {}", self.message)
+            format!("**Booking failed.** {}", self.message)
         }
     }
 }
@@ -473,20 +478,21 @@ pub async fn book_room(
 
 #[cfg(feature = "auth")]
 fn extract_csrf_token(html: &str) -> Option<String> {
-    // Look for hidden input with name="_token" or "csrf_token"
+    use std::sync::LazyLock;
+
+    static CSRF_SEL: LazyLock<Selector> = LazyLock::new(|| {
+        Selector::parse(
+            "input[name='_token'], input[name='csrf_token'], meta[name='csrf-token']",
+        )
+        .expect("hardcoded selector")
+    });
+
     let document = Html::parse_document(html);
-    if let Ok(sel) =
-        Selector::parse("input[name='_token'], input[name='csrf_token'], meta[name='csrf-token']")
-    {
-        if let Some(el) = document.select(&sel).next() {
-            return el
-                .value()
-                .attr("value")
-                .or(el.value().attr("content"))
-                .map(|s| s.to_string());
-        }
-    }
-    None
+    let el = document.select(&CSRF_SEL).next()?;
+    el.value()
+        .attr("value")
+        .or(el.value().attr("content"))
+        .map(|s| s.to_string())
 }
 
 #[cfg(test)]

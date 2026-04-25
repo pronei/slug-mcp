@@ -94,12 +94,13 @@ impl DegreeService {
             })
             .await?;
 
-        let mut output = reqs.to_string();
+        let mut output = reqs.format();
 
         // Append breadth requirements for CSE MS
         if Self::has_breadth_requirements(&entry.slug) {
             if let Ok(breadth) = self.load_breadth_requirements().await {
-                output.push_str(&format!("\n{}", breadth));
+                output.push('\n');
+                output.push_str(&breadth.format());
             }
         }
 
@@ -139,6 +140,6 @@ impl DegreeService {
             }
         }
 
-        Ok(report.to_string())
+        Ok(report.format())
     }
 }

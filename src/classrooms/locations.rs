@@ -1,11 +1,13 @@
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use serde::Deserialize;
 
-static BUILDINGS: OnceLock<HashMap<String, BuildingLocation>> = OnceLock::new();
-
 const BUILDINGS_JSON: &str = include_str!("buildings.json");
+
+static BUILDINGS: LazyLock<HashMap<String, BuildingLocation>> = LazyLock::new(|| {
+    serde_json::from_str(BUILDINGS_JSON).expect("buildings.json should be valid JSON")
+});
 
 #[derive(Debug, Deserialize)]
 pub struct BuildingLocation {
@@ -17,16 +19,9 @@ pub struct BuildingLocation {
     pub map_url: String,
 }
 
-/// Get the buildings index, parsed once from the embedded JSON.
-fn buildings() -> &'static HashMap<String, BuildingLocation> {
-    BUILDINGS.get_or_init(|| {
-        serde_json::from_str(BUILDINGS_JSON).expect("buildings.json should be valid JSON")
-    })
-}
-
 /// Look up a building by its exact area code (from the classrooms scraper CSS class).
 pub fn lookup_by_area(area_code: &str) -> Option<&'static BuildingLocation> {
-    buildings().get(area_code)
+    BUILDINGS.get(area_code)
 }
 
 impl BuildingLocation {

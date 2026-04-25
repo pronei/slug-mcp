@@ -1,15 +1,14 @@
-use std::fmt;
 use std::fmt::Write;
 
 use anyhow::{Context, Result};
 use scraper::Html;
 
 use super::locations::BuildingLocation;
-use crate::util::{sel, selectors};
+use crate::util::selectors;
 
 selectors! {
     SEL_POST_ITEM => "li.wp-block-post",
-    SEL_TITLE_LINK => "a",
+    SEL_TITLE_LINK => "h2.wp-block-post-title a",
 }
 
 const CLASSROOMS_URL: &str = "https://classrooms.ucsc.edu/classroomlist/";
@@ -23,30 +22,6 @@ pub struct Classroom {
     pub area: Option<String>,
     pub technology: Vec<String>,
     pub physical_features: Vec<String>,
-}
-
-impl fmt::Display for Classroom {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "### {}", self.name)?;
-        if let Some(cap) = self.capacity {
-            write!(f, "\n- **Capacity**: {}", cap)?;
-        }
-        if let Some(style) = &self.seating_style {
-            write!(f, "\n- **Seating**: {}", humanize(style))?;
-        }
-        if let Some(area) = &self.area {
-            write!(f, "\n- **Area**: {}", humanize(area))?;
-        }
-        if !self.technology.is_empty() {
-            let techs: Vec<String> = self.technology.iter().map(|t| humanize(t)).collect();
-            write!(f, "\n- **Technology**: {}", techs.join(", "))?;
-        }
-        if !self.physical_features.is_empty() {
-            let feats: Vec<String> = self.physical_features.iter().map(|t| humanize(t)).collect();
-            write!(f, "\n- **Features**: {}", feats.join(", "))?;
-        }
-        Ok(())
-    }
 }
 
 impl Classroom {
@@ -114,12 +89,10 @@ pub async fn scrape_classrooms(client: &reqwest::Client) -> Result<Vec<Classroom
 
 fn parse_classrooms(html: &str) -> Vec<Classroom> {
     let document = Html::parse_document(html);
-    let post_sel = sel(&SEL_POST_ITEM, "li.wp-block-post");
-    let title_sel = sel(&SEL_TITLE_LINK, "h2.wp-block-post-title a");
 
     let mut classrooms = Vec::new();
 
-    for item in document.select(post_sel) {
+    for item in document.select(&SEL_POST_ITEM) {
         let classes: Vec<&str> = item
             .value()
             .attr("class")
@@ -128,7 +101,7 @@ fn parse_classrooms(html: &str) -> Vec<Classroom> {
             .collect();
 
         // Extract name + URL
-        let (name, url) = match item.select(title_sel).next() {
+        let (name, url) = match item.select(&SEL_TITLE_LINK).next() {
             Some(a) => (
                 a.text().collect::<String>().trim().to_string(),
                 a.value().attr("href").unwrap_or("").to_string(),

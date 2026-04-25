@@ -1,24 +1,33 @@
-use std::sync::OnceLock;
+use chrono::DateTime;
+use chrono_tz::Tz;
 
-use scraper::Selector;
+mod fuzzy;
+pub use fuzzy::FuzzyMatcher;
 
-/// Parse and memoize a CSS selector. Panics on invalid selectors (which are
-/// hardcoded constants, so this is fine).
-pub fn sel<'a>(cell: &'a OnceLock<Selector>, css: &str) -> &'a Selector {
-    cell.get_or_init(|| Selector::parse(css).expect("hardcoded selector"))
-}
-
-/// Declare memoized CSS selector statics. Reduces boilerplate in scraper modules.
+/// Declare memoized CSS selector statics. The macro owns both the name and the
+/// CSS string, so the two can't drift apart.
 ///
 /// ```ignore
 /// selectors! { SEL_TITLE => "h2.title", SEL_LINK => "a.link" }
+/// // usage: document.select(&SEL_TITLE)
 /// ```
 macro_rules! selectors {
-    ($($name:ident => $css:expr),+ $(,)?) => {
-        $(static $name: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();)+
+    ($($name:ident => $css:literal),+ $(,)?) => {
+        $(
+            static $name: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLock::new(|| {
+                scraper::Selector::parse($css).expect("hardcoded selector")
+            });
+        )+
     };
 }
 pub(crate) use selectors;
+
+/// Current time in America/Los_Angeles. Use this anywhere a user-perceived
+/// "now" is needed (display, calendar comparisons, day-of-week math) so the
+/// output doesn't depend on the host's TZ.
+pub fn now_pacific() -> DateTime<Tz> {
+    chrono::Utc::now().with_timezone(&chrono_tz::US::Pacific)
+}
 
 /// Strip HTML tags from a string, collapsing whitespace.
 pub fn strip_html_tags(html: &str) -> String {
@@ -92,11 +101,11 @@ mod tests {
     }
 
     #[test]
-    fn test_sel_memoization() {
-        static TEST_SEL: OnceLock<Selector> = OnceLock::new();
-        let s1 = sel(&TEST_SEL, "div.test");
-        let s2 = sel(&TEST_SEL, "div.test");
-        assert!(std::ptr::eq(s1, s2)); // same pointer = memoized
+    fn test_now_pacific_is_in_pacific() {
+        let now = now_pacific();
+        // Pacific tz name surfaces as PST/PDT depending on DST
+        let tz_str = now.format("%Z").to_string();
+        assert!(tz_str == "PST" || tz_str == "PDT", "got: {}", tz_str);
     }
 
     #[test]

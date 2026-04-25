@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use anyhow::{Context, Result};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -5,6 +7,11 @@ use serde::{Deserialize, Serialize};
 use crate::util;
 
 const EVENTBRITE_BASE: &str = "https://www.eventbrite.com";
+
+static SEL_EVENT_ID: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("[data-event-id]").expect("hardcoded selector"));
+static SEL_EVENT_HREF: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("a[href*='/e/']").expect("hardcoded selector"));
 
 // ─── Step 1: Scrape event IDs from the Eventbrite discover page ───
 
@@ -53,25 +60,21 @@ fn extract_event_ids(html: &str) -> Vec<String> {
     let mut ids = Vec::new();
 
     // Primary: data-event-id on links
-    if let Ok(sel) = Selector::parse("[data-event-id]") {
-        for el in document.select(&sel) {
-            if let Some(id) = el.value().attr("data-event-id") {
-                if !id.is_empty() && !ids.contains(&id.to_string()) {
-                    ids.push(id.to_string());
-                }
+    for el in document.select(&SEL_EVENT_ID) {
+        if let Some(id) = el.value().attr("data-event-id") {
+            if !id.is_empty() && !ids.contains(&id.to_string()) {
+                ids.push(id.to_string());
             }
         }
     }
 
     // Fallback: parse event IDs from href patterns like /e/...-tickets-1234567890
     if ids.is_empty() {
-        if let Ok(sel) = Selector::parse("a[href*='/e/']") {
-            for el in document.select(&sel) {
-                if let Some(href) = el.value().attr("href") {
-                    if let Some(id) = extract_id_from_href(href) {
-                        if !ids.contains(&id) {
-                            ids.push(id);
-                        }
+        for el in document.select(&SEL_EVENT_HREF) {
+            if let Some(href) = el.value().attr("href") {
+                if let Some(id) = extract_id_from_href(href) {
+                    if !ids.contains(&id) {
+                        ids.push(id);
                     }
                 }
             }
@@ -105,13 +108,13 @@ fn extract_id_from_href(href: &str) -> Option<String> {
 
 // ─── Step 2: Fetch event details from destination API ───
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DestinationResponse {
     pub events: Vec<Event>,
     pub pagination: Option<DestinationPagination>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DestinationPagination {
     pub object_count: Option<u32>,
     pub page_count: Option<u32>,
@@ -119,7 +122,7 @@ pub struct DestinationPagination {
     pub has_more_items: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Event {
     pub id: String,
     pub name: String,
@@ -140,14 +143,14 @@ pub struct Event {
     pub tags: Option<Vec<Tag>>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Venue {
     pub name: Option<String>,
     pub id: Option<String>,
     pub address: Option<Address>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Address {
     pub address_1: Option<String>,
     pub city: Option<String>,
@@ -156,13 +159,13 @@ pub struct Address {
     pub localized_address_display: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Organizer {
     pub name: Option<String>,
     pub url: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TicketAvailability {
     pub is_free: Option<bool>,
     pub is_sold_out: Option<bool>,
@@ -171,19 +174,19 @@ pub struct TicketAvailability {
     pub maximum_ticket_price: Option<Price>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Price {
     pub display: Option<String>,
     pub major_value: Option<String>,
     pub currency: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Image {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Tag {
     pub display_name: Option<String>,
     pub tag: Option<String>,

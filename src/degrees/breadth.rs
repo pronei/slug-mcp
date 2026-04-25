@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::Write;
 
 use anyhow::{Context, Result};
 
@@ -260,56 +260,57 @@ pub fn check_breadth_progress(
     }
 }
 
-// ─── Display ───
+// ─── Markdown rendering ───
 
-impl fmt::Display for BreadthRequirements {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "## CSE M.S. Breadth Requirements\n")?;
-        writeln!(
-            f,
+impl BreadthRequirements {
+    pub fn format(&self) -> String {
+        let mut out = String::from("## CSE M.S. Breadth Requirements\n\n");
+        let _ = writeln!(
+            out,
             "> Select one course from {} different breadth categories ({} courses, 15 credits total).\n",
             BREADTH_COURSES_REQUIRED, BREADTH_COURSES_REQUIRED
-        )?;
+        );
 
         for cat in &self.categories {
-            writeln!(f, "### {}\n", cat.name)?;
+            let _ = writeln!(out, "### {}\n", cat.name);
             for course in &cat.courses {
-                writeln!(f, "- {} — {}", course.code, course.title)?;
+                let _ = writeln!(out, "- {} — {}", course.code, course.title);
             }
-            writeln!(f)?;
+            out.push('\n');
         }
 
         if !self.not_allowed.is_empty() {
-            writeln!(f, "### Courses NOT Allowed as Breadth\n")?;
+            out.push_str("### Courses NOT Allowed as Breadth\n\n");
             for course in &self.not_allowed {
-                writeln!(f, "- {} — {}", course.code, course.title)?;
+                let _ = writeln!(out, "- {} — {}", course.code, course.title);
             }
         }
 
-        Ok(())
+        out
     }
 }
 
-impl fmt::Display for BreadthProgress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl BreadthProgress {
+    pub fn format(&self) -> String {
         let status = if self.satisfied {
             "SATISFIED"
         } else {
             "IN PROGRESS"
         };
-        writeln!(
-            f,
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
             "## Breadth Requirements [{status}] ({}/{} categories covered)\n",
             self.categories_covered, BREADTH_COURSES_REQUIRED
-        )?;
+        );
 
         for cat in &self.categories {
             if !cat.completed_courses.is_empty() {
-                writeln!(f, "**{}** [COVERED]", cat.name)?;
+                let _ = writeln!(out, "**{}** [COVERED]", cat.name);
                 for course in &cat.completed_courses {
-                    writeln!(f, "- [x] {}", course)?;
+                    let _ = writeln!(out, "- [x] {}", course);
                 }
-                writeln!(f)?;
+                out.push('\n');
             }
         }
 
@@ -321,14 +322,19 @@ impl fmt::Display for BreadthProgress {
             .collect();
 
         if !uncovered.is_empty() && !self.satisfied {
-            writeln!(f, "**Uncovered categories (choose from):**\n")?;
+            out.push_str("**Uncovered categories (choose from):**\n\n");
             for cat in uncovered {
-                writeln!(f, "- {} ({} courses available)", cat.name, cat.available_courses.len())?;
+                let _ = writeln!(
+                    out,
+                    "- {} ({} courses available)",
+                    cat.name,
+                    cat.available_courses.len()
+                );
             }
-            writeln!(f)?;
+            out.push('\n');
         }
 
-        Ok(())
+        out
     }
 }
 

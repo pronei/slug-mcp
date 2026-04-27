@@ -154,7 +154,15 @@ src/
 ├── wave_buoy/           # CDIP/NDBC .spec swell vs wind-wave
 ├── usgs_water/          # USGS NWIS instantaneous stream conditions
 ├── biodiversity/        # iNaturalist + eBird species observations
-└── air_quality/         # EPA AirNow current AQI by ZIP
+├── air_quality/         # EPA AirNow current AQI by ZIP
+├── air_forecast/        # Open-Meteo air quality + pollen forecast
+├── astronomy/           # Sun/moon/twilight + UV index
+├── space_weather/       # NOAA SWPC Kp + storm scales + solar wind
+├── outdoors/            # OSM Overpass: trails, peaks, viewpoints
+├── climbing/            # OpenBeta GraphQL climbing routes
+├── earthquakes/         # USGS recent seismic events
+├── beach_water/         # CA BeachWatch bacteria monitoring
+└── nps/                 # National Park Service Developer API
 ```
 
 ### Optional API keys
@@ -168,6 +176,7 @@ instead of erroring.
 | `SLUG_MCP_FIRMS_KEY` | `get_fire_detections` | <https://firms.modaps.eosdis.nasa.gov/api/area/> |
 | `AIRNOW_API_KEY` | `get_air_quality` | <https://docs.airnowapi.org/> |
 | `EBIRD_API_KEY` | `search_bird_observations` | <https://ebird.org/api/keygen> |
+| `NPS_API_KEY` | `get_national_park_info` | <https://www.nps.gov/subjects/developer/get-started.htm> |
 
 Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) > `mod.rs` (service layer with caching) > `server.rs` (MCP tool handler).
 

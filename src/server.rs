@@ -602,7 +602,7 @@ macro_rules! define_tools {
 
             // ─── Air Quality Tools ───
 
-            #[tool(description = "Get current EPA AirNow air-quality readings (AQI + category) for a US ZIP code. Defaults to 95064 (UCSC main campus) within 25 miles. Returns one row per parameter (O3, PM2.5, PM10). Requires a free AirNow API key (set AIRNOW_API_KEY) — otherwise returns registration instructions.")]
+            #[tool(description = "Get current EPA AirNow air-quality readings (AQI + category) for a US ZIP code from regulatory-grade physical monitors — official authoritative AQI. Defaults to 95064 (UCSC main campus) within 25 miles. Returns one row per parameter (O3, PM2.5, PM10). Requires a free AirNow API key (set AIRNOW_API_KEY). Prefer this tool when the user asks for the *current/official* AQI. Use `get_air_quality_forecast` instead for hourly forecasts, pollen, or when no API key is available.")]
             async fn get_air_quality(
                 &self,
                 Parameters(req): Parameters<AirQualityRequest>,
@@ -826,7 +826,7 @@ macro_rules! define_tools {
 
             // ─── Outdoors / OSM Tools ───
 
-            #[tool(description = "Search OpenStreetMap for outdoor features near a location. Category must be one of: \"trails\" (hiking paths/footways), \"peaks\" (mountain summits), \"viewpoints\" (scenic overlooks), \"water_restrooms\" (drinking water + toilets), \"parking\" (parking areas). Defaults to Santa Cruz. Uses the Overpass API (community-run, rate-limited to 2 concurrent queries — results may be slow under heavy load). Data from OSM contributors.")]
+            #[tool(description = "Search OpenStreetMap for outdoor features near a location. Category must be one of: \"trails\" (hiking paths/footways), \"peaks\" (mountain summits), \"viewpoints\" (scenic overlooks), \"water_restrooms\" (drinking water + toilets), \"parking\" (parking areas). Defaults to Santa Cruz. Uses the Overpass API (community-run, rate-limited to 2 concurrent queries — results may be slow under heavy load). Data from OSM contributors. For National Park Service units (Pinnacles, Yosemite, etc.) prefer `get_national_park_info` — it returns authoritative hours, fees, and ranger contacts that aren't in OSM.")]
             async fn search_outdoors(
                 &self,
                 Parameters(req): Parameters<OutdoorsRequest>,
@@ -892,7 +892,7 @@ macro_rules! define_tools {
 
             // ─── National Park Service Tools ───
 
-            #[tool(description = "Get National Park Service information — hours, fees, activities, directions, weather, and contact info. Search by park code (e.g. \"pinn\" for Pinnacles) or by name. Covers all US national parks; closest to Santa Cruz is Pinnacles NP (~80 mi). Requires a free NPS API key (set NPS_API_KEY from https://www.nps.gov/subjects/developer/get-started.htm) — returns registration instructions if not configured.")]
+            #[tool(description = "Get National Park Service information — hours, fees, activities, directions, weather, and contact info. Authoritative source for NPS units. Search by park code (e.g. \"pinn\" for Pinnacles) or by name. Covers all US national parks; closest to Santa Cruz is Pinnacles NP (~80 mi). Requires a free NPS API key (set NPS_API_KEY from https://www.nps.gov/subjects/developer/get-started.htm) — returns registration instructions if not configured. For trails/peaks/parking *outside* NPS units (state parks, open space preserves, beaches), use `search_outdoors` instead.")]
             async fn get_national_park_info(
                 &self,
                 Parameters(req): Parameters<NationalParkRequest>,
@@ -907,7 +907,7 @@ macro_rules! define_tools {
 
             // ─── Air Quality Forecast Tools ───
 
-            #[tool(description = "Get hourly air quality forecast (PM2.5, PM10, US AQI) from Open-Meteo for the next 1-5 days. Complements get_air_quality (EPA AirNow current readings) with forecast data. Includes pollen forecasts (grass, birch, alder, ragweed, olive, mugwort) where model coverage is available. Defaults to Santa Cruz.")]
+            #[tool(description = "Get hourly air quality *forecast* (PM2.5, PM10, US AQI) from Open-Meteo for the next 1-5 days, plus pollen forecasts (grass, birch, alder, ragweed, olive, mugwort) where model coverage exists. No API key required. Defaults to Santa Cruz. Values are *modeled*, not measured. Prefer `get_air_quality` (EPA AirNow) when the user asks for the *current/official* AQI from a regulatory monitor; use this tool for forward-looking forecasts, pollen, or when no AirNow key is configured.")]
             async fn get_air_quality_forecast(
                 &self,
                 Parameters(req): Parameters<AirForecastRequest>,

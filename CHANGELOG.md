@@ -4,6 +4,16 @@
 
 ### Added
 
+#### Environmental & Recreational Tools
+- **`get_sun_moon`** — sunrise/sunset, civil/nautical/astronomical twilight, moon phase, and UV index for Santa Cruz or custom coordinates (Open-Meteo + sunrise-sunset.org).
+- **`get_space_weather`** — current Kp index, NOAA G/R/S storm scales, and solar wind summary from NOAA SWPC. No auth.
+- **`search_outdoors`** — OpenStreetMap features near a location via Overpass API: trails, peaks, viewpoints, water/restrooms, parking. No auth. Cross-references `get_national_park_info` for NPS units.
+- **`search_climbing_routes`** — OpenBeta GraphQL climbing route database. Best coverage for Pinnacles National Park (319 routes) and Santa Cruz bouldering (39 routes); Castle Rock not yet indexed upstream.
+- **`get_earthquakes`** — recent USGS seismic events near Santa Cruz (default 50 km radius, M1.0+, last 7 days). Magnitude, depth, location, felt reports, tsunami flags.
+- **`get_beach_water_quality`** — California BeachWatch bacteria monitoring (Enterococcus, Total/Fecal Coliform, E. coli) with AB411 threshold assessments for 24+ Santa Cruz County beaches. data.ca.gov CKAN, no auth.
+- **`get_national_park_info`** — NPS Developer API: hours, fees, activities, directions, weather, contacts. Authoritative source for NPS units. Requires free `NPS_API_KEY` (graceful-disable with registration link).
+- **`get_air_quality_forecast`** — Open-Meteo hourly PM2.5/PM10/AQI forecast (1–5 days) plus pollen forecasts (grass, birch, alder, ragweed, olive, mugwort). No auth. Complements the regulatory-monitor `get_air_quality` (AirNow).
+
 #### Field Research Tools
 - **`get_tides`** — NOAA CO-OPS high/low tide predictions for any coastal station (default 9413450 Monterey). Heights in feet above MLLW, grouped by date, up to 7 days.
 - **`get_buoy_observations`** — NDBC realtime2 text feed renderer: latest wind, significant wave height/period, air + water temperature, pressure, and a ~3h water-temp trend. Default station 46042 (Monterey Bay).
@@ -29,6 +39,9 @@
 - **`slug-mcp serve`** subcommand — explicit entry point for stdio/SSE mode (bare `slug-mcp` still defaults to stdio for backward compatibility).
 
 ### Changed
+- **`get_air_quality` and `get_air_quality_forecast` tool descriptions** — clarified when to prefer each (regulatory measured vs modeled forecast/no-key) so the LLM picks correctly.
+- **`search_outdoors` and `get_national_park_info` tool descriptions** — added mutual cross-references for NPS units vs everything-else.
+- **Split `src/nps/mod.rs`** into `mod.rs` (service + request type) and `scraper.rs` (API client + JSON types + formatters), matching the existing `recreation/`, `library/`, `dining/` pattern.
 - **Parallelized dining and library fetches** — dining menu and library availability scraping now use `futures_util::future::join_all` for concurrent requests instead of sequential loops.
 - **Improved event tool descriptions** — campus event and Eventbrite tools now cross-reference each other so LLMs call both for complete event coverage.
 - **Server instructions** updated to guide LLMs to pair campus + Eventbrite event tools together.

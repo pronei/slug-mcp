@@ -10,7 +10,15 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
+use crate::air_forecast::{AirForecastRequest, AirForecastService};
 use crate::air_quality::{AirQualityRequest, AirQualityService};
+use crate::astronomy::{AstronomyService, SunMoonRequest};
+use crate::beach_water::{BeachWaterQualityRequest, BeachWaterService};
+use crate::climbing::{ClimbingRequest, ClimbingService};
+use crate::earthquakes::{EarthquakeRequest, EarthquakeService};
+use crate::nps::{NationalParkRequest, NpsService};
+use crate::outdoors::{OutdoorsRequest, OutdoorsService};
+use crate::space_weather::{SpaceWeatherRequest, SpaceWeatherService};
 use crate::biodiversity::{BiodiversityService, BirdRequest, SpeciesRequest};
 use crate::buoy::{BuoyRequest, BuoyService};
 #[cfg(feature = "auth")]
@@ -65,6 +73,14 @@ pub struct ServiceContext {
     pub usgs_water: Arc<UsgsWaterService>,
     pub biodiversity: Arc<BiodiversityService>,
     pub air_quality: Arc<AirQualityService>,
+    pub astronomy: Arc<AstronomyService>,
+    pub space_weather: Arc<SpaceWeatherService>,
+    pub outdoors: Arc<OutdoorsService>,
+    pub climbing: Arc<ClimbingService>,
+    pub earthquakes: Arc<EarthquakeService>,
+    pub beach_water: Arc<BeachWaterService>,
+    pub nps: Arc<NpsService>,
+    pub air_forecast: Arc<AirForecastService>,
 }
 
 #[derive(Clone)]
@@ -92,6 +108,14 @@ pub struct SlugMcpServer {
     usgs_water: Arc<UsgsWaterService>,
     biodiversity: Arc<BiodiversityService>,
     air_quality: Arc<AirQualityService>,
+    astronomy: Arc<AstronomyService>,
+    space_weather: Arc<SpaceWeatherService>,
+    outdoors: Arc<OutdoorsService>,
+    climbing: Arc<ClimbingService>,
+    earthquakes: Arc<EarthquakeService>,
+    beach_water: Arc<BeachWaterService>,
+    nps: Arc<NpsService>,
+    air_forecast: Arc<AirForecastService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -120,6 +144,14 @@ impl SlugMcpServer {
             usgs_water: ctx.usgs_water,
             biodiversity: ctx.biodiversity,
             air_quality: ctx.air_quality,
+            astronomy: ctx.astronomy,
+            space_weather: ctx.space_weather,
+            outdoors: ctx.outdoors,
+            climbing: ctx.climbing,
+            earthquakes: ctx.earthquakes,
+            beach_water: ctx.beach_water,
+            nps: ctx.nps,
+            air_forecast: ctx.air_forecast,
             tool_router: Self::tool_router(),
         }
     }
@@ -762,6 +794,132 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
+            // ─── Astronomy / Sun & Moon Tools ───
+
+            #[tool(description = "Get sunrise/sunset times, twilight periods (civil/nautical/astronomical), moon phase and illumination, and current + forecast UV index for any coordinates. Defaults to Santa Cruz (36.9741, -122.0308). UV categories: Low (0-2), Moderate (3-5), High (6-7), Very High (8-10), Extreme (11+).")]
+            async fn get_sun_moon(
+                &self,
+                Parameters(req): Parameters<SunMoonRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .astronomy
+                    .get_sun_moon(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Space Weather Tools ───
+
+            #[tool(description = "Get current space weather conditions: planetary Kp index (geomagnetic activity), NOAA storm/radiation/radio-blackout scales, solar wind speed, and 24-hour Kp trend. Useful for HF radio propagation, astronomy planning, GPS accuracy, and aurora visibility (requires Kp ≥ 8 at Santa Cruz's latitude 37°N).")]
+            async fn get_space_weather(
+                &self,
+                Parameters(_req): Parameters<SpaceWeatherRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .space_weather
+                    .get_summary()
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Outdoors / OSM Tools ───
+
+            #[tool(description = "Search OpenStreetMap for outdoor features near a location. Category must be one of: \"trails\" (hiking paths/footways), \"peaks\" (mountain summits), \"viewpoints\" (scenic overlooks), \"water_restrooms\" (drinking water + toilets), \"parking\" (parking areas). Defaults to Santa Cruz. Uses the Overpass API (community-run, rate-limited to 2 concurrent queries — results may be slow under heavy load). Data from OSM contributors.")]
+            async fn search_outdoors(
+                &self,
+                Parameters(req): Parameters<OutdoorsRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .outdoors
+                    .search(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Climbing Tools ───
+
+            #[tool(description = "Search the OpenBeta climbing route database for areas and routes. Best coverage for Pinnacles National Park (319 routes) and Santa Cruz bouldering (39 routes). Castle Rock State Park is not yet in the database. Search by area name (e.g. \"Pinnacles\", \"Santa Cruz\") or filter by route name within an area.")]
+            async fn search_climbing_routes(
+                &self,
+                Parameters(req): Parameters<ClimbingRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .climbing
+                    .search_routes(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Earthquake Tools ───
+
+            #[tool(description = "Get recent USGS earthquake data near Santa Cruz (default 50 km radius, M1.0+, last 7 days). Santa Cruz sits near the San Andreas Fault — the 1989 Loma Prieta earthquake (M6.9) epicenter was 15 km NE. Returns magnitude, depth, location, felt reports, and tsunami flags. Micro-earthquakes (M < 2.0) are common and rarely felt.")]
+            async fn get_earthquakes(
+                &self,
+                Parameters(req): Parameters<EarthquakeRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let lat = req.lat.unwrap_or(36.9741);
+                let lon = req.lon.unwrap_or(-122.0308);
+                let radius = req.radius_km.unwrap_or(50.0).min(200.0);
+                let min_mag = req.min_magnitude.unwrap_or(1.0).clamp(0.0, 9.0);
+                let days = req.days.unwrap_or(7).clamp(1, 30);
+                let limit = req.limit.unwrap_or(20).min(100);
+                let result = self
+                    .earthquakes
+                    .get_earthquakes(lat, lon, radius, min_mag, days, limit)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Beach Water Quality Tools ───
+
+            #[tool(description = "Get beach water quality bacteria monitoring results for Santa Cruz County beaches. Shows latest sample results (Enterococcus, Total Coliform, E. coli, Fecal Coliform) with AB411 threshold assessments. Samples are collected weekly by SC County Environmental Health — results are typically 1-7 days old. Covers 24+ beaches from Pajaro Dunes to Waddell Creek. Filter by beach name (e.g. \"Cowell\", \"Capitola\", \"Natural Bridges\").")]
+            async fn get_beach_water_quality(
+                &self,
+                Parameters(req): Parameters<BeachWaterQualityRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .beach_water
+                    .get_beach_water_quality(req.beach.as_deref(), req.days)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── National Park Service Tools ───
+
+            #[tool(description = "Get National Park Service information — hours, fees, activities, directions, weather, and contact info. Search by park code (e.g. \"pinn\" for Pinnacles) or by name. Covers all US national parks; closest to Santa Cruz is Pinnacles NP (~80 mi). Requires a free NPS API key (set NPS_API_KEY from https://www.nps.gov/subjects/developer/get-started.htm) — returns registration instructions if not configured.")]
+            async fn get_national_park_info(
+                &self,
+                Parameters(req): Parameters<NationalParkRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .nps
+                    .get_park_info(req.park_code.as_deref(), req.query.as_deref(), req.limit)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Air Quality Forecast Tools ───
+
+            #[tool(description = "Get hourly air quality forecast (PM2.5, PM10, US AQI) from Open-Meteo for the next 1-5 days. Complements get_air_quality (EPA AirNow current readings) with forecast data. Includes pollen forecasts (grass, birch, alder, ragweed, olive, mugwort) where model coverage is available. Defaults to Santa Cruz.")]
+            async fn get_air_quality_forecast(
+                &self,
+                Parameters(req): Parameters<AirForecastRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .air_forecast
+                    .get_air_quality_forecast(req.lat, req.lon, req.days)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
             // ─── Extra tools (auth or empty) ───
             $($extra)*
         }
@@ -923,7 +1081,13 @@ impl ServerHandler for SlugMcpServer {
              17 / 101 (individually and combined), Open-Meteo marine forecasts \
              and surf conditions for Steamer Lane / Pleasure Point / Cowell's \
              / Natural Bridges / The Hook / Manresa, and NASA FIRMS satellite \
-             wildfire detections for Santa Cruz County."
+             wildfire detections for Santa Cruz County, \
+             sun/moon/twilight/UV index, NOAA space weather (Kp index, \
+             storm scales), USGS earthquake data, beach water quality \
+             bacteria monitoring (24+ SC beaches via CA BeachWatch), \
+             OpenStreetMap outdoor features (trails, peaks, viewpoints, \
+             amenities), OpenBeta climbing routes, NPS national park info, \
+             and Open-Meteo air quality forecasts."
         } else {
             "UCSC + Santa Cruz MCP server (public mode). Campus services: \
              dining menus, nutrition info, campus events and Eventbrite \
@@ -940,8 +1104,14 @@ impl ServerHandler for SlugMcpServer {
              and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101, \
              Open-Meteo marine forecasts and surf conditions for the six \
              named SC surf spots (Steamer Lane, Pleasure Point, Cowell's, \
-             Natural Bridges, The Hook, Manresa), and NASA FIRMS satellite \
-             wildfire detections for Santa Cruz County."
+             Natural Bridges, The Hook, Manresa), NASA FIRMS satellite \
+             wildfire detections for Santa Cruz County, sun/moon/twilight/UV \
+             index, NOAA space weather (Kp index, storm scales), USGS \
+             earthquake data, beach water quality bacteria monitoring (24+ \
+             SC beaches via CA BeachWatch), OpenStreetMap outdoor features \
+             (trails, peaks, viewpoints, amenities), OpenBeta climbing \
+             routes, NPS national park info, and Open-Meteo air quality \
+             forecasts."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

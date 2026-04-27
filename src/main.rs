@@ -9,22 +9,30 @@ use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 
 mod academics;
+mod air_forecast;
 mod air_quality;
+mod astronomy;
 #[cfg(feature = "auth")]
 mod auth;
+mod beach_water;
 mod biodiversity;
 mod buoy;
 mod cache;
 mod classrooms;
+mod climbing;
 mod config;
 mod degrees;
 mod dining;
+mod earthquakes;
 mod events;
 mod fire;
 mod library;
 mod marine;
+mod nps;
+mod outdoors;
 mod recreation;
 mod server;
+mod space_weather;
 mod tides;
 mod traffic;
 mod transit;
@@ -143,7 +151,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let firms_key = config.firms_map_key.clone();
     let ebird_key = config.ebird_api_key.clone();
     let airnow_key = config.airnow_api_key.clone();
-    // `config` was consumed above to extract auth/transit/fire/ebird/airnow keys; not stored in ctx.
+    let nps_key = config.nps_api_key.clone();
     let ctx = server::ServiceContext {
         cache: cache.clone(),
         #[cfg(feature = "auth")]
@@ -174,6 +182,14 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
             cache.clone(),
             airnow_key,
         )),
+        astronomy: Arc::new(astronomy::AstronomyService::new(http.clone(), cache.clone())),
+        space_weather: Arc::new(space_weather::SpaceWeatherService::new(http.clone(), cache.clone())),
+        outdoors: Arc::new(outdoors::OutdoorsService::new(http.clone(), cache.clone())),
+        climbing: Arc::new(climbing::ClimbingService::new(http.clone(), cache.clone())),
+        earthquakes: Arc::new(earthquakes::EarthquakeService::new(http.clone(), cache.clone())),
+        beach_water: Arc::new(beach_water::BeachWaterService::new(http.clone(), cache.clone())),
+        nps: Arc::new(nps::NpsService::new(http.clone(), cache.clone(), nps_key)),
+        air_forecast: Arc::new(air_forecast::AirForecastService::new(http.clone(), cache.clone())),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific. The handle is watched

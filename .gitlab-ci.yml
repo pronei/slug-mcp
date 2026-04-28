@@ -1,78 +1,28 @@
 stages:
-  - build
   - deploy
 
 variables:
-  BINARY_NAME: slug-mcp
-  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
-
-build:
-  stage: build
-  image: rust:latest
-  tags:
-    - docker
-    - linux
-  cache:
-    key: cargo-${CI_COMMIT_REF_SLUG}
-    paths:
-      - .cargo/registry
-      - .cargo/git
-      - target/
-  script:
-    - cargo build --release --no-default-features
-    - strip target/release/${BINARY_NAME}
-  artifacts:
-    paths:
-      - target/release/${BINARY_NAME}
-    expire_in: 7 days
-  only:
-    - main
+  VM_HOST: "2262-cse115b-02.be.ucsc.edu"
+  VM_USER: "pmundra"
+  DEPLOY_PATH: "/home/pmundra/slug-mcp"
 
 deploy:
   stage: deploy
-  image: alpine:latest
+  image: alpine:3.20
   tags:
     - docker
     - linux
-  needs:
-    - build
   before_script:
-    - apk add --no-cache openssh-client
+    - apk add --no-cache openssh-client curl ca-certificates
     - mkdir -p ~/.ssh
     - cp "${SSH_PRIVATE_KEY}" ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
-    - cat "${VM_HOST_KEY}" >> ~/.ssh/known_hosts
+    - cat "${VM_HOST_KEY}" > ~/.ssh/known_hosts
   script:
-    - 'echo "DEBUG - Target host: ${VM_HOST}"'
-    - 'echo "DEBUG - Target user: ${VM_USER}"'
-    - 'echo "DEBUG - Known hosts content:"'
-    - cat ~/.ssh/known_hosts
-    - 'echo "DEBUG - Runner egress IP (what the VM firewall sees):"'
-    - apk add --no-cache curl bind-tools busybox-extras || true
-    - curl -s https://ifconfig.me || curl -s https://api.ipify.org || echo "egress IP lookup failed"
-    - echo ""
-    - 'echo "DEBUG - Resolving hostname:"'
-    - nslookup ${VM_HOST} || echo "nslookup not available"
-    - 'echo "DEBUG - ICMP ping:"'
-    - ping -c 3 -W 5 ${VM_HOST} || echo "ping failed or timed out"
-    - 'echo "DEBUG - TCP port 22 reachability (nc):"'
-    - nc -vz -w 10 ${VM_HOST} 22 || echo "nc to port 22 failed"
-    - 'echo "DEBUG - TCP port 443 reachability (nc) for comparison:"'
-    - nc -vz -w 10 ${VM_HOST} 443 || echo "nc to port 443 failed"
-    - 'echo "DEBUG - Verbose SSH handshake:"'
-    - ssh -vvv -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ${VM_USER}@${VM_HOST} echo "SSH OK" || echo "SSH connection failed"
-    - scp -o StrictHostKeyChecking=yes -o ConnectTimeout=15 target/release/${BINARY_NAME} ${VM_USER}@${VM_HOST}:/tmp/${BINARY_NAME}.new
     - |
-      ssh ${VM_USER}@${VM_HOST} << 'EOF'
-        sudo systemctl stop slug-mcp
-        sudo mv /tmp/slug-mcp.new /usr/local/bin/slug-mcp
-        sudo chmod +x /usr/local/bin/slug-mcp
-        sudo systemctl start slug-mcp
-        sudo systemctl restart ngrok
-        sleep 2
-        sudo systemctl is-active slug-mcp
-        sudo systemctl is-active ngrok
-      EOF
-  only:
-    - main
-  when: manual
+      ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+        "${VM_USER}@${VM_HOST}" \
+        "cd '${DEPLOY_PATH}' && DEPLOY_BRANCH='${CI_COMMIT_BRANCH}' ./deploy.sh"
+    - curl -fsSI --max-time 15 "https://${VM_HOST}/healthz"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'

@@ -5,49 +5,64 @@
 <h1 align="center">slug-mcp</h1>
 
 <p align="center">
-  An <a href="https://modelcontextprotocol.io/">MCP</a> server that gives AI assistants access to UC Santa Cruz campus services.<br/>
-  Dining menus, gym crowding, class schedules, study rooms, bus times, and more — all from one conversation.<br/><br/>
-  Built with Rust and <a href="https://github.com/anthropics/rmcp">rmcp</a> for the UCSC community.
+  An <a href="https://modelcontextprotocol.io/">MCP</a> server that gives AI assistants live access to UC Santa Cruz <em>and</em> the Santa Cruz coast — campus services, transit, surf, tides, weather, beach water quality, traffic, wildfires, trails, climbing, and more.<br/>
+  All of it stitched together so your assistant can answer questions no single website can.<br/><br/>
+  Built in Rust with <a href="https://github.com/anthropics/rmcp">rmcp</a> for the UCSC and Santa Cruz community.
 </p>
 
 ---
 
 ## Why?
 
-UCSC students juggle 6+ different websites daily — PISA for classes, nutrition.sa.ucsc.edu for menus, LibCal for study rooms, campusrec for gym status, Metro for buses, the events calendar. None of them talk to each other.
+Living in Santa Cruz means juggling a dozen disconnected sources — PISA, LibCal, campusrec, SC Metro, NWS, CDIP, BeachWatch, Caltrans, the events calendar. None of them talk to each other.
 
-slug-mcp puts all of these behind a single MCP interface. Your AI assistant can combine data across services to answer questions that no single UCSC website can:
+slug-mcp is purpose-built for this place: campus services *and* Santa Cruz city/county data behind one MCP interface. Your assistant fuses them to answer questions no single site can:
 
-> **"I have CSE 115A at 4pm in Baskin — what's for dinner nearby after class, and when's the next bus home from Science Hill?"**
+> **"Is dawn patrol at Steamer Lane worth it tomorrow, and can I still make my 9am in Baskin after?"**
 >
-> The assistant checks your class schedule for the room and time, pulls tonight's dining hall menus, cross-references dining hours with your class end time, and gets real-time bus ETAs from the nearest stop. One question, four services, ten seconds.
+> The assistant pulls the marine forecast and 8 AM tide for Steamer Lane, checks sunrise and morning wind, looks up your class location, then gets the next bus from Lighthouse Field to Science Hill. One question, six services, ten seconds.
 
 ## Try These
 
-These prompts show what's possible when campus services are connected:
+Real questions that come up living and studying in Santa Cruz — each one threads multiple services together:
 
 | Prompt | What happens behind the scenes |
 |--------|-------------------------------|
-| *"I need to study for 3 hours today — find me a room near food"* | Checks study room availability at both libraries, cross-references with dining hall hours and proximity, suggests a room + meal window |
-| *"Is it worth going to the gym right now or should I wait?"* | Pulls live headcount from the rec center (updates every 2 min), checks the facility schedule for upcoming open-gym blocks |
-| *"What are my options for a high-protein dinner tonight?"* | Gets tonight's menus across all 5 dining halls, looks up nutrition facts for the main proteins, ranks by protein-per-serving |
-| *"Who teaches CSE 130 and when are their office hours?"* | Searches the class schedule for the instructor, then searches the campus directory for their office location and contact info |
-| *"I have $12 in Slug Points — where should I eat?"* | Checks your meal balance, pulls current menus and dining hours, suggests halls that are open now |
-| *"Find me a GE class that fits between my Tuesday 10am and 2pm classes"* | Searches for open GE courses in the current term filtered to TuTh, checks enrollment status, returns options that fit the gap |
-| *"Any cool events this week I can get to by bus?"* | Searches upcoming campus events, checks bus routes and real-time ETAs from your stop |
+| *"Storm just rolled through — is the water safe to swim at Cowell's, and is the swell back down to longboard size?"* | Pulls the latest BeachWatch bacteria results for Cowell's, gets the marine forecast and wave-buoy spectra, cross-references with the next low tide |
+| *"Should I bike to campus or take the bus today?"* | 7-day NWS forecast, current AQI plus smoke from active NASA FIRMS detections, real-time bus ETAs, per-route delay stats |
+| *"My parents are visiting Saturday. What's open downtown for dinner, what's the tide doing, and are there any events?"* | Tide predictions for Monterey station, campus and Eventbrite events search, dining hours, weekend weather forecast |
+| *"Plan a tide-pool walk at Natural Bridges this week — when's the lowest daytime tide and what's the weather doing?"* | Tide tables filtered to daylight hours via sunrise/sunset, NWS coastal forecast (CAZ529), current beach water quality |
+| *"Hwy 17 had a closure earlier — is my evening commute home going to be brutal?"* | Live CHP incidents, Caltrans D5 lane closures on Hwy 17, traffic summary, evening weather |
+| *"I want to study for 3 hours then hit the gym — find me a quiet library room and tell me when the rec center will be least crowded."* | LibCal availability across McHenry and S&E, live rec headcount with recent trend, dining hours for after |
+| *"Looking for a Friday afternoon climb near Castle Rock — what's the weather doing and how's the drive?"* | OpenBeta route search, OSM trail and peak data, NWS mountains forecast (CAZ512), Hwy 9 incidents and lane closures |
+| *"Find me a high-protein dinner near my 4 PM class in Baskin, then a study room that closes after 10."* | Class schedule lookup, dining menus with nutrition ranked by protein, walking-distance dining hours, late-night LibCal availability |
+| *"Is it worth driving up to Big Basin tomorrow, or is the AQI still bad from the fires?"* | NASA FIRMS satellite fire detections, AirNow current AQI, Open-Meteo air-quality forecast, NPS park status, NWS forecast |
 
 ## Features
+
+### UC Santa Cruz
 
 | Service | Tools |
 |---------|-------|
 | **Dining** | Menus for all 5 dining halls with dietary/allergen tags, nutrition facts per item, operating hours, Slug Points / Banana Bucks balance |
-| **Events** | Search campus events by keyword or category, list upcoming events chronologically |
-| **Recreation** | Live headcounts for gym, pool, fields, climbing wall, wellness center; facility schedules |
-| **Library** | Study room availability at McHenry and S&E Library by time slot, room booking |
-| **Academics** | Class search by subject, instructor, GE, course number, career level — enrollment counts, meeting times, instruction mode; faculty/staff directory |
+| **Events** | Search campus events by keyword or category, plus Eventbrite community events for full coverage, list upcoming chronologically |
+| **Recreation** | Live headcounts for gym, pool, fields, climbing wall, wellness center; facility schedules; group exercise class search |
+| **Library** | Study room availability at McHenry and S&E by time slot, room booking |
+| **Academics** | Class search by subject, instructor, GE, course number, career level — enrollment, meeting times, instruction mode; degree requirements + progress tracking; faculty/staff directory |
 | **Classrooms** | Find rooms by capacity, building, AV equipment, seating style, accessibility |
-| **Transit** | Real-time bus arrival predictions by stop and route via Santa Cruz Metro |
-| **Field Research** | NOAA tide predictions, NDBC buoy observations, CDIP waverider spectra, USGS real-time stream conditions, iNaturalist + eBird species observations, AirNow current AQI |
+| **Transit** | Real-time SC Metro bus predictions, GTFS-RT vehicle positions, system + route service alerts, per-route delay stats |
+
+### Santa Cruz coast & county
+
+| Service | Tools |
+|---------|-------|
+| **Weather** | NOAA NWS 7-day forecasts and active alerts for coastal (CAZ529) and mountains (CAZ512) zones |
+| **Surf & Marine** | Open-Meteo marine forecasts and surf conditions for Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa; NDBC buoy observations and CDIP waverider swell spectra; NOAA tide predictions |
+| **Beach Water Quality** | CA BeachWatch bacteria monitoring (Enterococcus, E. coli, total coliform) for 24+ Santa Cruz County beaches |
+| **Traffic** | CHP incidents and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101 |
+| **Wildfires & Air** | NASA FIRMS satellite fire detections for SC County, AirNow current AQI, Open-Meteo air-quality and pollen forecasts |
+| **Outdoors** | OpenStreetMap trails, peaks, viewpoints, amenities; OpenBeta climbing routes; National Park Service info |
+| **Sky & Earth** | Sun/moon/twilight + UV index; NOAA SWPC space weather (Kp, storm scales, solar wind); USGS earthquakes; USGS real-time stream conditions; iNaturalist + eBird species observations |
 
 ## Quick Start
 
@@ -61,7 +76,37 @@ cargo build --release
 
 ## Client Setup
 
-### Claude Desktop
+The fastest path is the hosted instance — no build required. Build locally if you want authenticated tools (meal balance, room booking) or to run your own server.
+
+### Hosted (no install)
+
+A public instance is hosted on the UCSC ITS infra at:
+
+```
+https://2262-cse115b-02.be.ucsc.edu/mcp
+```
+
+Read-only tools work out of the box. Authenticated tools require a portable token (see [Authentication](#authentication)).
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http slug-mcp https://2262-cse115b-02.be.ucsc.edu/mcp
+```
+
+**Claude Desktop / other HTTP-MCP clients:**
+
+```json
+{
+  "mcpServers": {
+    "slug-mcp": {
+      "url": "https://2262-cse115b-02.be.ucsc.edu/mcp"
+    }
+  }
+}
+```
+
+### Local — Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
@@ -75,7 +120,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-### Claude Code
+### Local — Claude Code
 
 ```bash
 claude mcp add slug-mcp /path/to/slug-mcp
@@ -97,6 +142,8 @@ Run `/path/to/slug-mcp` as a stdio subprocess — no arguments needed.
 For remote connections, start the SSE server and point your client at the endpoint (see [Running Your Own Server](#running-your-own-server)).
 
 ## Authentication
+
+> ⚠️ **Work in progress.** The CruzID + Duo MFA flow is functional locally but not yet stable across the hosted server, headless environments, and all clients. Expect rough edges — flow details, token format, and the `login` / `authenticate` / `export-token` surface may change. Read-only tools are unaffected; the items below are the only ones gated on auth.
 
 Most tools work without login. Two tools require UCSC authentication:
 - **Meal balance** — Slug Points / Banana Bucks
@@ -167,16 +214,20 @@ src/
 
 ### Optional API keys
 
-Several Santa Cruz / field-research tools need free registration with the
-upstream provider. Missing keys produce a friendly "not configured" message
-instead of erroring.
+Several Santa Cruz and field-research tools need free registration with the upstream provider. Missing keys produce a friendly "not configured" message instead of erroring — the rest of the server keeps working.
+
+The exception is **`SLUG_MCP_BUSTIME_KEY`**: the SC Metro stops catalog is loaded via BusTime, so transit tools won't return predictions without it. Real-time positions and alerts come from GTFS-RT and work without a key.
 
 | Env var | Needed by | Get one |
 |---------|-----------|---------|
+| `SLUG_MCP_BUSTIME_KEY` | `get_bus_predictions`, stop lookups | <https://rt.scmetro.org> (developer access) |
+| `SLUG_MCP_EVENTBRITE_KEY` | `search_eventbrite_events` | <https://www.eventbrite.com/platform/api> |
 | `SLUG_MCP_FIRMS_KEY` | `get_fire_detections` | <https://firms.modaps.eosdis.nasa.gov/api/area/> |
 | `AIRNOW_API_KEY` | `get_air_quality` | <https://docs.airnowapi.org/> |
 | `EBIRD_API_KEY` | `search_bird_observations` | <https://ebird.org/api/keygen> |
 | `NPS_API_KEY` | `get_national_park_info` | <https://www.nps.gov/subjects/developer/get-started.htm> |
+
+The hosted instance ships with these configured — set them yourself only if you're running locally.
 
 Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) > `mod.rs` (service layer with caching) > `server.rs` (MCP tool handler).
 

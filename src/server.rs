@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use rmcp::handler::server::router::tool::ToolRouter;
+use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
-use rmcp::{tool, tool_handler, tool_router, ServerHandler};
+use rmcp::service::RequestContext;
+use rmcp::{tool, tool_router, RoleServer, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
 #[cfg(feature = "auth")]
@@ -1061,8 +1063,39 @@ define_tools!({
 #[cfg(not(feature = "auth"))]
 define_tools!({});
 
-#[tool_handler]
 impl ServerHandler for SlugMcpServer {
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let tool_name = request.name.to_string();
+        let progress_token = context.meta.get_progress_token();
+        let peer = context.peer.clone();
+
+        let tcc = ToolCallContext::new(self, request, context);
+        let (result, elapsed) =
+            crate::progress::slug_wrap(&peer, progress_token, &tool_name, self.tool_router.call(tcc))
+                .await;
+        result.map(|r| crate::progress::maybe_prepend_slug(r, elapsed))
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        Ok(ListToolsResult {
+            tools: self.tool_router.list_all(),
+            meta: None,
+            next_cursor: None,
+        })
+    }
+
+    fn get_tool(&self, name: &str) -> Option<Tool> {
+        self.tool_router.get(name).cloned()
+    }
+
     fn get_info(&self) -> ServerInfo {
         let instructions = if cfg!(feature = "auth") {
             "UCSC + Santa Cruz MCP server. Campus services: dining menus, \

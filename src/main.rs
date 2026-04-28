@@ -30,6 +30,7 @@ mod library;
 mod marine;
 mod nps;
 mod outdoors;
+mod progress;
 mod recreation;
 mod server;
 mod space_weather;

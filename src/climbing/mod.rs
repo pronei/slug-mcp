@@ -43,13 +43,13 @@ impl ClimbingService {
         let (cache_key, query) = if let Some(area) = &req.area {
             let key = format!("climbing:area:{}", area.to_lowercase());
             let q = format!(
-                r#"{{ areas(filter: {{area_name: {{match: "{}"}}}}) {{ area_name totalClimbs metadata {{ lat lng }} pathTokens children {{ area_name totalClimbs }} climbs {{ name grades {{ yds }} type {{ sport trad boulder tr }} fa length }} }} }}"#,
+                r#"{{ areas(filter: {{area_name: {{match: "{}"}}}}) {{ area_name totalClimbs metadata {{ lat lng }} pathTokens children {{ area_name totalClimbs }} climbs {{ name grades {{ yds }} type {{ sport trad bouldering tr }} fa length }} }} }}"#,
                 area.replace('"', r#"\""#)
             );
             (key, q)
         } else {
             let key = "climbing:default:santa-cruz".to_string();
-            let q = r#"{ areas(filter: {path_tokens: {tokens: ["California", "Central Coast", "Santa Cruz"]}}) { area_name totalClimbs metadata { lat lng } children { area_name totalClimbs } climbs { name grades { yds } type { sport trad boulder tr } } } }"#.to_string();
+            let q = r#"{ areas(filter: {path_tokens: {tokens: ["California", "Central Coast", "Santa Cruz"]}}) { area_name totalClimbs metadata { lat lng } children { area_name totalClimbs } climbs { name grades { yds } type { sport trad bouldering tr } } } }"#.to_string();
             (key, q)
         };
 
@@ -300,6 +300,7 @@ struct GqlGrades {
 struct GqlClimbType {
     sport: Option<bool>,
     trad: Option<bool>,
+    #[serde(rename = "bouldering")]
     boulder: Option<bool>,
     tr: Option<bool>,
 }
@@ -380,7 +381,7 @@ mod tests {
                         {
                             "name": "The Oracle",
                             "grades": { "yds": "5.11a" },
-                            "type": { "sport": true, "trad": false, "boulder": false, "tr": false },
+                            "type": { "sport": true, "trad": false, "bouldering": false, "tr": false },
                             "fa": "John Bachar",
                             "length": 30
                         }

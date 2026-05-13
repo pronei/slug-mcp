@@ -29,8 +29,8 @@ mod fire;
 mod library;
 mod marine;
 mod nps;
+mod ocean;
 mod outdoors;
-mod progress;
 mod recreation;
 mod server;
 mod space_weather;
@@ -153,6 +153,11 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     let ebird_key = config.ebird_api_key.clone();
     let airnow_key = config.airnow_api_key.clone();
     let nps_key = config.nps_api_key.clone();
+    let biodiversity = Arc::new(biodiversity::BiodiversityService::new(
+        http.clone(),
+        cache.clone(),
+        ebird_key,
+    ));
     let ctx = server::ServiceContext {
         cache: cache.clone(),
         #[cfg(feature = "auth")]
@@ -173,11 +178,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         buoy: Arc::new(buoy::BuoyService::new(http.clone(), cache.clone())),
         wave_buoy: Arc::new(wave_buoy::WaveBuoyService::new(http.clone(), cache.clone())),
         usgs_water: Arc::new(usgs_water::UsgsWaterService::new(http.clone(), cache.clone())),
-        biodiversity: Arc::new(biodiversity::BiodiversityService::new(
-            http.clone(),
-            cache.clone(),
-            ebird_key,
-        )),
+        biodiversity: biodiversity.clone(),
         air_quality: Arc::new(air_quality::AirQualityService::new(
             http.clone(),
             cache.clone(),
@@ -191,6 +192,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         beach_water: Arc::new(beach_water::BeachWaterService::new(http.clone(), cache.clone())),
         nps: Arc::new(nps::NpsService::new(http.clone(), cache.clone(), nps_key)),
         air_forecast: Arc::new(air_forecast::AirForecastService::new(http.clone(), cache.clone())),
+        ocean: Arc::new(ocean::OceanService::new(http.clone(), cache.clone(), biodiversity)),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific. The handle is watched

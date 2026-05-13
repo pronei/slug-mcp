@@ -21,7 +21,10 @@ use crate::earthquakes::{EarthquakeRequest, EarthquakeService};
 use crate::nps::{NationalParkRequest, NpsService};
 use crate::outdoors::{OutdoorsRequest, OutdoorsService};
 use crate::space_weather::{SpaceWeatherRequest, SpaceWeatherService};
-use crate::biodiversity::{BiodiversityService, BirdRequest, SpeciesRequest};
+use crate::biodiversity::{
+    BiodiversityService, BirdRequest, HistoricBirdRequest, HotspotRequest, NearestBirdRequest,
+    SpeciesRequest,
+};
 use crate::buoy::{BuoyRequest, BuoyService};
 #[cfg(feature = "auth")]
 use crate::auth::session::SessionData;
@@ -37,6 +40,10 @@ use crate::fire::{FireDetectionsRequest, FireService};
 use crate::library::BookStudyRoomRequest;
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
 use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest};
+use crate::ocean::{
+    HabRequest, HabRiskRequest, HfrRequest, M1Request, OceanService, ResearchSnapshotRequest,
+    SstRequest, UpwellingRequest, UpwellingStateRequest, WharfRequest,
+};
 use crate::recreation::{
     FacilityOccupancyRequest, FacilityScheduleRequest, GroupExerciseRequest, RecreationService,
 };
@@ -83,6 +90,7 @@ pub struct ServiceContext {
     pub beach_water: Arc<BeachWaterService>,
     pub nps: Arc<NpsService>,
     pub air_forecast: Arc<AirForecastService>,
+    pub ocean: Arc<OceanService>,
 }
 
 #[derive(Clone)]
@@ -118,6 +126,7 @@ pub struct SlugMcpServer {
     beach_water: Arc<BeachWaterService>,
     nps: Arc<NpsService>,
     air_forecast: Arc<AirForecastService>,
+    ocean: Arc<OceanService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -154,6 +163,7 @@ impl SlugMcpServer {
             beach_water: ctx.beach_water,
             nps: ctx.nps,
             air_forecast: ctx.air_forecast,
+            ocean: ctx.ocean,
             tool_router: Self::tool_router(),
         }
     }
@@ -640,14 +650,78 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
-            #[tool(description = "Search eBird for recent bird observations around Santa Cruz (default 25 km, 7 days). Returns species, count, location, and observation date. Requires a free eBird API key (set EBIRD_API_KEY) — otherwise this tool returns registration instructions instead of erroring.")]
+            #[tool(description = "Search eBird for recent bird observations. Two query modes: \
+                (a) by region — pass `region` as an eBird code (default `US-CA-087` = Santa Cruz County, also `US-CA` for California, `world`, or a hotspot ID `L######`); \
+                (b) by coordinates — pass `lat`/`lon`/`radius_km` for a circular search (max 50 km per eBird limit). \
+                Optional `species` accepts a free-text name (common, scientific, banding code, or 6-letter eBird code) and is resolved internally via the California taxonomy list — ambiguous names return a 'did you mean...' list with no HTTP call. \
+                Set `notable_only=true` to return only sightings eBird reviewers flagged as locally unusual (ignored when `species` is set). \
+                `back` is days back, 1-30 (default 7). `max_results` caps the output at 200. \
+                If both `region` and lat/lon are given, region wins. \
+                Examples: `{notable_only:true}` → notable in Santa Cruz County last week; `{region:\"US-CA-087\", species:\"Brown Pelican\", back:14}` → pelicans in SC County last fortnight; `{lat:36.97, lon:-122.03, radius_km:10, species:\"snowy plover\"}` → plovers near UCSC. \
+                Requires a free eBird API key (set `EBIRD_API_KEY`) — otherwise this tool returns registration instructions instead of erroring.")]
             async fn search_bird_observations(
                 &self,
                 Parameters(req): Parameters<BirdRequest>,
             ) -> Result<CallToolResult, ErrorData> {
                 let result = self
                     .biodiversity
-                    .search_birds(req.lat, req.lon, req.radius_km, req.days, req.limit)
+                    .search_birds(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get eBird observations for a specific historic date in a region. Closes the 30-day rolling window of `search_bird_observations`. \
+                Required: `year`, `month`, `day`. Region defaults to `US-CA-087` (Santa Cruz County). \
+                `rank`: `mrec` (default — most recent observation per species that day) or `create` (first reported). \
+                `max_results` caps output at 200. \
+                Returns one row per species reported on the date. \
+                Example: `{region:\"US-CA-087\", year:2025, month:4, day:10}` → species list for Santa Cruz County on 2025-04-10. \
+                Requires `EBIRD_API_KEY`.")]
+            async fn get_historic_bird_observations(
+                &self,
+                Parameters(req): Parameters<HistoricBirdRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .biodiversity
+                    .get_historic_birds(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "List eBird birding hotspots — sites with documented bird activity. \
+                Region mode (default): pass `region` (default `US-CA-087` = Santa Cruz County). \
+                Geo mode: pass `lat`/`lon`/`radius_km` (max 50 km). \
+                Optional `back` restricts to hotspots with observations in the last N days (1-30). \
+                Results are sorted by all-time species count (descending) and truncated to `max_results` (default 25, cap 200). \
+                Each hotspot includes the eBird location ID (`L######`) — feed it back into `search_bird_observations` as `region=\"L######\"` to query observations at that specific spot. \
+                Requires `EBIRD_API_KEY`.")]
+            async fn get_bird_hotspots(
+                &self,
+                Parameters(req): Parameters<HotspotRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .biodiversity
+                    .get_bird_hotspots(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Find the nearest recent eBird sightings of a specific species from a coordinate. \
+                Required: `species` (free-text name or 6-letter eBird code; ambiguous names return a 'did you mean...' list). \
+                Defaults: `lat`/`lon` Santa Cruz (36.9741, -122.0308), `radius_km` 50 (eBird cap), `back` 30 days (cap), `max_results` 10 (cap 1000). \
+                Results are ordered by distance, nearest first. Use this when you want to know the closest place a target species was seen recently — different from `search_bird_observations`, which lists what was seen near a point. \
+                Example: `{species:\"California Condor\", radius_km:50}` → nearest condor sighting to Santa Cruz. \
+                Requires `EBIRD_API_KEY`.")]
+            async fn find_nearest_bird_sighting(
+                &self,
+                Parameters(req): Parameters<NearestBirdRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .biodiversity
+                    .find_nearest_bird(&req)
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -922,6 +996,106 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
+            // ─── Ocean / Upwelling Tools ───
+
+            #[tool(description = "Get coastal upwelling indices (CUTI + BEUTI) from the Jacox et al. 2018 daily archive. Returns today's values, 1988–2018 climatological anomaly and z-score, 5-day rolling mean, and 30-day upwelling-favorable day count. Positive CUTI = Ekman transport offshore (upwelling); positive BEUTI = nitrate flux into euphotic zone. Default latitude band is 37N (Monterey Bay / Santa Cruz). Available bands: 31N–47N. Source: mjacox.com, updated daily ~18:00 UTC.")]
+            async fn get_upwelling_indices(
+                &self,
+                Parameters(req): Parameters<UpwellingRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .ocean
+                    .get_upwelling_indices(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get a snapshot from the MBARI M1 mooring at the mouth of Monterey Bay (36.75°N, 122.03°W, ~480 m depth). Returns surface sea water temperature, sonic-anemometer wind speed/direction with equatorward (upwelling-favorable) component, and optionally a full water-column temperature profile with stratification index. Data latency is typically ~24h. QC: only QARTOD-pass values (qc_agg=1) are shown. Source: CeNCOOS/Axiom ERDDAP dataset org_mbari_m1.")]
+            async fn get_m1_water_column(
+                &self,
+                Parameters(req): Parameters<M1Request>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .ocean
+                    .get_m1_water_column(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get live in-situ water quality from the UCSC Santa Cruz Municipal Wharf (36.96°N, 122.02°W). Returns temperature, salinity, pH, chlorophyll-a, dissolved oxygen, and turbidity with trends. 5-minute cadence, freshest in-bay station. The Kudela Lab (UCSC) collects weekly Pseudo-nitzschia counts here — this is the HAB ground-truth station paired with C-HARM satellite forecasts. QC: QARTOD-pass only. Source: CeNCOOS/Axiom ERDDAP dataset edu_ucsc_scwharf1.")]
+            async fn get_sc_wharf_state(
+                &self,
+                Parameters(req): Parameters<WharfRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .ocean
+                    .get_sc_wharf_state(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get the California Harmful Algae Risk Mapping (C-HARM v3.1) forecast for Pseudo-nitzschia bloom probability, particulate domoic acid, and cellular domoic acid. Composes nowcast through 3-day forecast from 4 separate datasets. Also returns DINEOF gap-filled chlorophyll-a. Default location: Santa Cruz Wharf. Lon is auto-converted from Western convention (-122) to the 0-360 system C-HARM uses. Snaps to nearest non-NaN cell if the target is masked. Source: CoastWatch ERDDAP, Anderson et al. 2016.")]
+            async fn get_hab_risk_forecast(
+                &self,
+                Parameters(req): Parameters<HabRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .ocean
+                    .get_hab_risk_forecast(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get MUR SST (sea surface temperature) state for a bounding box. Returns mean/min/max SST, SST anomaly vs 2003-2014 climatology, and maximum thermal gradient (frontal detection). MUR v4.1 is L4 gap-filled (no cloud gaps). Default bbox covers Monterey Bay (36.5-37.2°N, 122.5-121.8°W). Stride controls resolution (2 = 0.02° default). Source: CoastWatch ERDDAP, JPL MUR v4.1.")]
+            async fn get_sst_state(
+                &self,
+                Parameters(req): Parameters<SstRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .ocean
+                    .get_sst_state(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Get HF Radar surface current velocities for Monterey Bay. Returns bay-mean current speed and direction, u/v components, coverage percentage, and surface divergence (positive = upwelling-consistent). Resolution: '6km' (default, bay-scale) or '2km' (nearshore detail). Coverage is typically 55-65% — the Monterey Canyon creates radar shadow zones. QC: gross-range filter |u|,|v| < 2.0 m/s. Source: UCSD HFRNet via CoastWatch ERDDAP.")]
+            async fn get_hfradar_currents(
+                &self,
+                Parameters(req): Parameters<HfrRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .ocean
+                    .get_hfradar_currents(&req)
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            // ─── Fusion tools (composite ocean state) ───
+
+            #[tool(description = "Monterey Bay upwelling state — fuses CUTI/BEUTI, M1 mooring, MUR SST, HF Radar, C-HARM HAB forecast, SC Wharf in-situ, eBird, and iNaturalist into a single causal-chain narrative. Covers physical forcing → ocean state → chemical response → biological indicators. Sources fetched concurrently; partial failures are noted but don't block the response.")]
+            async fn monterey_bay_upwelling_state(&self, Parameters(req): Parameters<UpwellingStateRequest>) -> Result<CallToolResult, ErrorData> {
+                let result = self.ocean.monterey_bay_upwelling_state(&req).await.map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Monterey Bay HAB risk summary — C-HARM v3.1 Pseudo-nitzschia bloom forecast (nowcast through +3 day), cross-validated with SC Wharf in-situ chl-a and pH, SST context, and seabird indicators. Focused subset of the full upwelling state tool.")]
+            async fn monterey_bay_hab_risk(&self, Parameters(req): Parameters<HabRiskRequest>) -> Result<CallToolResult, ErrorData> {
+                let result = self.ocean.monterey_bay_hab_risk(&req).await.map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
+            #[tool(description = "Monterey Bay research snapshot — machine-readable JSON of all ocean monitoring sources with a deterministic SHA-256 checksum for reproducibility. Same data as the narrative upwelling state tool but structured for programmatic consumption. Use strict=true to fail if any source is unavailable.")]
+            async fn monterey_bay_research_snapshot(&self, Parameters(req): Parameters<ResearchSnapshotRequest>) -> Result<CallToolResult, ErrorData> {
+                let result = self.ocean.monterey_bay_research_snapshot(&req).await.map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
             // ─── Extra tools (auth or empty) ───
             $($extra)*
         }
@@ -1069,15 +1243,8 @@ impl ServerHandler for SlugMcpServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
-        let tool_name = request.name.to_string();
-        let progress_token = context.meta.get_progress_token();
-        let peer = context.peer.clone();
-
         let tcc = ToolCallContext::new(self, request, context);
-        let (result, elapsed) =
-            crate::progress::slug_wrap(&peer, progress_token, &tool_name, self.tool_router.call(tcc))
-                .await;
-        result.map(|r| crate::progress::maybe_prepend_slug(r, elapsed))
+        self.tool_router.call(tcc).await
     }
 
     async fn list_tools(
@@ -1120,7 +1287,16 @@ impl ServerHandler for SlugMcpServer {
              bacteria monitoring (24+ SC beaches via CA BeachWatch), \
              OpenStreetMap outdoor features (trails, peaks, viewpoints, \
              amenities), OpenBeta climbing routes, NPS national park info, \
-             and Open-Meteo air quality forecasts."
+             Open-Meteo air quality forecasts, and Monterey Bay ocean \
+             monitoring: CUTI/BEUTI coastal upwelling indices with \
+             climatological anomalies, MBARI M1 mooring water column \
+             snapshots, UCSC Santa Cruz Wharf in-situ water quality \
+             (pH, chl-a, dissolved oxygen), C-HARM v3.1 harmful algal \
+             bloom risk forecasts, MUR SST with anomalies and frontal \
+             detection, HF Radar surface currents with divergence, \
+             and three fusion tools: upwelling state narrative (cross-source \
+             causal chain), HAB risk summary, and research snapshot with \
+             deterministic checksum for reproducibility."
         } else {
             "UCSC + Santa Cruz MCP server (public mode). Campus services: \
              dining menus, nutrition info, campus events and Eventbrite \
@@ -1143,8 +1319,17 @@ impl ServerHandler for SlugMcpServer {
              earthquake data, beach water quality bacteria monitoring (24+ \
              SC beaches via CA BeachWatch), OpenStreetMap outdoor features \
              (trails, peaks, viewpoints, amenities), OpenBeta climbing \
-             routes, NPS national park info, and Open-Meteo air quality \
-             forecasts."
+             routes, NPS national park info, Open-Meteo air quality \
+             forecasts, and Monterey Bay ocean monitoring: CUTI/BEUTI \
+             coastal upwelling indices with climatological anomalies, \
+             MBARI M1 mooring water column snapshots, UCSC Santa Cruz \
+             Wharf in-situ water quality (pH, chl-a, dissolved oxygen), \
+             C-HARM v3.1 harmful algal bloom risk forecasts, MUR SST \
+             with anomalies and frontal detection, HF Radar surface \
+             currents with divergence, and three fusion tools: upwelling \
+             state narrative (cross-source causal chain), HAB risk summary, \
+             and research snapshot with deterministic checksum for \
+             reproducibility."
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())

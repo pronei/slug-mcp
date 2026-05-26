@@ -2,10 +2,18 @@
 //!
 //! Pulls the statewide CHP communications center log XML at
 //! <https://media.chp.ca.gov/sa_xml/sa.xml>. The feed is an undocumented but
-//! long-stable dump of all active CHP dispatch logs. We filter to
-//! `Center ID = "GGHB"` > `Dispatch ID = "MYCC"` (Monterey Comm Center, which
-//! covers both Monterey and Santa Cruz counties) and then post-filter by
-//! `Area` field to keep Santa Cruz County entries.
+//! long-stable dump of all active CHP dispatch logs, grouped
+//! `State > Center > Dispatch > Log`. Santa Cruz County is dispatched by the
+//! Monterey Communications Center (CHP center #730, Coastal Division), which
+//! appears in the feed as `Dispatch ID = "MYCC"` and covers both Monterey and
+//! Santa Cruz counties. We match that dispatch wherever it appears and then
+//! post-filter by the `Area` field to keep Santa Cruz County entries.
+//!
+//! Note: we deliberately do NOT pin the parent `Center` ID. The Monterey
+//! dispatch is its own comm center — it is *not* nested under the Golden Gate
+//! center (`GGHB`, which covers only the nine SF Bay Area counties). Matching
+//! on the stable `MYCC` dispatch code avoids depending on the exact center
+//! grouping above it.
 //!
 //! Note: CHP XML text nodes are LITERALLY wrapped in `"..."` quote characters,
 //! e.g. `<LogTime>"Apr 10 2026  7:56AM"</LogTime>`. We strip those at the
@@ -17,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use crate::util::FuzzyMatcher;
 
 pub const CHP_FEED_URL: &str = "https://media.chp.ca.gov/sa_xml/sa.xml";
-pub const CENTER_GGHB: &str = "GGHB";
 pub const DISPATCH_MYCC: &str = "MYCC";
 
 /// Santa Cruz County areas that appear as the `<Area>` field in MYCC logs.
@@ -126,9 +133,6 @@ pub fn parse_sc_incidents(body: &str) -> Result<Vec<Incident>> {
 
     let mut out = Vec::new();
     for center in feed.centers {
-        if center.id.trim() != CENTER_GGHB {
-            continue;
-        }
         for dispatch in center.dispatches {
             if dispatch.id.trim() != DISPATCH_MYCC {
                 continue;
@@ -214,6 +218,32 @@ mod tests {
                 i.area
             );
         }
+    }
+
+    #[test]
+    fn finds_mycc_dispatch_regardless_of_parent_center() {
+        // Regression: Santa Cruz County is dispatched by the Monterey comm
+        // center (MYCC), which is NOT nested under the Golden Gate center
+        // (GGHB). Pinning the parent center ID silently dropped every SC
+        // incident, so we must match on the MYCC dispatch wherever it appears.
+        let xml = r#"<?xml version="1.0" ?>
+<State>
+<Center ID = "MYHB">
+<Dispatch ID = "MYCC">
+<Log ID = "260410MY0099">
+    <LogTime>"Apr 10 2026  8:10AM"</LogTime>
+    <LogType>"1183-Trfc Collision-Unkn Inj"</LogType>
+    <Location>"Sr1 N / 41st Ave"</Location>
+    <LocationDesc>"NB 1 AT 41ST"</LocationDesc>
+    <Area>"Santa Cruz"</Area>
+    <LATLON>"36971000:121966000"</LATLON>
+</Log>
+</Dispatch>
+</Center>
+</State>"#;
+        let incidents = parse_sc_incidents(xml).unwrap();
+        assert_eq!(incidents.len(), 1, "expected the MYCC Santa Cruz incident");
+        assert_eq!(incidents[0].area, "Santa Cruz");
     }
 
     #[test]

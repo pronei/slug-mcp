@@ -145,33 +145,27 @@ pub fn parse_sc_incidents(body: &str) -> Result<Vec<Incident>> {
     Ok(out)
 }
 
-/// Filter an incident list to entries that mention a given route (e.g. "17",
-/// "9", "1"). Checks both `location` and `location_desc` fields
-/// case-insensitively.
+/// Filter an incident list to entries on a given route (e.g. "17", "9", "1").
+/// Matches an SR/HWY/US designator followed by the route number in either the
+/// `location` or `location_desc` field, case-insensitively.
 pub fn filter_by_route<'a>(incidents: &'a [Incident], route: &str) -> Vec<&'a Incident> {
     let route = route.trim().trim_start_matches(|c: char| {
         c.eq_ignore_ascii_case(&'h') || c.eq_ignore_ascii_case(&'w') || c == 'y' || c == ' '
     });
-    // Build patterns to match: "SR17", "Sr17", "HWY 17", "17 ", "SR-17"
-    let candidates = [
-        format!("SR{}", route),
-        format!("SR-{}", route),
-        format!("Sr{}", route),
-        format!("sr{}", route),
-        format!("HWY {}", route),
-        format!("Hwy {}", route),
-        format!("Us{}", route),
-        format!("US{}", route),
-    ];
+    // The route number must not be followed by another digit, otherwise "1"
+    // matches "SR17" and "US101". `regex` has no lookahead, so we assert the
+    // boundary with a trailing non-digit (or end-of-string) instead.
+    let pattern = format!(
+        r"(?i)\b(?:sr|hwy|us)[\s-]*{}(?:[^0-9]|$)",
+        regex::escape(route)
+    );
+    let re = match regex::Regex::new(&pattern) {
+        Ok(re) => re,
+        Err(_) => return Vec::new(),
+    };
     incidents
         .iter()
-        .filter(|i| {
-            let loc = format!("{} {}", i.location, i.location_desc);
-            let loc_lower = loc.to_lowercase();
-            candidates
-                .iter()
-                .any(|p| loc.contains(p.as_str()) || loc_lower.contains(&p.to_lowercase()))
-        })
+        .filter(|i| re.is_match(&format!("{} {}", i.location, i.location_desc)))
         .collect()
 }
 
@@ -263,5 +257,37 @@ mod tests {
                 || i.location.contains("SR-17")),
             "expected to find the Sr17 Summit entry"
         );
+    }
+
+    #[test]
+    fn filter_by_route_does_not_match_longer_routes() {
+        // Regression: "SR1" is a prefix of "SR17"/"US101", so a naive substring
+        // match surfaced Hwy 17 incidents when asked about Hwy 1.
+        let mk = |loc: &str| Incident {
+            id: loc.to_string(),
+            log_time: String::new(),
+            log_type: String::new(),
+            location: loc.to_string(),
+            location_desc: String::new(),
+            area: "Santa Cruz".to_string(),
+            latlon: String::new(),
+        };
+        let incidents = vec![
+            mk("Sr1 S / Buena Vista"),
+            mk("Sr17 S / Spanish Oaks"),
+            mk("US101 N / Foo"),
+        ];
+
+        let r1 = filter_by_route(&incidents, "1");
+        assert_eq!(r1.len(), 1, "route 1 should match only Sr1");
+        assert_eq!(r1[0].location, "Sr1 S / Buena Vista");
+
+        let r17 = filter_by_route(&incidents, "17");
+        assert_eq!(r17.len(), 1);
+        assert_eq!(r17[0].location, "Sr17 S / Spanish Oaks");
+
+        let r101 = filter_by_route(&incidents, "101");
+        assert_eq!(r101.len(), 1);
+        assert_eq!(r101[0].location, "US101 N / Foo");
     }
 }

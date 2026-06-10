@@ -46,12 +46,10 @@ pub async fn fetch_all_stops(http: &reqwest::Client, api_key: &str) -> Result<Ve
     // 5. Deduplicate by stop_id
     let mut seen = HashSet::new();
     let mut all_stops = Vec::new();
-    for result in stop_results {
-        if let Ok(stops) = result {
-            for stop in stops {
-                if seen.insert(stop.stop_id.clone()) {
-                    all_stops.push(stop);
-                }
+    for stops in stop_results.into_iter().flatten() {
+        for stop in stops {
+            if seen.insert(stop.stop_id.clone()) {
+                all_stops.push(stop);
             }
         }
     }

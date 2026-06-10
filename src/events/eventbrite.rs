@@ -75,23 +75,20 @@ fn extract_event_ids(html: &str) -> Vec<String> {
 
     // Primary: data-event-id on links
     for el in document.select(&SEL_EVENT_ID) {
-        if let Some(id) = el.value().attr("data-event-id") {
-            if !id.is_empty() && !ids.contains(&id.to_string()) {
+        if let Some(id) = el.value().attr("data-event-id")
+            && !id.is_empty() && !ids.contains(&id.to_string()) {
                 ids.push(id.to_string());
             }
-        }
     }
 
     // Fallback: parse event IDs from href patterns like /e/...-tickets-1234567890
     if ids.is_empty() {
         for el in document.select(&SEL_EVENT_HREF) {
-            if let Some(href) = el.value().attr("href") {
-                if let Some(id) = extract_id_from_href(href) {
-                    if !ids.contains(&id) {
+            if let Some(href) = el.value().attr("href")
+                && let Some(id) = extract_id_from_href(href)
+                    && !ids.contains(&id) {
                         ids.push(id);
                     }
-                }
-            }
         }
     }
 
@@ -307,11 +304,10 @@ impl Event {
         } else if let Some(venue) = &self.primary_venue {
             let name = venue.name.as_deref().unwrap_or("TBD");
             out.push_str(&format!("- **Where**: {}", name));
-            if let Some(addr) = &venue.address {
-                if let Some(display) = &addr.localized_address_display {
+            if let Some(addr) = &venue.address
+                && let Some(display) = &addr.localized_address_display {
                     out.push_str(&format!(" ({})", display));
                 }
-            }
             out.push('\n');
         }
 
@@ -319,8 +315,8 @@ impl Event {
         if let Some(ta) = &self.ticket_availability {
             if ta.is_free == Some(true) {
                 out.push_str("- **Cost**: Free\n");
-            } else if let Some(min) = &ta.minimum_ticket_price {
-                if let Some(max) = &ta.maximum_ticket_price {
+            } else if let Some(min) = &ta.minimum_ticket_price
+                && let Some(max) = &ta.maximum_ticket_price {
                     let min_d = min.display.as_deref().unwrap_or("?");
                     let max_d = max.display.as_deref().unwrap_or("?");
                     if min_d == max_d {
@@ -329,18 +325,16 @@ impl Event {
                         out.push_str(&format!("- **Cost**: {} – {}\n", min_d, max_d));
                     }
                 }
-            }
             if ta.is_sold_out == Some(true) {
                 out.push_str("- **Status**: SOLD OUT\n");
             }
         }
 
         // Organizer
-        if let Some(org) = &self.primary_organizer {
-            if let Some(name) = &org.name {
+        if let Some(org) = &self.primary_organizer
+            && let Some(name) = &org.name {
                 out.push_str(&format!("- **Organizer**: {}\n", name));
             }
-        }
 
         // Tags/categories
         if let Some(tags) = &self.tags {

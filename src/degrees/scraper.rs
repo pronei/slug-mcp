@@ -618,14 +618,13 @@ fn flush_group(
     rule_heading: &Option<String>,
     subsection: &mut Option<RequirementSubsection>,
 ) {
-    if let Some(g) = group.take() {
-        if !g.rules.is_empty() || !g.notes.is_empty() {
+    if let Some(g) = group.take()
+        && (!g.rules.is_empty() || !g.notes.is_empty()) {
             ensure_subsection(subsection, rule_heading);
             if let Some(sub) = subsection.as_mut() {
                 sub.groups.push(g);
             }
         }
-    }
 }
 
 fn ensure_subsection(subsection: &mut Option<RequirementSubsection>, _hint: &Option<String>) {
@@ -642,14 +641,13 @@ fn flush_subsection(
     subsection: &mut Option<RequirementSubsection>,
     section: &mut Option<RequirementSection>,
 ) {
-    if let Some(sub) = subsection.take() {
-        if !sub.groups.is_empty() || !sub.notes.is_empty() {
+    if let Some(sub) = subsection.take()
+        && (!sub.groups.is_empty() || !sub.notes.is_empty()) {
             ensure_section(section);
             if let Some(sec) = section.as_mut() {
                 sec.subsections.push(sub);
             }
         }
-    }
 }
 
 fn ensure_section(section: &mut Option<RequirementSection>) {
@@ -666,11 +664,10 @@ fn flush_section(
     section: &mut Option<RequirementSection>,
     sections: &mut Vec<RequirementSection>,
 ) {
-    if let Some(sec) = section.take() {
-        if !sec.subsections.is_empty() || !sec.notes.is_empty() {
+    if let Some(sec) = section.take()
+        && (!sec.subsections.is_empty() || !sec.notes.is_empty()) {
             sections.push(sec);
         }
-    }
 }
 
 /// Parse a course table, handling either/or narrative rows.
@@ -794,7 +791,7 @@ fn classify_courses(
         .collect();
 
     let rule_type = heading
-        .map(|h| infer_rule_type(h))
+        .map(infer_rule_type)
         .unwrap_or(RuleType::AllOf);
 
     (rule_type, courses, None)
@@ -808,20 +805,18 @@ fn infer_rule_type(heading: &str) -> RuleType {
     }
 
     // Match "N of the following" or "N courses"
-    if let Some(n) = extract_number_from_heading(&lower) {
-        if lower.contains("of the following")
+    if let Some(n) = extract_number_from_heading(&lower)
+        && (lower.contains("of the following")
             || lower.contains("courses from")
-            || lower.contains("courses must")
+            || lower.contains("courses must"))
         {
             return RuleType::NOf(n);
         }
-    }
 
-    if lower.contains("credits from") || lower.contains("credits of") {
-        if let Some(n) = extract_number_from_heading(&lower) {
+    if (lower.contains("credits from") || lower.contains("credits of"))
+        && let Some(n) = extract_number_from_heading(&lower) {
             return RuleType::CreditsFrom(n);
         }
-    }
 
     // Default: all of
     RuleType::AllOf
@@ -883,7 +878,7 @@ fn extract_course_codes_from_text(text: &str) -> Vec<String> {
                 i += 1;
             }
             let dept_len = i - dept_start;
-            if dept_len >= 2 && dept_len <= 5 {
+            if (2..=5).contains(&dept_len) {
                 // Expect whitespace then digits
                 if i < len && chars[i] == ' ' {
                     i += 1; // skip space
@@ -892,7 +887,7 @@ fn extract_course_codes_from_text(text: &str) -> Vec<String> {
                         i += 1;
                     }
                     let num_len = i - num_start;
-                    if num_len >= 1 && num_len <= 3 {
+                    if (1..=3).contains(&num_len) {
                         // Optional trailing uppercase letter (e.g., "210A")
                         let end = if i < len && chars[i].is_ascii_uppercase()
                             && (i + 1 >= len || !chars[i + 1].is_ascii_uppercase())
@@ -999,16 +994,14 @@ fn fix_allof_from_selection(
 
 fn parse_credits_from_prose(text: &str) -> Option<RuleType> {
     let lower = text.to_lowercase();
-    if lower.contains("credits") {
-        if let Some(n) = extract_number_from_heading(&lower) {
+    if lower.contains("credits")
+        && let Some(n) = extract_number_from_heading(&lower) {
             return Some(RuleType::CreditsFrom(n));
         }
-    }
-    if lower.contains("courses") || lower.contains("must be completed") {
-        if let Some(n) = extract_number_from_heading(&lower) {
+    if (lower.contains("courses") || lower.contains("must be completed"))
+        && let Some(n) = extract_number_from_heading(&lower) {
             return Some(RuleType::NOf(n));
         }
-    }
     None
 }
 

@@ -99,11 +99,10 @@ impl OutdoorsService {
         let lat = req.lat.unwrap_or(DEFAULT_LAT);
         let lon = req.lon.unwrap_or(DEFAULT_LON);
 
-        if let Some(r) = req.radius_m {
-            if r > MAX_RADIUS {
+        if let Some(r) = req.radius_m
+            && r > MAX_RADIUS {
                 bail!("radius_m must be at most {} meters", MAX_RADIUS);
             }
-        }
         let radius = req.radius_m.unwrap_or(DEFAULT_RADIUS).min(MAX_RADIUS);
         let limit = req.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
 
@@ -468,7 +467,7 @@ fn bearing_label(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> &'st
     let bearing = ((bearing_deg % 360.0) + 360.0) % 360.0;
 
     // 8-point compass: each sector is 45 degrees, centered on the cardinal
-    if bearing < 22.5 || bearing >= 337.5 {
+    if !(22.5..337.5).contains(&bearing) {
         "N"
     } else if bearing < 67.5 {
         "NE"

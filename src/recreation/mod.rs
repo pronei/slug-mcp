@@ -85,16 +85,14 @@ impl RecreationService {
         let filtered: Vec<&GroupExerciseClass> = all
             .iter()
             .filter(|c| {
-                if let Some(d) = day {
-                    if !c.day.eq_ignore_ascii_case(d) {
+                if let Some(d) = day
+                    && !c.day.eq_ignore_ascii_case(d) {
                         return false;
                     }
-                }
-                if let Some(name) = class_name {
-                    if !c.name.to_lowercase().contains(&name.to_lowercase()) {
+                if let Some(name) = class_name
+                    && !c.name.to_lowercase().contains(&name.to_lowercase()) {
                         return false;
                     }
-                }
                 true
             })
             .collect();

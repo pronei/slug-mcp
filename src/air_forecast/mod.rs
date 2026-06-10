@@ -261,7 +261,7 @@ fn format_output(resp: &AirQualityResponse) -> String {
 
         // Pollen (only if data exists)
         let show_pollen = has_pollen_data(hourly)
-            || resp.current.as_ref().map_or(false, |c| has_current_pollen(c));
+            || resp.current.as_ref().is_some_and(has_current_pollen);
 
         if show_pollen {
             writeln!(out, "## Pollen Forecast").unwrap();

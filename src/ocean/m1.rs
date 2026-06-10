@@ -141,13 +141,12 @@ struct ProfileData {
 }
 
 fn trim_to_latest_hours(surface: &mut SurfaceData, hours: u32) {
-    if let Some(latest) = surface.rows.last() {
-        if let Ok(latest_dt) = chrono::DateTime::parse_from_rfc3339(&latest.time) {
+    if let Some(latest) = surface.rows.last()
+        && let Ok(latest_dt) = chrono::DateTime::parse_from_rfc3339(&latest.time) {
             let cutoff = latest_dt - chrono::Duration::hours(hours as i64);
             let cutoff_str = cutoff.format("%Y-%m-%dT%H:%M:%SZ").to_string();
             surface.rows.retain(|r| r.time >= cutoff_str);
         }
-    }
 }
 
 fn format_time_min(hours: u32) -> String {
@@ -241,7 +240,7 @@ async fn fetch_profile(erddap: &ErddapClient, time_min: &str) -> Result<ProfileD
         "z".into(),
         "sea_water_temperature".into(),
     ])
-    .constraint(format!("time>={}", time_min.to_string()))
+    .constraint(format!("time>={}", time_min))
     .with_qc(vec!["sea_water_temperature".into()])
     .order_by("z");
 

@@ -359,8 +359,8 @@ fn format_output(
     writeln!(out).unwrap();
     writeln!(out, "## UV Index").unwrap();
 
-    if let Some(current) = &om.current {
-        if let Some(uv) = current.uv_index {
+    if let Some(current) = &om.current
+        && let Some(uv) = current.uv_index {
             let cat = uv_category(uv);
             let clear_sky = current
                 .uv_index_clear_sky
@@ -368,7 +368,6 @@ fn format_output(
                 .unwrap_or_default();
             writeln!(out, "- **Current**: {:.1} ({}){}", uv, cat, clear_sky).unwrap();
         }
-    }
 
     if !daily.uv_index_max.is_empty() {
         let today_max = daily.uv_index_max[0];

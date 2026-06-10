@@ -130,11 +130,10 @@ pub async fn get_predictions_for_stop(
             .route_id
             .clone()
             .unwrap_or_default();
-        if let Some(filter) = route_filter {
-            if !route_id.eq_ignore_ascii_case(filter) {
+        if let Some(filter) = route_filter
+            && !route_id.eq_ignore_ascii_case(filter) {
                 continue;
             }
-        }
 
         for stu in &trip_update.stop_time_update {
             if stu.stop_id.as_deref() != Some(stop_id) {
@@ -378,11 +377,10 @@ pub async fn fetch_vehicle_positions(
             .and_then(|t| t.route_id.clone())
             .unwrap_or_default();
 
-        if let Some(filter) = route_filter {
-            if !route.eq_ignore_ascii_case(filter) {
+        if let Some(filter) = route_filter
+            && !route.eq_ignore_ascii_case(filter) {
                 continue;
             }
-        }
 
         let vehicle_desc = vp.vehicle.as_ref();
         out.push(VehicleSnapshot {
@@ -428,11 +426,10 @@ pub async fn fetch_route_delays(
     for entity in &feed.entity {
         let Some(tu) = &entity.trip_update else { continue };
         let route = tu.trip.route_id.clone().unwrap_or_default();
-        if let Some(filter) = route_filter {
-            if !route.eq_ignore_ascii_case(filter) {
+        if let Some(filter) = route_filter
+            && !route.eq_ignore_ascii_case(filter) {
                 continue;
             }
-        }
 
         // Pick the most-forward stop_time_update delay that we have, or the
         // overall `delay` field if present.
@@ -586,11 +583,10 @@ pub fn format_system_alerts(alerts: &[SystemAlert]) -> String {
         if a.effect != "—" {
             out.push_str(&format!("- Effect: {}\n", a.effect));
         }
-        if let Some(url) = &a.url {
-            if !url.is_empty() {
+        if let Some(url) = &a.url
+            && !url.is_empty() {
                 out.push_str(&format!("- More info: {}\n", url));
             }
-        }
         out.push('\n');
     }
     out.push_str(&format!(

@@ -9,6 +9,7 @@ use crate::util::now_pacific;
 
 use super::Observation;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn fetch_inaturalist(
     http: &reqwest::Client,
     query: Option<&str>,

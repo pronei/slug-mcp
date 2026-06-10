@@ -114,10 +114,9 @@ impl DiningService {
                 let cache_key = format!("dining:menu:{}:{}", hall.location_num, cache_date);
                 let cache = &self.cache;
                 let http = &self.http;
-                let scraper_date = scraper_date.clone();
                 async move {
                     cache
-                        .get_or_fetch(&cache_key, 3600, || scrape_menu(http, hall, scraper_date.as_deref()))
+                        .get_or_fetch(&cache_key, 3600, || scrape_menu(http, hall, scraper_date))
                         .await
                 }
             })

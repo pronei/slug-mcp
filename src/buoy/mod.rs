@@ -286,9 +286,9 @@ fn format_observations(name: &str, obs: &[BuoyObservation]) -> String {
     }
 
     // 3h trend: find observation ~3 hours earlier
-    if obs.len() > 1 {
-        if let (Some(w_now), Some(older)) = (latest.water_temp_c, obs.get(18)) {
-            if let Some(w_old) = older.water_temp_c {
+    if obs.len() > 1
+        && let (Some(w_now), Some(older)) = (latest.water_temp_c, obs.get(18))
+            && let Some(w_old) = older.water_temp_c {
                 let delta = w_now - w_old;
                 out.push_str(&format!(
                     "\n_Water temp trend over ~3h: {:+.1}°C ({:+.1}°F)_\n",
@@ -296,8 +296,6 @@ fn format_observations(name: &str, obs: &[BuoyObservation]) -> String {
                     delta * 9.0 / 5.0
                 ));
             }
-        }
-    }
 
     out.push_str(&format!(
         "\n_Source: NDBC realtime2. Last updated: {}_\n",

@@ -434,15 +434,14 @@ fn render_hab_narrative(snap: &FullSnapshot) -> String {
     }
 
     // Bird indicators
-    if let Some(ref b) = snap.birds {
-        if b.total_observations > 0 {
+    if let Some(ref b) = snap.birds
+        && b.total_observations > 0 {
             out.push_str("## Seabird indicators\n\n");
             for s in &b.species {
                 out.push_str(&format!("- {}: {}\n", s.common_name, s.count));
             }
             out.push('\n');
         }
-    }
 
     // Partial failures
     if !snap.partial_failures.is_empty() {
@@ -477,11 +476,11 @@ fn collect_f64s(snap: &FullSnapshot) -> Vec<f64> {
     }
 
     if let Some(ref m) = snap.m1 {
-        if let Some(v) = m.surface_temp_c { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = m.wind_speed_ms { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = m.wind_dir_from_deg { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = m.equatorward_wind_ms { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = m.stratification_index { if v.is_finite() { vals.push(v); } }
+        if let Some(v) = m.surface_temp_c && v.is_finite() { vals.push(v); }
+        if let Some(v) = m.wind_speed_ms && v.is_finite() { vals.push(v); }
+        if let Some(v) = m.wind_dir_from_deg && v.is_finite() { vals.push(v); }
+        if let Some(v) = m.equatorward_wind_ms && v.is_finite() { vals.push(v); }
+        if let Some(v) = m.stratification_index && v.is_finite() { vals.push(v); }
         // Skip m.latency_hours — it's wall-clock-derived (now - timestamp),
         // so including it would break checksum determinism across calls with
         // the same underlying data. Wharf's latency_minutes (i64) is also
@@ -493,21 +492,21 @@ fn collect_f64s(snap: &FullSnapshot) -> Vec<f64> {
     }
 
     if let Some(ref w) = snap.wharf {
-        if let Some(v) = w.temp_c { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = w.salinity_psu { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = w.ph { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = w.chla_mg_m3 { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = w.do_mg_l { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = w.do_saturation_pct { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = w.turbidity_ntu { if v.is_finite() { vals.push(v); } }
+        if let Some(v) = w.temp_c && v.is_finite() { vals.push(v); }
+        if let Some(v) = w.salinity_psu && v.is_finite() { vals.push(v); }
+        if let Some(v) = w.ph && v.is_finite() { vals.push(v); }
+        if let Some(v) = w.chla_mg_m3 && v.is_finite() { vals.push(v); }
+        if let Some(v) = w.do_mg_l && v.is_finite() { vals.push(v); }
+        if let Some(v) = w.do_saturation_pct && v.is_finite() { vals.push(v); }
+        if let Some(v) = w.turbidity_ntu && v.is_finite() { vals.push(v); }
     }
 
     if let Some(ref h) = snap.hab {
         for f in &h.forecasts {
-            if let Some(v) = f.p_pseudo_nitzschia { if v.is_finite() { vals.push(v); } }
-            if let Some(v) = f.p_particulate_domoic { if v.is_finite() { vals.push(v); } }
-            if let Some(v) = f.p_cellular_domoic { if v.is_finite() { vals.push(v); } }
-            if let Some(v) = f.chla_filled { if v.is_finite() { vals.push(v); } }
+            if let Some(v) = f.p_pseudo_nitzschia && v.is_finite() { vals.push(v); }
+            if let Some(v) = f.p_particulate_domoic && v.is_finite() { vals.push(v); }
+            if let Some(v) = f.p_cellular_domoic && v.is_finite() { vals.push(v); }
+            if let Some(v) = f.chla_filled && v.is_finite() { vals.push(v); }
         }
     }
 
@@ -515,15 +514,15 @@ fn collect_f64s(snap: &FullSnapshot) -> Vec<f64> {
         for v in [s.mean_sst_c, s.min_sst_c, s.max_sst_c] {
             if v.is_finite() { vals.push(v); }
         }
-        if let Some(v) = s.mean_anom_c { if v.is_finite() { vals.push(v); } }
-        if let Some(v) = s.max_grad_c_per_km { if v.is_finite() { vals.push(v); } }
+        if let Some(v) = s.mean_anom_c && v.is_finite() { vals.push(v); }
+        if let Some(v) = s.max_grad_c_per_km && v.is_finite() { vals.push(v); }
     }
 
     if let Some(ref h) = snap.hfr_snap {
         for v in [h.mean_speed_ms, h.max_speed_ms, h.mean_u_ms, h.mean_v_ms, h.flow_direction_deg] {
             if v.is_finite() { vals.push(v); }
         }
-        if let Some(v) = h.divergence_per_s { if v.is_finite() { vals.push(v); } }
+        if let Some(v) = h.divergence_per_s && v.is_finite() { vals.push(v); }
     }
 
     if let Some(ref b) = snap.birds {

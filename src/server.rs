@@ -172,11 +172,10 @@ impl SlugMcpServer {
     /// Get the active session from either per-session token (SSE) or disk (stdio).
     async fn get_active_session(&self) -> Option<SessionData> {
         // 1. Check per-session token (set via `authenticate` tool)
-        if let Some(data) = self.session_auth.read().await.as_ref() {
-            if !data.is_expired() {
+        if let Some(data) = self.session_auth.read().await.as_ref()
+            && !data.is_expired() {
                 return Some(data.clone());
             }
-        }
         // 2. Fall back to disk-based session (set via `login` tool)
         self.auth.get_session().ok().flatten()
     }
@@ -1153,8 +1152,8 @@ define_tools!({
     #[tool(description = "Check if you are currently authenticated with UCSC")]
     async fn check_auth(&self) -> Result<CallToolResult, ErrorData> {
         // Check per-session token first (SSE mode)
-        if let Some(data) = self.session_auth.read().await.as_ref() {
-            if !data.is_expired() {
+        if let Some(data) = self.session_auth.read().await.as_ref()
+            && !data.is_expired() {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -1168,7 +1167,6 @@ define_tools!({
                     data.username, hours, mins
                 ))]));
             }
-        }
 
         // Fall back to disk-based session (stdio mode)
         let status = self.auth.check_auth().map_err(internal_err)?;

@@ -371,8 +371,8 @@ fn format_output(data: &SpaceWeatherData) -> String {
     }
 
     // --- Kp trend table (last 24h = 8 entries) ---
-    if let Some(entries) = &data.kp_entries {
-        if entries.len() > 1 {
+    if let Some(entries) = &data.kp_entries
+        && entries.len() > 1 {
             out.push_str("\n## Kp Index — Last 24 Hours\n");
             out.push_str("| Time (UTC) | Kp | Level |\n");
             out.push_str("|---|---|---|\n");
@@ -393,7 +393,6 @@ fn format_output(data: &SpaceWeatherData) -> String {
                 );
             }
         }
-    }
 
     // --- Santa Cruz Notes ---
     out.push_str("\n## Santa Cruz Notes\n");

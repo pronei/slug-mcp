@@ -41,11 +41,10 @@ impl Classroom {
             let _ = write!(out, "\n- **Seating**: {}", humanize(style));
         }
         // Only show raw area if no location data was found
-        if location.is_none() {
-            if let Some(area) = &self.area {
+        if location.is_none()
+            && let Some(area) = &self.area {
                 let _ = write!(out, "\n- **Area**: {}", humanize(area));
             }
-        }
         if !self.technology.is_empty() {
             let techs: Vec<String> = self.technology.iter().map(|t| humanize(t)).collect();
             let _ = write!(out, "\n- **Technology**: {}", techs.join(", "));
@@ -155,21 +154,18 @@ pub fn filter_classrooms<'a>(
     classrooms
         .iter()
         .filter(|c| {
-            if let Some(q) = name {
-                if !c.name.to_lowercase().contains(&q.to_lowercase()) {
+            if let Some(q) = name
+                && !c.name.to_lowercase().contains(&q.to_lowercase()) {
                     return false;
                 }
-            }
-            if let Some(min) = min_capacity {
-                if c.capacity.unwrap_or(0) < min {
+            if let Some(min) = min_capacity
+                && c.capacity.unwrap_or(0) < min {
                     return false;
                 }
-            }
-            if let Some(max) = max_capacity {
-                if c.capacity.unwrap_or(u32::MAX) > max {
+            if let Some(max) = max_capacity
+                && c.capacity.unwrap_or(u32::MAX) > max {
                     return false;
                 }
-            }
             if let Some(b) = building {
                 let b_lower = b.to_lowercase();
                 let area_match = c

@@ -259,15 +259,14 @@ fn write_spot_body(out: &mut String, c: &SpotConditions) {
                 swell_ft, swell_m, period, dir
             ));
         }
-        if let Some(wind_wave_m) = current.wind_wave_height {
-            if wind_wave_m > 0.0 {
+        if let Some(wind_wave_m) = current.wind_wave_height
+            && wind_wave_m > 0.0 {
                 out.push_str(&format!(
                     "- **Wind wave**: {:.1} ft ({:.1} m)\n",
                     m_to_ft(wind_wave_m),
                     wind_wave_m
                 ));
             }
-        }
     } else {
         out.push_str("  ⚠ No current marine data\n");
     }

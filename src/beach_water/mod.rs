@@ -306,10 +306,10 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
             format_sample_date(latest_date)
         };
 
-        write!(out, "## {} ({})\n", name, code).unwrap();
-        write!(out, "**Latest sample**: {}\n", date_display).unwrap();
-        write!(out, "| Analyte | Result | Threshold | Status |\n").unwrap();
-        write!(out, "|---|---|---|---|\n").unwrap();
+        writeln!(out, "## {} ({})", name, code).unwrap();
+        writeln!(out, "**Latest sample**: {}", date_display).unwrap();
+        writeln!(out, "| Analyte | Result | Threshold | Status |").unwrap();
+        writeln!(out, "|---|---|---|---|").unwrap();
 
         for rec in recs {
             let result_str = rec.result.as_deref().unwrap_or("—");
@@ -320,50 +320,49 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
                 let (threshold, exceeds) = check_threshold(&rec.analyte, value);
                 let status = if exceeds { "Exceeds" } else { "Pass" };
                 let icon = if exceeds { "\u{26a0}\u{fe0f}" } else { "\u{2705}" };
-                write!(
+                writeln!(
                     out,
-                    "| {} | {} {} | {} | {} {} |\n",
+                    "| {} | {} {} | {} | {} {} |",
                     rec.analyte, result_str, unit, threshold, icon, status
                 )
                 .unwrap();
             } else {
-                write!(
+                writeln!(
                     out,
-                    "| {} | {} {} | — | — |\n",
+                    "| {} | {} {} | — | — |",
                     rec.analyte, result_str, unit
                 )
                 .unwrap();
             }
 
             // 30-day geo mean row (if present and parseable)
-            if let Some(geo_str) = rec.geo_mean_30d.as_deref() {
-                if let Ok(geo_val) = geo_str.parse::<f64>() {
+            if let Some(geo_str) = rec.geo_mean_30d.as_deref()
+                && let Ok(geo_val) = geo_str.parse::<f64>() {
                     let (threshold, exceeds) = check_geo_threshold(&rec.analyte, geo_val);
                     let status = if exceeds { "Exceeds" } else { "Pass" };
                     let icon = if exceeds { "\u{26a0}\u{fe0f}" } else { "\u{2705}" };
-                    write!(
+                    writeln!(
                         out,
-                        "| 30-day geo mean ({}) | {} | {} | {} {} |\n",
+                        "| 30-day geo mean ({}) | {} | {} | {} {} |",
                         rec.analyte, geo_str, threshold, icon, status
                     )
                     .unwrap();
                 }
-            }
         }
 
         out.push('\n');
     }
 
-    write!(
+    writeln!(
         out,
         "_Beach water quality samples are collected weekly by Santa Cruz County \
-         Environmental Health. Results are typically 1-7 days old._\n"
+         Environmental Health. Results are typically 1-7 days old._"
     )
     .unwrap();
     let now = crate::util::now_pacific();
-    write!(
+    writeln!(
         out,
-        "_Source: CA State Water Board BeachWatch via data.ca.gov. Last updated: {}_\n",
+        "_Source: CA State Water Board BeachWatch via data.ca.gov. Last updated: {}_",
         now.format("%-I:%M %p")
     )
     .unwrap();

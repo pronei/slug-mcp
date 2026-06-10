@@ -324,18 +324,15 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
 
         if classes.contains(&"shortmenumeals") {
             // Flush previous state
-            if let Some(cat) = current_cat.take() {
-                if let Some(meal) = current_meal.as_mut() {
-                    if !cat.items.is_empty() {
+            if let Some(cat) = current_cat.take()
+                && let Some(meal) = current_meal.as_mut()
+                    && !cat.items.is_empty() {
                         meal.categories.push(cat);
                     }
-                }
-            }
-            if let Some(meal) = current_meal.take() {
-                if !meal.categories.is_empty() {
+            if let Some(meal) = current_meal.take()
+                && !meal.categories.is_empty() {
                     meals.push(meal);
                 }
-            }
 
             let meal_name = element.text().collect::<String>().trim().to_string();
             current_meal = Some(Meal {
@@ -343,13 +340,11 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
                 categories: Vec::new(),
             });
         } else if classes.contains(&"shortmenucats") {
-            if let Some(cat) = current_cat.take() {
-                if let Some(meal) = current_meal.as_mut() {
-                    if !cat.items.is_empty() {
+            if let Some(cat) = current_cat.take()
+                && let Some(meal) = current_meal.as_mut()
+                    && !cat.items.is_empty() {
                         meal.categories.push(cat);
                     }
-                }
-            }
 
             let name = element.text().collect::<String>();
             let name = name
@@ -365,8 +360,8 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
                     items: Vec::new(),
                 });
             }
-        } else if classes.contains(&"shortmenurecipes") {
-            if let Some(cat) = current_cat.as_mut() {
+        } else if classes.contains(&"shortmenurecipes")
+            && let Some(cat) = current_cat.as_mut() {
                 let item_name = element
                     .text()
                     .collect::<String>()
@@ -378,31 +373,25 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
                 // Dietary icons are in sibling <td> elements in the parent <tr>
                 let mut dietary_tags = Vec::new();
                 // Walk up: div.shortmenurecipes → td → tr (inner table) → td → tr (outer)
-                if let Some(parent_td) = element.parent() {
-                    if let Some(parent_tr) = parent_td.parent() {
+                if let Some(parent_td) = element.parent()
+                    && let Some(parent_tr) = parent_td.parent() {
                         // Check the outer row's sibling tds for images
-                        if let Some(outer_td) = parent_tr.parent() {
-                            if let Some(outer_tr) = outer_td.parent() {
-                                if let Some(outer_el) = scraper::ElementRef::wrap(outer_tr) {
+                        if let Some(outer_td) = parent_tr.parent()
+                            && let Some(outer_tr) = outer_td.parent()
+                                && let Some(outer_el) = scraper::ElementRef::wrap(outer_tr) {
                                     for td in outer_el.select(&SEL_TD) {
                                         for img in td.select(&SEL_IMG) {
-                                            if let Some(src) = img.value().attr("src") {
-                                                if let Some(icon_name) = src
+                                            if let Some(src) = img.value().attr("src")
+                                                && let Some(icon_name) = src
                                                     .strip_prefix("LegendImages/")
                                                     .and_then(|s| s.strip_suffix(".gif"))
-                                                {
-                                                    if let Some(tag) = icon_to_tag(icon_name) {
+                                                    && let Some(tag) = icon_to_tag(icon_name) {
                                                         dietary_tags.push(tag.to_string());
                                                     }
-                                                }
-                                            }
                                         }
                                     }
                                 }
-                            }
-                        }
                     }
-                }
 
                 if !item_name.is_empty() {
                     cat.items.push(MenuItem {
@@ -412,22 +401,18 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
                     });
                 }
             }
-        }
     }
 
     // Flush remaining
-    if let Some(cat) = current_cat {
-        if let Some(meal) = current_meal.as_mut() {
-            if !cat.items.is_empty() {
+    if let Some(cat) = current_cat
+        && let Some(meal) = current_meal.as_mut()
+            && !cat.items.is_empty() {
                 meal.categories.push(cat);
             }
-        }
-    }
-    if let Some(meal) = current_meal {
-        if !meal.categories.is_empty() {
+    if let Some(meal) = current_meal
+        && !meal.categories.is_empty() {
             meals.push(meal);
         }
-    }
 
     DiningMenu {
         hall_name: hall_name.to_string(),
@@ -454,11 +439,10 @@ fn enrich_recipe_ids(menu: &mut DiningMenu, long_menu: &DiningMenu) {
     for meal in &mut menu.meals {
         for cat in &mut meal.categories {
             for item in &mut cat.items {
-                if item.recipe_id.is_none() {
-                    if let Some(rid) = recipe_map.get(&item.name.to_lowercase()) {
+                if item.recipe_id.is_none()
+                    && let Some(rid) = recipe_map.get(&item.name.to_lowercase()) {
                         item.recipe_id = Some(rid.clone());
                     }
-                }
             }
         }
     }
@@ -476,18 +460,15 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
 
         if classes.contains(&"longmenugridheader") {
             // Finish previous category and meal
-            if let Some(cat) = current_cat.take() {
-                if let Some(meal) = current_meal.as_mut() {
-                    if !cat.items.is_empty() {
+            if let Some(cat) = current_cat.take()
+                && let Some(meal) = current_meal.as_mut()
+                    && !cat.items.is_empty() {
                         meal.categories.push(cat);
                     }
-                }
-            }
-            if let Some(meal) = current_meal.take() {
-                if !meal.categories.is_empty() {
+            if let Some(meal) = current_meal.take()
+                && !meal.categories.is_empty() {
                     meals.push(meal);
                 }
-            }
 
             // Extract meal name from <a name="MealName">
             let meal_name = element
@@ -503,13 +484,11 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
             });
         } else if classes.contains(&"longmenucolmenucat") {
             // Finish previous category
-            if let Some(cat) = current_cat.take() {
-                if let Some(meal) = current_meal.as_mut() {
-                    if !cat.items.is_empty() {
+            if let Some(cat) = current_cat.take()
+                && let Some(meal) = current_meal.as_mut()
+                    && !cat.items.is_empty() {
                         meal.categories.push(cat);
                     }
-                }
-            }
 
             let name = element.text().collect::<String>();
             let name = name
@@ -525,8 +504,8 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
                     items: Vec::new(),
                 });
             }
-        } else if classes.contains(&"longmenucoldispname") {
-            if let Some(cat) = current_cat.as_mut() {
+        } else if classes.contains(&"longmenucoldispname")
+            && let Some(cat) = current_cat.as_mut() {
                 // Extract item name and recipe ID from <a> link
                 let (item_name, recipe_id) = if let Some(a) = element.select(&SEL_LINK).next() {
                     let name = a.text().collect::<String>().trim().to_string();
@@ -545,24 +524,19 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
                 if let Some(parent_tr) = element
                     .parent() // td
                     .and_then(|n| n.parent()) // tr (inner)
-                {
-                    if let Some(parent_el) = scraper::ElementRef::wrap(parent_tr) {
+                    && let Some(parent_el) = scraper::ElementRef::wrap(parent_tr) {
                         for td in parent_el.select(&SEL_TD) {
                             for img in td.select(&SEL_IMG) {
-                                if let Some(src) = img.value().attr("src") {
-                                    if let Some(icon_name) = src
+                                if let Some(src) = img.value().attr("src")
+                                    && let Some(icon_name) = src
                                         .strip_prefix("LegendImages/")
                                         .and_then(|s| s.strip_suffix(".gif"))
-                                    {
-                                        if let Some(tag) = icon_to_tag(icon_name) {
+                                        && let Some(tag) = icon_to_tag(icon_name) {
                                             dietary_tags.push(tag.to_string());
                                         }
-                                    }
-                                }
                             }
                         }
                     }
-                }
 
                 if !item_name.is_empty() {
                     cat.items.push(MenuItem {
@@ -572,22 +546,18 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
                     });
                 }
             }
-        }
     }
 
     // Flush remaining category and meal
-    if let Some(cat) = current_cat {
-        if let Some(meal) = current_meal.as_mut() {
-            if !cat.items.is_empty() {
+    if let Some(cat) = current_cat
+        && let Some(meal) = current_meal.as_mut()
+            && !cat.items.is_empty() {
                 meal.categories.push(cat);
             }
-        }
-    }
-    if let Some(meal) = current_meal {
-        if !meal.categories.is_empty() {
+    if let Some(meal) = current_meal
+        && !meal.categories.is_empty() {
             meals.push(meal);
         }
-    }
 
     DiningMenu {
         hall_name: hall_name.to_string(),
@@ -767,11 +737,10 @@ fn parse_balance_table(html: &str) -> MealBalance {
             .select(&BAL_SEL)
             .next()
             .map(|c| c.text().collect::<String>().trim().to_string());
-        if let (Some(name), Some(balance)) = (name, balance) {
-            if !name.is_empty() {
+        if let (Some(name), Some(balance)) = (name, balance)
+            && !name.is_empty() {
                 accounts.push(BalanceAccount { name, balance });
             }
-        }
     }
 
     MealBalance { plan, accounts }
@@ -1029,13 +998,13 @@ impl DiningLocation {
     /// Format with a reference date for filtering upcoming special hours.
     pub fn format_with_date(&self, today: &str) -> String {
         let mut out = String::new();
-        let _ = write!(out, "### {} ({})\n", self.name, self.category);
+        let _ = writeln!(out, "### {} ({})", self.name, self.category);
         if self.regular_hours.is_empty() {
             out.push_str("Hours not available\n");
         } else {
             out.push_str("**Regular Hours:**\n");
             for h in &self.regular_hours {
-                let _ = write!(out, "- {}\n", h);
+                let _ = writeln!(out, "- {}", h);
             }
         }
 
@@ -1050,10 +1019,10 @@ impl DiningLocation {
             for dh in upcoming {
                 match (&dh.opens, &dh.closes) {
                     (Some(o), Some(c)) => {
-                        let _ = write!(out, "- {}: {} - {}\n", dh.date, o, c);
+                        let _ = writeln!(out, "- {}: {} - {}", dh.date, o, c);
                     }
                     _ => {
-                        let _ = write!(out, "- {}: CLOSED\n", dh.date);
+                        let _ = writeln!(out, "- {}: CLOSED", dh.date);
                     }
                 }
             }

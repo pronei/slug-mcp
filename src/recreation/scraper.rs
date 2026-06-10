@@ -421,7 +421,7 @@ fn parse_group_exercise(html: &str) -> Vec<GroupExerciseClass> {
                 // Location: word after "@"
                 let location = full_text
                     .rfind('@')
-                    .map(|i| full_text[i + 1..].trim().split_whitespace().next().unwrap_or(""))
+                    .map(|i| full_text[i + 1..].split_whitespace().next().unwrap_or(""))
                     .unwrap_or("")
                     .to_string();
 

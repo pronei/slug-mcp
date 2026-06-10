@@ -77,6 +77,9 @@ pub fn load_session(path: &Path) -> Result<Option<SessionData>> {
     Ok(Some(session))
 }
 
+/// Delete the saved session (logout). Retained for a future `logout` tool;
+/// no caller yet.
+#[allow(dead_code)]
 pub fn clear_session(path: &Path) -> Result<()> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),

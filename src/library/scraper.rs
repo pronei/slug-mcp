@@ -257,12 +257,11 @@ fn decode_js_unicode(s: &str) -> String {
         if c == '\\' {
             if let Some('u') = chars.next() {
                 let hex: String = chars.by_ref().take(4).collect();
-                if let Ok(code) = u32::from_str_radix(&hex, 16) {
-                    if let Some(ch) = char::from_u32(code) {
+                if let Ok(code) = u32::from_str_radix(&hex, 16)
+                    && let Some(ch) = char::from_u32(code) {
                         result.push(ch);
                         continue;
                     }
-                }
                 // Malformed escape — keep raw
                 result.push('\\');
                 result.push('u');
@@ -364,11 +363,10 @@ pub async fn scrape_availability(
     let mut slots_by_room: HashMap<u32, (Vec<TimeSlot>, Vec<TimeSlot>)> = HashMap::new();
     for slot in &grid.slots {
         // Filter by lid: only include rooms belonging to the requested library
-        if let Some(meta) = meta_map.get(&slot.item_id) {
-            if meta.lid != lid {
+        if let Some(meta) = meta_map.get(&slot.item_id)
+            && meta.lid != lid {
                 continue;
             }
-        }
 
         let entry = slots_by_room.entry(slot.item_id).or_default();
         let time_slot = TimeSlot {
@@ -626,11 +624,10 @@ fn parse_booking_form(html: &str, group_name: Option<&str>) -> Option<BookingFor
             _ => continue,
         };
 
-        if is_group_field && value.is_empty() {
-            if let Some(g) = group_name {
+        if is_group_field && value.is_empty()
+            && let Some(g) = group_name {
                 value = g.to_string();
             }
-        }
 
         if required && value.is_empty() {
             let display = if label_text.is_empty() {
@@ -1219,8 +1216,8 @@ pub async fn book_room(
             // session but finalizes by navigating to returnUrl — which a non-JS
             // client must do explicitly, or the session won't stick for the next
             // AJAX call. Follow it.
-            if landed.final_url.path().contains("/spaces/auth") {
-                if let Some(ret) = landed
+            if landed.final_url.path().contains("/spaces/auth")
+                && let Some(ret) = landed
                     .final_url
                     .query_pairs()
                     .find(|(k, _)| k == "returnUrl")
@@ -1232,7 +1229,6 @@ pub async fn book_room(
                         .unwrap_or_else(|_| format!("{LIBCAL_BASE}{ret}"));
                     let _ = auth_client.get(&ret_abs).send().await;
                 }
-            }
             authed = true;
             // The session is now live. Reuse the existing hold for the next
             // times POST — it usually survives the ~1s SSO hop; if it expired,

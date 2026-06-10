@@ -83,15 +83,14 @@ impl ClimbingService {
             .await?;
 
         // Handle GraphQL-level errors
-        if let Some(errors) = &response.errors {
-            if !errors.is_empty() {
+        if let Some(errors) = &response.errors
+            && !errors.is_empty() {
                 let mut out = String::from("# Climbing Search Error\n\n");
                 for e in errors {
                     let _ = writeln!(out, "- {}", e.message);
                 }
                 return Ok(out);
             }
-        }
 
         let areas = match &response.data {
             Some(d) => &d.areas,
@@ -114,19 +113,18 @@ impl ClimbingService {
             if let Some(tc) = area.total_climbs {
                 meta_parts.push(format!("{} routes", tc));
             }
-            if let Some(md) = &area.metadata {
-                if let (Some(lat), Some(lng)) = (md.lat, md.lng) {
+            if let Some(md) = &area.metadata
+                && let (Some(lat), Some(lng)) = (md.lat, md.lng) {
                     meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
                 }
-            }
             if !meta_parts.is_empty() {
                 let _ = writeln!(out, "_{}_", meta_parts.join(" \u{00b7} "));
                 out.push('\n');
             }
 
             // Sub-areas
-            if let Some(children) = &area.children {
-                if !children.is_empty() {
+            if let Some(children) = &area.children
+                && !children.is_empty() {
                     let _ = writeln!(out, "## Sub-areas");
                     for child in children {
                         let count = child
@@ -137,7 +135,6 @@ impl ClimbingService {
                     }
                     out.push('\n');
                 }
-            }
 
             // Routes
             if let Some(climbs) = &area.climbs {
@@ -167,23 +164,21 @@ impl ClimbingService {
                         let ctype = climb
                             .climb_type
                             .as_ref()
-                            .map(|ct| climb_type_label(ct))
+                            .map(climb_type_label)
                             .unwrap_or_default();
 
                         let mut parts = vec![format!("**{}**", climb.name), grade.to_string()];
                         if !ctype.is_empty() {
                             parts.push(ctype);
                         }
-                        if let Some(fa) = &climb.fa {
-                            if !fa.is_empty() {
+                        if let Some(fa) = &climb.fa
+                            && !fa.is_empty() {
                                 parts.push(format!("FA: {}", fa));
                             }
-                        }
-                        if let Some(len) = climb.length {
-                            if len > 0 {
+                        if let Some(len) = climb.length
+                            && len > 0 {
                                 parts.push(format!("{} ft", len));
                             }
-                        }
 
                         let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
                     }
@@ -193,12 +188,12 @@ impl ClimbingService {
         }
 
         let now = crate::util::now_pacific();
-        let _ = write!(
+        let _ = writeln!(
             out,
             "_Source: OpenBeta (community climbing database). \
              Coverage varies \u{2014} Pinnacles NP has excellent data; \
              Castle Rock SP is not yet in the database. \
-             Last updated: {}_\n",
+             Last updated: {}_",
             now.format("%-I:%M %p")
         );
 

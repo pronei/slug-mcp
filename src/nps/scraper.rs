@@ -152,13 +152,12 @@ fn format_single_park(park: &NpsPark) -> String {
     out.push('\n');
 
     // Description
-    if let Some(desc) = &park.description {
-        if !desc.is_empty() {
+    if let Some(desc) = &park.description
+        && !desc.is_empty() {
             let _ = writeln!(out, "## Description");
             let _ = writeln!(out, "{}", desc);
             out.push('\n');
         }
-    }
 
     // Operating hours
     if !park.operating_hours.is_empty() {
@@ -196,22 +195,20 @@ fn format_single_park(park: &NpsPark) -> String {
     }
 
     // Directions
-    if let Some(dir) = &park.directions_info {
-        if !dir.is_empty() {
+    if let Some(dir) = &park.directions_info
+        && !dir.is_empty() {
             let _ = writeln!(out, "## Directions");
             let _ = writeln!(out, "{}", dir);
             out.push('\n');
         }
-    }
 
     // Weather
-    if let Some(weather) = &park.weather_info {
-        if !weather.is_empty() {
+    if let Some(weather) = &park.weather_info
+        && !weather.is_empty() {
             let _ = writeln!(out, "## Weather");
             let _ = writeln!(out, "{}", weather);
             out.push('\n');
         }
-    }
 
     // Contact
     if let Some(contacts) = &park.contacts {
@@ -262,12 +259,11 @@ fn format_search_results(response: &NpsResponse) -> String {
             state
         );
 
-        if let Some(desc) = &park.description {
-            if !desc.is_empty() {
+        if let Some(desc) = &park.description
+            && !desc.is_empty() {
                 let snippet = crate::util::truncate(desc, 150);
                 let _ = writeln!(out, "   _{}_", snippet);
             }
-        }
 
         if let Some(url) = &park.url {
             let _ = writeln!(out, "   [nps.gov/{}]({})", park.park_code, url);

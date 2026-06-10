@@ -82,8 +82,7 @@ fn normalize_query(query: &str) -> String {
     query
         .trim()
         .to_lowercase()
-        .replace('.', "")
-        .replace(',', "")
+        .replace(['.', ','], "")
 }
 
 #[cfg(test)]

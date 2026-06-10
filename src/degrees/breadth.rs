@@ -79,21 +79,19 @@ fn parse_breadth_csv(csv: &str) -> Result<BreadthRequirements> {
 
         // Empty line = category boundary
         if line.is_empty() {
-            if let Some(cat) = current_category.take() {
-                if !cat.courses.is_empty() {
+            if let Some(cat) = current_category.take()
+                && !cat.courses.is_empty() {
                     categories.push(cat);
                 }
-            }
             continue;
         }
 
         // Check for "NOT ALLOWED" section
         if line.to_uppercase().contains("NOT ALLOWED") {
-            if let Some(cat) = current_category.take() {
-                if !cat.courses.is_empty() {
+            if let Some(cat) = current_category.take()
+                && !cat.courses.is_empty() {
                     categories.push(cat);
                 }
-            }
             in_not_allowed = true;
             continue;
         }
@@ -116,11 +114,10 @@ fn parse_breadth_csv(csv: &str) -> Result<BreadthRequirements> {
             }
         } else {
             // Non-course, non-empty line = category header
-            if let Some(cat) = current_category.take() {
-                if !cat.courses.is_empty() {
+            if let Some(cat) = current_category.take()
+                && !cat.courses.is_empty() {
                     categories.push(cat);
                 }
-            }
             if !in_not_allowed {
                 current_category = Some(BreadthCategory {
                     name: line.to_string(),
@@ -131,11 +128,10 @@ fn parse_breadth_csv(csv: &str) -> Result<BreadthRequirements> {
     }
 
     // Flush remaining category
-    if let Some(cat) = current_category.take() {
-        if !cat.courses.is_empty() {
+    if let Some(cat) = current_category.take()
+        && !cat.courses.is_empty() {
             categories.push(cat);
         }
-    }
 
     Ok(BreadthRequirements {
         categories,

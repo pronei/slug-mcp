@@ -197,6 +197,7 @@ impl BiodiversityService {
 
     // ─── iNaturalist ───
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn search_species(
         &self,
         query: Option<&str>,

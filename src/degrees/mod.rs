@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::cache::CacheStore;
 use breadth::{scrape_breadth_requirements, BreadthRequirements};
 use programs::{resolve_program, ProgramIndex};
-use scraper::{scrape_program_list, scrape_requirements, DegreeType};
+use scraper::{scrape_program_list, scrape_requirements};
 
 const BACHELORS_URL: &str =
     "https://catalog.ucsc.edu/en/current/general-catalog/academic-programs/bachelors-degrees/";
@@ -100,12 +100,11 @@ impl DegreeService {
         let mut output = reqs.format();
 
         // Append breadth requirements for CSE MS
-        if Self::has_breadth_requirements(&entry.slug) {
-            if let Ok(breadth) = self.load_breadth_requirements().await {
+        if Self::has_breadth_requirements(&entry.slug)
+            && let Ok(breadth) = self.load_breadth_requirements().await {
                 output.push('\n');
                 output.push_str(&breadth.format());
             }
-        }
 
         Ok(output)
     }
@@ -135,13 +134,12 @@ impl DegreeService {
         let mut report = progress::check_progress(&reqs, completed_courses, completed_ge);
 
         // Append breadth progress for CSE MS
-        if Self::has_breadth_requirements(&entry.slug) {
-            if let Ok(breadth_reqs) = self.load_breadth_requirements().await {
+        if Self::has_breadth_requirements(&entry.slug)
+            && let Ok(breadth_reqs) = self.load_breadth_requirements().await {
                 let breadth_progress =
                     breadth::check_breadth_progress(&breadth_reqs, completed_courses);
                 report.breadth_progress = Some(breadth_progress);
             }
-        }
 
         Ok(report.format())
     }

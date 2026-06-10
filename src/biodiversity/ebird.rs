@@ -102,6 +102,7 @@ fn to_observation(o: EBirdObs) -> Observation {
 
 // ─── Recent observations: geographic ───
 
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_recent_geo(
     http: &reqwest::Client,
     key: &str,
@@ -118,6 +119,7 @@ pub async fn fetch_recent_geo(
     fetch_observations(http, key, &url).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_recent_geo_species(
     http: &reqwest::Client,
     key: &str,
@@ -195,6 +197,7 @@ pub async fn fetch_recent_region_notable(
 
 // ─── Historic observations: by date ───
 
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_historic_region(
     http: &reqwest::Client,
     key: &str,
@@ -213,6 +216,7 @@ pub async fn fetch_historic_region(
 
 // ─── Nearest sighting of a species ───
 
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_nearest_species(
     http: &reqwest::Client,
     key: &str,

@@ -110,7 +110,7 @@ impl EventsService {
         let limit = limit.unwrap_or(10).min(20);
 
         let location_slug = location
-            .map(|l| eventbrite::location_to_slug(l))
+            .map(eventbrite::location_to_slug)
             .unwrap_or_else(|| DEFAULT_LOCATION_SLUG.to_string());
 
         let cache_key = format!(

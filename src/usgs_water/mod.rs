@@ -172,8 +172,8 @@ fn parse_iv(body: &IvResponse) -> Result<Vec<StreamReading>> {
             .map(|v| v.value.clone())
             .unwrap_or_default();
         for vb in &ts.values {
-            if let Some(latest) = vb.value.last() {
-                if let Ok(v) = latest.value.parse::<f64>() {
+            if let Some(latest) = vb.value.last()
+                && let Ok(v) = latest.value.parse::<f64>() {
                     // USGS emits -999999 for missing
                     if v < -99999.0 {
                         continue;
@@ -188,7 +188,6 @@ fn parse_iv(body: &IvResponse) -> Result<Vec<StreamReading>> {
                         site_id: site_id.clone(),
                     });
                 }
-            }
         }
     }
     if out.is_empty() {

@@ -21,7 +21,6 @@ pub use fusion::{HabRiskRequest, ResearchSnapshotRequest, UpwellingStateRequest}
 pub use hfr::HfrRequest;
 pub use m1::M1Request;
 pub use sst::SstRequest;
-pub use types::*;
 pub use upwelling::UpwellingRequest;
 pub use wharf::WharfRequest;
 

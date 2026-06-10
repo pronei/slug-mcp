@@ -212,11 +212,10 @@ fn write_alert(out: &mut String, a: &nws::AlertProperties) {
         let trimmed: String = a.description.lines().take(4).collect::<Vec<_>>().join("\n");
         out.push_str(&format!("{}\n", trimmed));
     }
-    if let Some(instruction) = &a.instruction {
-        if !instruction.is_empty() {
+    if let Some(instruction) = &a.instruction
+        && !instruction.is_empty() {
             out.push_str(&format!("_Instructions:_ {}\n", instruction));
         }
-    }
     if !a.expires.is_empty() {
         out.push_str(&format!("_Expires: {}_\n", a.expires));
     }

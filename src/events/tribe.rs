@@ -121,11 +121,10 @@ impl TribeEvent {
             out.push('\n');
         }
 
-        if let Some(cost) = &self.cost {
-            if !cost.is_empty() {
+        if let Some(cost) = &self.cost
+            && !cost.is_empty() {
                 out.push_str(&format!("- **Cost**: {}\n", cost));
             }
-        }
 
         if !self.categories.is_empty() {
             let cats: Vec<&str> = self.categories.iter().map(|c| c.name.as_str()).collect();

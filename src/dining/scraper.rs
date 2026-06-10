@@ -3,6 +3,8 @@ use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use scraper::Html;
+#[cfg(feature = "auth")]
+use scraper::Selector;
 
 use crate::util::{selectors, FuzzyMatcher};
 
@@ -593,27 +595,36 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
 
 #[cfg(feature = "auth")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BalanceAccount {
+    pub name: String,
+    /// Raw balance string as shown (e.g. "$5.50", "0", "3 meals").
+    pub balance: String,
+}
+
+#[cfg(feature = "auth")]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MealBalance {
-    pub slug_points: Option<f64>,
-    pub banana_bucks: Option<f64>,
-    pub meal_swipes: Option<u32>,
+    /// Optional meal-plan label (e.g. "STAGING", "Carson 19/wk").
+    pub plan: Option<String>,
+    /// Every tender row from the GET funds overview, in display order.
+    pub accounts: Vec<BalanceAccount>,
 }
 
 #[cfg(feature = "auth")]
 impl MealBalance {
     pub fn format(&self) -> String {
         let mut out = String::from("# Meal Plan Balance\n\n");
-        if let Some(sp) = self.slug_points {
-            let _ = writeln!(out, "- **Slug Points**: ${:.2}", sp);
+        if let Some(plan) = &self.plan {
+            let _ = writeln!(out, "_Current plan: {}_\n", plan);
         }
-        if let Some(bb) = self.banana_bucks {
-            let _ = writeln!(out, "- **Banana Bucks**: ${:.2}", bb);
+        if self.accounts.is_empty() {
+            out.push_str(
+                "Could not retrieve balance information. The balance page may have changed.\n",
+            );
+            return out;
         }
-        if let Some(ms) = self.meal_swipes {
-            let _ = writeln!(out, "- **Meal Swipes Remaining**: {}", ms);
-        }
-        if self.slug_points.is_none() && self.banana_bucks.is_none() && self.meal_swipes.is_none() {
-            out.push_str("Could not retrieve balance information. The balance page may have changed.\n");
+        for acct in &self.accounts {
+            let _ = writeln!(out, "- **{}**: {}", acct.name, acct.balance);
         }
         out
     }
@@ -628,133 +639,147 @@ pub struct BalanceResult {
 }
 
 #[cfg(feature = "auth")]
+const FUNDS_HOME_URL: &str = "https://get.cbord.com/ucsc/full/funds_home.php";
+#[cfg(feature = "auth")]
+const FUNDS_OVERVIEW_PARTIAL_URL: &str =
+    "https://get.cbord.com/ucsc/full/funds_overview_partial.php";
+
+#[cfg(feature = "auth")]
 pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
-    // The meal plan balance is available through the GET system at
-    // get.cbord.com/ucsc. This requires an authenticated session — the
-    // client should have IdP cookies from browser SSO that allow the
-    // SAML redirect chain to auto-approve.
-    let url = "https://get.cbord.com/ucsc/full/funds_home.php";
-
-    let resp = crate::auth::saml_aware_get(client, url)
+    // Balances live in the GET system at get.cbord.com/ucsc and require an
+    // authenticated session (IdP cookies from browser SSO auto-approve the
+    // SAML chain). funds_home.php only renders the *chrome* — the balance
+    // table is fetched by a second AJAX POST to funds_overview_partial.php
+    // with a per-user `userId` (UUID) and a per-session `formToken`, both
+    // embedded in the funds_home page JS. reqwest doesn't run that JS, so we
+    // replicate the POST ourselves.
+    let home = crate::auth::saml_aware_get(client, FUNDS_HOME_URL)
         .await
-        .context("failed to fetch balance page")?;
+        .context("failed to fetch funds home page")?;
 
-    if !resp.status.is_success() {
-        anyhow::bail!("Balance page returned status {}", resp.status);
+    if !home.status.is_success() {
+        anyhow::bail!("Funds home page returned status {}", home.status);
     }
 
-    // Try to parse balance values
-    if let Some(balance) = try_parse_balance(&resp.body) {
+    // If we got bounced to the IdP, the session is no longer valid.
+    if home.final_url.host_str() == Some("login.ucsc.edu") {
         return Ok(BalanceResult {
-            balance,
-            debug_snippet: None,
+            balance: MealBalance::default(),
+            debug_snippet: Some(
+                "Session expired — funds page redirected to SSO login. Run `login` again.".into(),
+            ),
         });
     }
 
-    // Parsing failed — extract visible text (skipping script/style) for debugging
-    let page_text = extract_visible_text(&resp.body);
-    let clean_text: String = page_text
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    // char-safe truncation — byte-slicing panics if 1000 lands mid-codepoint
-    let snippet = crate::util::truncate(&clean_text, 1000);
+    let Some((user_id, form_token)) = extract_overview_tokens(&home.body) else {
+        let snippet = crate::util::truncate(&clean_visible_text(&home.body), 1000);
+        return Ok(BalanceResult {
+            balance: MealBalance::default(),
+            debug_snippet: Some(format!(
+                "Could not find userId/formToken on funds page (markup may have changed). Page text: {snippet}"
+            )),
+        });
+    };
+
+    let partial = client
+        .post(FUNDS_OVERVIEW_PARTIAL_URL)
+        .header("X-Requested-With", "XMLHttpRequest")
+        .header("Referer", FUNDS_HOME_URL)
+        .form(&[
+            ("userId", user_id.as_str()),
+            ("formToken", form_token.as_str()),
+        ])
+        .send()
+        .await
+        .context("failed to fetch funds overview partial")?;
+
+    if !partial.status().is_success() {
+        anyhow::bail!("Funds overview partial returned status {}", partial.status());
+    }
+    let body = partial.text().await.context("reading funds overview partial")?;
+
+    let balance = parse_balance_table(&body);
+    if balance.accounts.is_empty() {
+        let snippet = crate::util::truncate(&clean_visible_text(&body), 1000);
+        return Ok(BalanceResult {
+            balance,
+            debug_snippet: Some(format!(
+                "Funds overview returned no parseable accounts. Fragment: {snippet}"
+            )),
+        });
+    }
 
     Ok(BalanceResult {
-        balance: MealBalance {
-            slug_points: None,
-            banana_bucks: None,
-            meal_swipes: None,
-        },
-        debug_snippet: Some(snippet),
+        balance,
+        debug_snippet: None,
     })
 }
 
 #[cfg(feature = "auth")]
-/// Extract visible text from HTML, stripping script/style/noscript blocks first.
-fn extract_visible_text(html: &str) -> String {
-    // Strip <script>...</script>, <style>...</style>, <noscript>...</noscript> blocks
-    let stripped = strip_tag_blocks(html, "script");
-    let stripped = strip_tag_blocks(&stripped, "style");
-    let stripped = strip_tag_blocks(&stripped, "noscript");
+/// Pull the `userId` UUID and `formToken` the page JS passes to
+/// `getOverview(...)` / the `$.post` to funds_overview_partial.php.
+fn extract_overview_tokens(html: &str) -> Option<(String, String)> {
+    use std::sync::LazyLock;
+    static UID_RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"getOverview\("([0-9a-fA-F-]{8,})"\)"#).unwrap());
+    static TOKEN_RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#""formToken"\s*:\s*"([^"]+)""#).unwrap());
 
-    let document = Html::parse_document(&stripped);
-    document.root_element().text().collect::<String>()
+    let uid = UID_RE.captures(html)?.get(1)?.as_str().to_string();
+    let token = TOKEN_RE.captures(html)?.get(1)?.as_str().to_string();
+    Some((uid, token))
 }
 
 #[cfg(feature = "auth")]
-/// Remove all occurrences of <tag ...>...</tag> (case-insensitive) from HTML.
-fn strip_tag_blocks(html: &str, tag: &str) -> String {
-    let mut result = String::with_capacity(html.len());
-    let lower = html.to_lowercase();
-    let open = format!("<{}", tag);
-    let close = format!("</{}>", tag);
+/// Parse the funds overview fragment: a table of `account_name` / `balance`
+/// cells, optionally preceded by a "Current Plan: <strong>NAME</strong>" line.
+fn parse_balance_table(html: &str) -> MealBalance {
+    use std::sync::LazyLock;
+    static ROW_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("tbody tr").expect("hardcoded selector"));
+    static NAME_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("td.account_name").expect("hardcoded selector"));
+    static BAL_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("td.balance").expect("hardcoded selector"));
+    static PLAN_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse(".pd-1 strong, .pd-1").expect("hardcoded selector"));
 
-    let mut pos = 0;
-    while pos < html.len() {
-        if let Some(start) = lower[pos..].find(&open) {
-            let abs_start = pos + start;
-            result.push_str(&html[pos..abs_start]);
-            // Find closing tag
-            if let Some(end) = lower[abs_start..].find(&close) {
-                pos = abs_start + end + close.len();
-            } else {
-                // No closing tag found — skip rest
-                break;
+    let document = Html::parse_fragment(html);
+
+    let plan = document.select(&PLAN_SEL).next().and_then(|el| {
+        let t = el.text().collect::<String>();
+        let t = t.trim_start_matches("Current Plan:").trim();
+        (!t.is_empty()).then(|| t.to_string())
+    });
+
+    let mut accounts = Vec::new();
+    for row in document.select(&ROW_SEL) {
+        let name = row
+            .select(&NAME_SEL)
+            .next()
+            .map(|c| c.text().collect::<String>().trim().to_string());
+        let balance = row
+            .select(&BAL_SEL)
+            .next()
+            .map(|c| c.text().collect::<String>().trim().to_string());
+        if let (Some(name), Some(balance)) = (name, balance) {
+            if !name.is_empty() {
+                accounts.push(BalanceAccount { name, balance });
             }
-        } else {
-            result.push_str(&html[pos..]);
-            break;
         }
     }
-    result
+
+    MealBalance { plan, accounts }
 }
 
 #[cfg(feature = "auth")]
-fn try_parse_balance(html: &str) -> Option<MealBalance> {
-    let text = extract_visible_text(html);
-
-    let slug_points = extract_balance_value(&text, "slug points");
-    let banana_bucks = extract_balance_value(&text, "banana bucks");
-
-    if slug_points.is_some() || banana_bucks.is_some() {
-        Some(MealBalance {
-            slug_points,
-            banana_bucks,
-            meal_swipes: None,
-        })
-    } else {
-        None
-    }
-}
-
-#[cfg(feature = "auth")]
-fn extract_balance_value(text: &str, label: &str) -> Option<f64> {
-    let lower = text.to_lowercase();
-    let idx = lower.find(label)?;
-    let after = &text[idx + label.len()..];
-
-    let mut num_str = String::new();
-    let mut found_dollar = false;
-    for c in after.chars() {
-        if c == '$' {
-            found_dollar = true;
-            continue;
-        }
-        if found_dollar && (c.is_ascii_digit() || c == '.' || c == ',') {
-            if c != ',' {
-                num_str.push(c);
-            }
-        } else if found_dollar && !num_str.is_empty() {
-            break;
-        }
-    }
-
-    if num_str.is_empty() {
-        None
-    } else {
-        num_str.parse().ok()
-    }
+/// Collapse an HTML fragment to whitespace-normalized visible text (debug only).
+fn clean_visible_text(html: &str) -> String {
+    let text = Html::parse_fragment(html)
+        .root_element()
+        .text()
+        .collect::<String>();
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 // --- Nutrition label scraper ---
@@ -1033,6 +1058,59 @@ impl DiningLocation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "auth")]
+    const FUNDS_OVERVIEW_FIXTURE: &str = include_str!("fixtures/funds_overview_partial.html");
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_parse_balance_table() {
+        let bal = parse_balance_table(FUNDS_OVERVIEW_FIXTURE);
+        assert_eq!(bal.plan.as_deref(), Some("Carson 19/wk"));
+        assert_eq!(bal.accounts.len(), 5);
+        let by_name = |n: &str| {
+            bal.accounts
+                .iter()
+                .find(|a| a.name == n)
+                .map(|a| a.balance.as_str())
+        };
+        assert_eq!(by_name("Banana Bucks"), Some("$42.75"));
+        assert_eq!(by_name("Slug Points"), Some("$310.50"));
+        assert_eq!(by_name("Flexi Dollars"), Some("$125.00"));
+        assert_eq!(by_name("Board"), Some("14"));
+        assert_eq!(by_name("Donated Meal"), Some("0"));
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_balance_format_renders_accounts() {
+        let bal = parse_balance_table(FUNDS_OVERVIEW_FIXTURE);
+        let out = bal.format();
+        assert!(out.contains("Current plan: Carson 19/wk"));
+        assert!(out.contains("**Banana Bucks**: $42.75"));
+        assert!(out.contains("**Slug Points**: $310.50"));
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_balance_empty_table_reports_failure() {
+        let bal = parse_balance_table("<div>no table here</div>");
+        assert!(bal.accounts.is_empty());
+        assert!(bal.format().contains("Could not retrieve balance"));
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_extract_overview_tokens() {
+        let html = r#"<script>
+            getOverview("07176fd1-e4d6-4724-a4f7-10fc0ea1d808");
+            $.post("funds_overview_partial.php", {"userId": id, "formToken": "6a29a1d09cdd26.64464417"},
+        </script>"#;
+        let (uid, token) = extract_overview_tokens(html).unwrap();
+        assert_eq!(uid, "07176fd1-e4d6-4724-a4f7-10fc0ea1d808");
+        assert_eq!(token, "6a29a1d09cdd26.64464417");
+        assert!(extract_overview_tokens("<script>no tokens</script>").is_none());
+    }
 
     const MOCK_LONGMENU_HTML: &str = r#"<html><body>
     <table><tr>

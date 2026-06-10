@@ -1,0 +1,45 @@
+<!--
+  Trimmed capture of a campusdirectory.ucsc.edu cd_simple results page.
+  Column order (cd_simple, 2026):
+    name | phone | email | dept | title | affil | mailstop | sortname
+  The email cell obfuscates the address as Base64.decode('<payload>'),
+  where the decoded text is an <a href="mailto:...">...</a> snippet.
+  Two people are present plus a header row (thead) that must be ignored
+  because the parser only selects `tbody tr`.
+    - Tantalo, Patrick:  ptantalo@ucsc.edu  / Computer Science & Engineering
+    - Frigaard, Owen:    ofrigaar@ucsc.edu   / Molecular, Cell & Developmental Biology
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Campus Directory</title></head>
+<body>
+  <table class="results table">
+    <thead>
+      <tr>
+        <th>Name</th><th>Phone</th><th>Email</th><th>Department</th>
+        <th>Title</th><th>Affiliation</th><th>Mail Stop</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="cd_detail?guid=G089085136">Tantalo, Patrick</a></td>
+        <td>(831) 459-1234</td>
+        <td><script type="text/javascript">document.write(Base64.decode('PGEgaHJlZj0ibWFpbHRvOnB0YW50YWxvQHVjc2MuZWR1Ij5wdGFudGFsb0B1Y3NjLmVkdTwvYT4='));</script></td>
+        <td>Computer Science &amp; Engineering</td>
+        <td>Teaching Professor</td>
+        <td>Staff &amp; Faculty</td>
+        <td>SOE3</td>
+      </tr>
+      <tr>
+        <td><a href="cd_detail?guid=G077012988&amp;ref=search">Frigaard, Owen</a></td>
+        <td>(831) 459-5678</td>
+        <td><script type="text/javascript">document.write(Base64.decode('PGEgaHJlZj0ibWFpbHRvOm9mcmlnYWFyQHVjc2MuZWR1Ij5vZnJpZ2FhckB1Y3NjLmVkdTwvYT4='));</script></td>
+        <td>Molecular, Cell &amp; Developmental Biology</td>
+        <td>Professor</td>
+        <td>Staff &amp; Faculty</td>
+        <td>SINS</td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>

@@ -150,3 +150,68 @@ impl TribeEvent {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TRIBE_FIXTURE: &str = include_str!("fixtures/tribe_events.json");
+
+    #[test]
+    fn deserialize_tribe_response() {
+        let resp: TribeEventsResponse = serde_json::from_str(TRIBE_FIXTURE).unwrap();
+        assert_eq!(resp.total, 2);
+        assert_eq!(resp.total_pages, 1);
+        assert_eq!(resp.events.len(), 2);
+    }
+
+    #[test]
+    fn event_with_full_venue_multiple_organizers_and_categories() {
+        let resp: TribeEventsResponse = serde_json::from_str(TRIBE_FIXTURE).unwrap();
+        let ev = &resp.events[0];
+        assert_eq!(ev.id, 90210);
+        assert_eq!(ev.venue_name(), Some("Lick Observatory"));
+        assert_eq!(
+            ev.venue_location().as_deref(),
+            Some("7281 Mount Hamilton Rd, Mount Hamilton")
+        );
+        assert_eq!(ev.organizer.len(), 2);
+        assert_eq!(ev.categories.len(), 2);
+        assert_eq!(ev.tags.len(), 2);
+
+        let summary = ev.format_summary();
+        // venue line includes name + (address, city)
+        assert!(summary.contains("**Where**: Lick Observatory (7281 Mount Hamilton Rd, Mount Hamilton)"));
+        // multiple organizers are comma-joined
+        assert!(summary.contains(
+            "**Organizer**: Department of Astronomy & Astrophysics, UCSC Public Programs"
+        ));
+        // multiple categories are comma-joined
+        assert!(summary.contains("**Category**: Science, Community"));
+        assert!(summary.contains("**Cost**: Free"));
+        // HTML in description is stripped
+        assert!(summary.contains("**Description**: Join us for an evening of astronomy"));
+        assert!(!summary.contains("<strong>"));
+    }
+
+    #[test]
+    fn event_with_empty_venue_variant() {
+        let resp: TribeEventsResponse = serde_json::from_str(TRIBE_FIXTURE).unwrap();
+        let ev = &resp.events[1];
+        assert_eq!(ev.id, 90211);
+        // "venue": [] deserializes to the Empty variant → no name/location.
+        assert!(matches!(ev.venue, TribeVenueField::Empty(_)));
+        assert_eq!(ev.venue_name(), None);
+        assert_eq!(ev.venue_location(), None);
+
+        let summary = ev.format_summary();
+        // No venue line when venue is empty.
+        assert!(!summary.contains("**Where**"));
+        // Empty cost string is suppressed.
+        assert!(!summary.contains("**Cost**"));
+        // null description → no description line.
+        assert!(!summary.contains("**Description**"));
+        // single organizer still rendered
+        assert!(summary.contains("**Organizer**: Career Success"));
+    }
+}

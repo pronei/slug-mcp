@@ -511,4 +511,120 @@ CYCLING</span></strong></a><br />
         assert!(classes.is_empty());
     }
 
+    #[test]
+    fn parse_group_exercise_unicode_class_names() {
+        const FIXTURE: &str = include_str!("fixtures/group_exercise_unicode.html");
+        let classes = parse_group_exercise(FIXTURE);
+        assert_eq!(classes.len(), 2, "got: {:#?}", classes);
+
+        let cafe = &classes[0];
+        assert_eq!(cafe.name, "CAFÉ MOVEMENT FLOW");
+        assert_eq!(cafe.day, "Monday");
+        assert_eq!(cafe.time, "9:15a");
+        assert_eq!(cafe.instructor, "Renée");
+        assert_eq!(cafe.location, "DNC");
+        assert_eq!(cafe.location_full, "Dance Studio");
+        assert!(cafe
+            .registration_url
+            .as_ref()
+            .unwrap()
+            .contains("cafe-001"));
+
+        let piyo = &classes[1];
+        assert_eq!(piyo.name, "PIYO® STRENGTH");
+        assert_eq!(piyo.day, "Tuesday");
+        assert_eq!(piyo.time, "6:30p");
+        assert_eq!(piyo.instructor, "Søren");
+        assert_eq!(piyo.location, "MAS");
+        assert_eq!(piyo.location_full, "Martial Arts Studio");
+    }
+}
+
+#[cfg(test)]
+mod occupancy_tests {
+    use super::*;
+
+    const OCCUPANCY_FIXTURE: &str = include_str!("fixtures/occupancy.html");
+
+    #[test]
+    fn parse_occupancy_dedupes_mobile_canvases() {
+        let facilities = parse_occupancy(OCCUPANCY_FIXTURE);
+        // Three facilities; each "-sm" mobile duplicate must be skipped.
+        assert_eq!(facilities.len(), 3, "got: {:#?}", facilities);
+    }
+
+    #[test]
+    fn parse_occupancy_at_capacity() {
+        let facilities = parse_occupancy(OCCUPANCY_FIXTURE);
+        let fitness = facilities
+            .iter()
+            .find(|f| f.name == "Fitness Center")
+            .expect("fitness center present");
+        // 250 occupied, 0 remaining → full.
+        assert_eq!(fitness.current_occupancy, 250);
+        assert_eq!(fitness.max_capacity, 250);
+        // numeric "N. " enumeration prefix is stripped from the name.
+        assert!(!fitness.name.starts_with('1'));
+        // format() reports 100% utilization and 0 remaining.
+        let rendered = fitness.format();
+        assert!(rendered.contains("250 / 250"));
+        assert!(rendered.contains("(0 remaining)"));
+        assert!(rendered.contains("100%"));
+    }
+
+    #[test]
+    fn parse_occupancy_partial() {
+        let facilities = parse_occupancy(OCCUPANCY_FIXTURE);
+        let pool = facilities
+            .iter()
+            .find(|f| f.name == "Swimming Pool")
+            .expect("pool present");
+        assert_eq!(pool.current_occupancy, 18);
+        assert_eq!(pool.max_capacity, 60); // 18 + 42
+    }
+
+    #[test]
+    fn parse_occupancy_unparseable_remaining_treated_as_full() {
+        let facilities = parse_occupancy(OCCUPANCY_FIXTURE);
+        let wall = facilities
+            .iter()
+            .find(|f| f.name == "Climbing Wall")
+            .expect("climbing wall present");
+        // data-remaining="closed" fails to parse → 0 → max == occupancy (100%).
+        assert_eq!(wall.current_occupancy, 44);
+        assert_eq!(wall.max_capacity, 44);
+        assert!(wall.format().contains("100%"));
+    }
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    use super::*;
+
+    const SCHEDULE_EMPTY_FIXTURE: &str = include_str!("fixtures/schedule_empty.html");
+    const SCHEDULE_POPULATED_FIXTURE: &str = include_str!("fixtures/schedule_populated.html");
+
+    #[test]
+    fn parse_schedule_no_classes_yields_empty() {
+        let schedule = parse_schedule(SCHEDULE_EMPTY_FIXTURE, "abcdef1234567890");
+        assert!(schedule.entries.is_empty(), "got: {:#?}", schedule.entries);
+        // format() renders the empty-state line.
+        assert!(schedule.format().contains("No scheduled events."));
+    }
+
+    #[test]
+    fn parse_schedule_populated_rows() {
+        let schedule = parse_schedule(SCHEDULE_POPULATED_FIXTURE, "abcdef1234567890");
+        // Three tbody rows; the <th> header row is ignored.
+        assert_eq!(schedule.entries.len(), 3, "got: {:#?}", schedule.entries);
+
+        assert_eq!(schedule.entries[0].time, "6:00 AM - 9:00 AM");
+        assert_eq!(schedule.entries[0].event, "Lap Swim");
+
+        // A 3-cell row joins the extra cells with " — ".
+        assert_eq!(schedule.entries[1].time, "12:00 PM - 1:00 PM");
+        assert_eq!(schedule.entries[1].event, "Water Aerobics — Instructor: Dana");
+
+        assert_eq!(schedule.entries[2].event, "Open Rec Swim");
+    }
 }

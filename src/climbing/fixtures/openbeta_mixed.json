@@ -1,0 +1,46 @@
+{
+  "data": {
+    "areas": [
+      {
+        "area_name": "Pinnacles National Park",
+        "totalClimbs": 4,
+        "metadata": { "lat": 36.4855, "lng": -121.1963 },
+        "pathTokens": ["USA", "California", "Central Coast", "Pinnacles National Park"],
+        "children": [
+          { "area_name": "Discovery Wall", "totalClimbs": 2 },
+          { "area_name": "Boulder Garden", "totalClimbs": 2 }
+        ],
+        "climbs": [
+          {
+            "name": "The Oracle",
+            "grades": { "yds": "5.11a" },
+            "type": { "sport": true, "trad": false, "bouldering": false, "tr": false },
+            "fa": "John Bachar",
+            "length": 30
+          },
+          {
+            "name": "Old Original",
+            "grades": { "yds": "5.6" },
+            "type": { "sport": false, "trad": true, "bouldering": false, "tr": false },
+            "fa": "unknown",
+            "length": 45
+          },
+          {
+            "name": "Sad Boulder Problem",
+            "grades": { "yds": null },
+            "type": { "sport": false, "trad": false, "bouldering": true, "tr": false },
+            "fa": "",
+            "length": 0
+          },
+          {
+            "name": "Toprope Slab",
+            "grades": { "yds": "5.4" },
+            "type": { "sport": false, "trad": false, "bouldering": false, "tr": true },
+            "fa": null,
+            "length": null
+          }
+        ]
+      }
+    ]
+  }
+}

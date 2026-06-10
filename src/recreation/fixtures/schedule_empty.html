@@ -1,0 +1,30 @@
+<!--
+  Trimmed capture of https://campusrec.ucsc.edu/Facility/GetSchedule for a facility
+  with NO scheduled events today. The FullCalendar mount is empty: no <tr><td> data
+  rows and no .fc-event elements, so parse_schedule should yield zero entries.
+  The page header still carries the facility name in a <h2 class="panel-title">.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Facility Schedule</title></head>
+<body>
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <h2 class="panel-title">East Field House</h2>
+    </div>
+    <div class="panel-body">
+      <div id="calendar" class="fc fc-unthemed">
+        <div class="fc-view-container">
+          <div class="fc-view fc-listMonth-view">
+            <div class="fc-list-empty-wrap2">
+              <div class="fc-list-empty-wrap1">
+                <div class="fc-list-empty">No events to display</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

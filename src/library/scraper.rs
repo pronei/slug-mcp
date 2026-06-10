@@ -1122,6 +1122,50 @@ mod tests {
         assert!(!grid.slots[1].class_name.is_empty()); // booked
     }
 
+    const AVAILABILITY_GRID_FIXTURE: &str = include_str!("fixtures/availability_grid.json");
+
+    #[test]
+    fn test_grid_mixed_booked_available_same_room() {
+        let grid: GridResponse = serde_json::from_str(AVAILABILITY_GRID_FIXTURE).unwrap();
+        assert_eq!(grid.slots.len(), 7);
+
+        // Replicate scrape_availability's grouping (available = empty className,
+        // booked = non-empty) for room 139536, which has both across the day.
+        let mut available: Vec<TimeSlot> = Vec::new();
+        let mut booked: Vec<TimeSlot> = Vec::new();
+        for slot in grid.slots.iter().filter(|s| s.item_id == 139536) {
+            let ts = TimeSlot {
+                start: format_time(&slot.start),
+                end: format_time(&slot.end),
+            };
+            if slot.class_name.is_empty() {
+                available.push(ts);
+            } else {
+                booked.push(ts);
+            }
+        }
+
+        // 3 free + 2 booked slots for the same room.
+        assert_eq!(available.len(), 3, "available: {:?}", available);
+        assert_eq!(booked.len(), 2, "booked: {:?}", booked);
+        // times are normalized to HH:MM
+        assert_eq!(available[0].start, "09:00");
+        assert_eq!(booked[0].start, "09:30");
+        assert_eq!(booked[1].start, "10:00");
+
+        // Rendering surfaces both an Available and a Booked line for the room.
+        let room = Room {
+            name: "4th Floor Room 4360".to_string(),
+            space_id: Some(139536),
+            capacity: Some(10),
+            available_slots: available,
+            booked_slots: booked,
+        };
+        let rendered = room.format();
+        assert!(rendered.contains("**Available**: 09:00 - 09:30"));
+        assert!(rendered.contains("**Booked**: 09:30 - 10:00"));
+    }
+
     #[test]
     fn test_format_time() {
         assert_eq!(format_time("2026-03-31 13:30:00"), "13:30");
@@ -1317,6 +1361,59 @@ mod tests {
         </form>"#;
         let form = parse_booking_form(html, None).unwrap();
         assert_eq!(form.missing_required, vec!["department"]);
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_parse_booking_form_required_group_field_fixture() {
+        const FIXTURE: &str = include_str!("fixtures/booking_form_group_required.html");
+
+        // With a group name, the required group field is satisfied.
+        let form = parse_booking_form(FIXTURE, Some("CSE 115A Standup")).unwrap();
+        assert_eq!(form.action, "/ajax/space/book");
+        assert!(
+            form.missing_required.is_empty(),
+            "missing: {:?}",
+            form.missing_required
+        );
+
+        let get = |n: &str| {
+            form.fields
+                .iter()
+                .find(|(name, _)| name == n)
+                .map(|(_, v)| v.as_str())
+        };
+        // hidden fields carried verbatim
+        assert_eq!(get("iid"), Some("998"));
+        assert_eq!(get("session"), Some("se55ionABC"));
+        // pre-filled patron identity fields
+        assert_eq!(get("fname"), Some("Sammy"));
+        assert_eq!(get("email"), Some("sammy@ucsc.edu"));
+        // required group question filled from group_name
+        assert_eq!(get("q12345"), Some("CSE 115A Standup"));
+        // first non-empty select option chosen
+        assert_eq!(get("q67890"), Some("2-4"));
+        // terms checkbox auto-agreed to its value attr
+        assert_eq!(get("terms"), Some("agreed"));
+        // submit button excluded
+        assert!(get("submit").is_none());
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_parse_booking_form_required_group_missing_without_name() {
+        const FIXTURE: &str = include_str!("fixtures/booking_form_group_required.html");
+
+        // Without a group name, the required group field is reported missing
+        // (by its label text, lowercased).
+        let form = parse_booking_form(FIXTURE, None).unwrap();
+        assert!(
+            form.missing_required
+                .iter()
+                .any(|m| m.contains("group")),
+            "missing: {:?}",
+            form.missing_required
+        );
     }
 
     #[cfg(feature = "auth")]

@@ -201,3 +201,81 @@ pub fn filter_classrooms<'a>(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CLASSROOM_LIST_FIXTURE: &str = include_str!("fixtures/classroom_list.html");
+
+    #[test]
+    fn parse_classrooms_counts_posts() {
+        let rooms = parse_classrooms(CLASSROOM_LIST_FIXTURE);
+        // Three li.wp-block-post entries; the no-results <li> is ignored.
+        assert_eq!(rooms.len(), 3, "got: {:#?}", rooms);
+    }
+
+    #[test]
+    fn parse_classrooms_theater_seating_and_tech() {
+        let rooms = parse_classrooms(CLASSROOM_LIST_FIXTURE);
+        let unit2 = rooms.iter().find(|c| c.name == "Classroom Unit 2").unwrap();
+        assert_eq!(unit2.capacity, Some(450));
+        assert_eq!(unit2.seating_style.as_deref(), Some("theater"));
+        assert_eq!(unit2.area.as_deref(), Some("science-hill"));
+        assert_eq!(
+            unit2.url,
+            "https://classrooms.ucsc.edu/classroom/classroom-unit-2/"
+        );
+        // Repeated technology- slugs accumulate in order.
+        assert_eq!(
+            unit2.technology,
+            vec!["projector", "document-camera", "microphone"]
+        );
+        assert_eq!(
+            unit2.physical_features,
+            vec!["wheelchair-accessible", "hearing-loop"]
+        );
+    }
+
+    #[test]
+    fn parse_classrooms_banquet_seating_and_smartboard() {
+        let rooms = parse_classrooms(CLASSROOM_LIST_FIXTURE);
+        let mch = rooms.iter().find(|c| c.name == "McHenry 1240").unwrap();
+        assert_eq!(mch.capacity, Some(40));
+        assert_eq!(mch.seating_style.as_deref(), Some("banquet"));
+        assert!(mch.technology.contains(&"smart-board".to_string()));
+        assert!(mch.technology.contains(&"projector".to_string()));
+    }
+
+    #[test]
+    fn parse_classrooms_humanized_output() {
+        let rooms = parse_classrooms(CLASSROOM_LIST_FIXTURE);
+        let unit2 = rooms.iter().find(|c| c.name == "Classroom Unit 2").unwrap();
+        let rendered = unit2.format_with_location(None);
+        // humanize() title-cases kebab slugs for display.
+        assert!(rendered.contains("**Capacity**: 450"));
+        assert!(rendered.contains("**Seating**: Theater"));
+        assert!(rendered.contains("Document Camera"));
+        assert!(rendered.contains("Wheelchair Accessible"));
+        assert!(rendered.contains("Hearing Loop"));
+    }
+
+    #[test]
+    fn filter_classrooms_by_technology_and_capacity() {
+        let rooms = parse_classrooms(CLASSROOM_LIST_FIXTURE);
+
+        // Smart-board only exists in McHenry 1240.
+        let smart = filter_classrooms(&rooms, None, None, None, None, Some("smart"), None);
+        assert_eq!(smart.len(), 1);
+        assert_eq!(smart[0].name, "McHenry 1240");
+
+        // Capacity >= 100 only matches the 450-seat theater.
+        let big = filter_classrooms(&rooms, None, Some(100), None, None, None, None);
+        assert_eq!(big.len(), 1);
+        assert_eq!(big[0].name, "Classroom Unit 2");
+
+        // Every room has a projector.
+        let projector = filter_classrooms(&rooms, None, None, None, None, Some("projector"), None);
+        assert_eq!(projector.len(), 3);
+    }
+}

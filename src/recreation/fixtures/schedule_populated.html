@@ -1,0 +1,29 @@
+<!--
+  Trimmed capture of https://campusrec.ucsc.edu/Facility/GetSchedule for a facility
+  that DOES have events today, rendered as a table (time | event [| extra]).
+  parse_schedule reads <tr> rows with >= 2 <td> cells: cell[0] = time,
+  cells[1..] joined with " — " = event.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Facility Schedule</title></head>
+<body>
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <h2 class="panel-title">Wellness Center Pool</h2>
+    </div>
+    <div class="panel-body">
+      <table class="schedule-table">
+        <thead>
+          <tr><th>Time</th><th>Activity</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>6:00 AM - 9:00 AM</td><td>Lap Swim</td></tr>
+          <tr><td>12:00 PM - 1:00 PM</td><td>Water Aerobics</td><td>Instructor: Dana</td></tr>
+          <tr><td>5:00 PM - 7:00 PM</td><td>Open Rec Swim</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

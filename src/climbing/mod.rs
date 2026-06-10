@@ -556,4 +556,89 @@ mod tests {
         assert!(msg_default.contains("No climbing data found"));
         assert!(msg_default.contains("Known areas"));
     }
+
+    const OPENBETA_MIXED_FIXTURE: &str = include_str!("fixtures/openbeta_mixed.json");
+    const OPENBETA_EMPTY_FIXTURE: &str = include_str!("fixtures/openbeta_empty.json");
+
+    #[test]
+    fn parse_empty_results_fixture() {
+        let resp: GqlResponse = serde_json::from_str(OPENBETA_EMPTY_FIXTURE).unwrap();
+        let areas = &resp.data.as_ref().unwrap().areas;
+        assert!(areas.is_empty());
+        // search_routes() falls back to the no-results message when areas is empty.
+        assert!(no_results_message(Some("Pinnacles")).contains("No Results"));
+    }
+
+    #[test]
+    fn parse_mixed_bouldering_and_routes_fixture() {
+        let resp: GqlResponse = serde_json::from_str(OPENBETA_MIXED_FIXTURE).unwrap();
+        let area = &resp.data.as_ref().unwrap().areas[0];
+        assert_eq!(area.area_name, "Pinnacles National Park");
+
+        let climbs = area.climbs.as_ref().unwrap();
+        assert_eq!(climbs.len(), 4);
+
+        // A bouldering problem and rope routes coexist in one area.
+        let kinds: Vec<String> = climbs
+            .iter()
+            .map(|c| climb_type_label(c.climb_type.as_ref().unwrap()))
+            .collect();
+        assert!(kinds.contains(&"Sport".to_string()));
+        assert!(kinds.contains(&"Trad".to_string()));
+        assert!(kinds.contains(&"Boulder".to_string()));
+        assert!(kinds.contains(&"TR".to_string()));
+
+        // The boulder has no YDS grade → renders as "?" in the routes list.
+        let boulder = climbs.iter().find(|c| c.name == "Sad Boulder Problem").unwrap();
+        assert!(boulder.grades.as_ref().unwrap().yds.is_none());
+        assert_eq!(boulder.climb_type.as_ref().unwrap().boulder, Some(true));
+    }
+
+    #[test]
+    fn format_mixed_area_renders_all_climb_types() {
+        let resp: GqlResponse = serde_json::from_str(OPENBETA_MIXED_FIXTURE).unwrap();
+        let area = &resp.data.as_ref().unwrap().areas[0];
+
+        // Render routes the same way search_routes() does (sans async/cache).
+        let mut out = String::new();
+        let _ = writeln!(out, "# Climbing \u{2014} {}", area.area_name);
+        if let Some(children) = &area.children {
+            let _ = writeln!(out, "## Sub-areas");
+            for child in children {
+                let count = child
+                    .total_climbs
+                    .map(|c| format!(" \u{2014} {} routes", c))
+                    .unwrap_or_default();
+                let _ = writeln!(out, "- **{}**{}", child.area_name, count);
+            }
+        }
+        if let Some(climbs) = &area.climbs {
+            let _ = writeln!(out, "## Routes");
+            for (i, climb) in climbs.iter().enumerate() {
+                let grade = climb
+                    .grades
+                    .as_ref()
+                    .and_then(|g| g.yds.as_deref())
+                    .unwrap_or("?");
+                let ctype = climb
+                    .climb_type
+                    .as_ref()
+                    .map(climb_type_label)
+                    .unwrap_or_default();
+                let mut parts = vec![format!("**{}**", climb.name), grade.to_string()];
+                if !ctype.is_empty() {
+                    parts.push(ctype);
+                }
+                let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
+            }
+        }
+
+        assert!(out.contains("## Sub-areas"));
+        assert!(out.contains("**Boulder Garden** \u{2014} 2 routes"));
+        assert!(out.contains("**The Oracle** \u{00b7} 5.11a \u{00b7} Sport"));
+        assert!(out.contains("**Old Original** \u{00b7} 5.6 \u{00b7} Trad"));
+        // gradeless boulder shows "?" placeholder
+        assert!(out.contains("**Sad Boulder Problem** \u{00b7} ? \u{00b7} Boulder"));
+        assert!(out.contains("**Toprope Slab** \u{00b7} 5.4 \u{00b7} TR"));
+    }
 }

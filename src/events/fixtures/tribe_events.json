@@ -1,0 +1,51 @@
+{
+  "events": [
+    {
+      "id": 90210,
+      "title": "Cosmic Storytelling: A Night Under the Stars",
+      "description": "<p>Join us for an evening of <strong>astronomy</strong> and oral history at the observatory. Telescopes provided.</p>",
+      "url": "https://events.ucsc.edu/event/cosmic_storytelling",
+      "start_date": "2026-06-12 19:30:00",
+      "end_date": "2026-06-12 21:30:00",
+      "all_day": false,
+      "cost": "Free",
+      "venue": {
+        "venue": "Lick Observatory",
+        "address": "7281 Mount Hamilton Rd",
+        "city": "Mount Hamilton"
+      },
+      "organizer": [
+        { "organizer": "Department of Astronomy & Astrophysics" },
+        { "organizer": "UCSC Public Programs" }
+      ],
+      "categories": [
+        { "name": "Science", "slug": "science" },
+        { "name": "Community", "slug": "community" }
+      ],
+      "tags": [
+        { "name": "stargazing" },
+        { "name": "family-friendly" }
+      ]
+    },
+    {
+      "id": 90211,
+      "title": "Virtual Career Workshop: Resumes that Stand Out",
+      "description": null,
+      "url": "https://events.ucsc.edu/event/virtual_resume_workshop",
+      "start_date": "2026-06-13 12:00:00",
+      "end_date": "2026-06-13 13:00:00",
+      "all_day": false,
+      "cost": "",
+      "venue": [],
+      "organizer": [
+        { "organizer": "Career Success" }
+      ],
+      "categories": [
+        { "name": "Workshops", "slug": "workshops" }
+      ],
+      "tags": []
+    }
+  ],
+  "total": 2,
+  "total_pages": 1
+}

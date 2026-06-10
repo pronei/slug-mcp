@@ -1,0 +1,96 @@
+<!--
+  Trimmed-down capture of a PISA class_search results page
+  (https://pisa.ucsc.edu/class_search/index.php, action=results).
+  Three result panels:
+    1. CSE 115A - 01  Introduction to Software Engineering  (Open, In Person, MWF lecture)
+    2. CSE 115A - 01A Lab section of the same course         (Wait List, multi-meeting)
+    3. MATH 19A - 02  Calculus for Science...                (Closed, TuTh, multi-meeting LEC+DIS)
+  The non-class chrome around the panels (search form, pagination) is kept
+  minimal but present so the rowpanel_ filter is exercised.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Class Search</title></head>
+<body>
+  <div class="panel panel-default row" id="searchpanel">
+    <div class="panel-body">
+      <form action="index.php" method="post">
+        <input type="hidden" name="action" value="results" />
+      </form>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-xs-6">25 classes found</div>
+  </div>
+
+  <div class="panel panel-default row" id="rowpanel_1">
+    <div class="panel-heading">
+      <h2 class="panel-title">
+        <a href="index.php?action=detail&amp;class_data=..." id="class_id_22345" name="class_id_22345">CSE 115A - 01  Introduction to Software Engineering</a>
+      </h2>
+    </div>
+    <div class="panel-body">
+      <div class="col-xs-6 col-sm-3">
+        <img src="/images/status_open.gif" alt="Open" title="Open" border="0" />
+      </div>
+      <div class="col-xs-6 col-sm-9">
+        <i class="fa fa-pencil"></i> Class Number: 22345<br />
+        <b>In Person</b><br />
+        <i class="fa fa-clock-o"></i> MWF 10:40AM-11:45AM<br />
+        <i class="fa fa-map-marker"></i> LEC: Engineering 2 180<br />
+        <i class="fa fa-user"></i> Tantalo,P.<br />
+        <i class="fa fa-pie-chart"></i> 92 of 100 Enrolled
+      </div>
+    </div>
+  </div>
+
+  <div class="panel panel-default row" id="rowpanel_2">
+    <div class="panel-heading">
+      <h2 class="panel-title">
+        <a href="index.php?action=detail&amp;class_data=..." id="class_id_22346" name="class_id_22346">CSE 115A - 01A  Introduction to Software Engineering</a>
+      </h2>
+    </div>
+    <div class="panel-body">
+      <div class="col-xs-6 col-sm-3">
+        <img src="/images/status_waitlist.gif" alt="Wait List" title="Wait List" border="0" />
+      </div>
+      <div class="col-xs-6 col-sm-9">
+        <i class="fa fa-pencil"></i> Class Number: 22346<br />
+        <b>In Person</b><br />
+        <i class="fa fa-clock-o"></i> F 12:00PM-01:05PM<br />
+        <i class="fa fa-map-marker"></i> LAB: Baskin Engr 109<br />
+        <i class="fa fa-user"></i> Tantalo,P.<br />
+        <i class="fa fa-pie-chart"></i> 30 of 30 Enrolled
+      </div>
+    </div>
+  </div>
+
+  <div class="panel panel-default row" id="rowpanel_3">
+    <div class="panel-heading">
+      <h2 class="panel-title">
+        <a href="index.php?action=detail&amp;class_data=..." id="class_id_30012" name="class_id_30012">MATH 19A - 02  Calculus for Science, Engineering, and Mathematics</a>
+      </h2>
+    </div>
+    <div class="panel-body">
+      <div class="col-xs-6 col-sm-3">
+        <img src="/images/status_closed.gif" alt="Closed" title="Closed" border="0" />
+      </div>
+      <div class="col-xs-6 col-sm-9">
+        <i class="fa fa-pencil"></i> Class Number: 30012<br />
+        <b>Online Synchronous</b><br />
+        <i class="fa fa-clock-o"></i> TuTh 1:30PM-3:05PM<br />
+        <i class="fa fa-map-marker"></i> LEC: Online Online<br />
+        <i class="fa fa-clock-o"></i> M 9:00AM-10:05AM<br />
+        <i class="fa fa-map-marker"></i> DIS: Online Online<br />
+        <i class="fa fa-user"></i> Frigaard,O.<br />
+        <i class="fa fa-pie-chart"></i> 120 of 120 Enrolled
+      </div>
+    </div>
+  </div>
+
+  <div class="row pagination">
+    <a href="index.php?rec_start=25">Next</a>
+  </div>
+</body>
+</html>

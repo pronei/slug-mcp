@@ -630,3 +630,134 @@ fn parse_directory(html: &str, query: &str) -> DirectoryResult {
 }
 
 use chrono::Datelike;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CLASS_RESULTS_FIXTURE: &str = include_str!("fixtures/class_results.html");
+    const DIRECTORY_FIXTURE: &str = include_str!("fixtures/directory_results.html");
+
+    #[test]
+    fn parse_class_results_extracts_all_panels() {
+        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
+        // Three rowpanel_ panels; the searchpanel chrome must be skipped.
+        assert_eq!(classes.len(), 3, "got: {:#?}", classes);
+    }
+
+    #[test]
+    fn parse_class_results_open_lecture_fields() {
+        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
+        let cse = &classes[0];
+        assert_eq!(cse.subject, "CSE");
+        assert_eq!(cse.catalog_number, "115A");
+        assert_eq!(cse.section, "01");
+        assert_eq!(cse.title, "Introduction to Software Engineering");
+        assert_eq!(cse.class_number, "22345");
+        assert_eq!(cse.status, "Open");
+        // schedule is the day/time; the parser's 3-token window also pulls in the
+        // following "LEC:" prefix from the flattened body, so match the prefix.
+        assert!(
+            cse.schedule
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("MWF 10:40AM-11:45AM"),
+            "schedule: {:?}",
+            cse.schedule
+        );
+        assert_eq!(cse.enrolled.as_deref(), Some("92 of 100 Enrolled"));
+        assert_eq!(cse.mode.as_deref(), Some("In Person"));
+        // instructor is parsed from the flattened body's "Last,F." pattern
+        assert!(
+            cse.instructor.starts_with("Tantalo"),
+            "instructor: {:?}",
+            cse.instructor
+        );
+        // location uses the LEC: prefix
+        assert!(
+            cse.location.as_deref().unwrap_or("").starts_with("LEC:"),
+            "location: {:?}",
+            cse.location
+        );
+    }
+
+    #[test]
+    fn parse_class_results_waitlist_status() {
+        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
+        let lab = &classes[1];
+        assert_eq!(lab.section, "01A");
+        assert_eq!(lab.status, "Wait List");
+        // Full lab section: 30 of 30 → effectively closed-by-enrollment.
+        assert_eq!(lab.enrolled.as_deref(), Some("30 of 30 Enrolled"));
+    }
+
+    #[test]
+    fn parse_class_results_closed_multi_meeting() {
+        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
+        let math = &classes[2];
+        assert_eq!(math.subject, "MATH");
+        assert_eq!(math.catalog_number, "19A");
+        assert_eq!(math.status, "Closed");
+        assert_eq!(math.mode.as_deref(), Some("Online Synchronous"));
+        // Multi-meeting (LEC + DIS): the parser surfaces the first day/time it finds
+        // (the TuTh lecture, not the M discussion), plus the trailing "LEC:" token.
+        assert!(
+            math.schedule
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("TuTh 1:30PM-3:05PM"),
+            "schedule: {:?}",
+            math.schedule
+        );
+        assert_eq!(math.enrolled.as_deref(), Some("120 of 120 Enrolled"));
+    }
+
+    #[test]
+    fn parse_class_results_status_variety() {
+        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
+        let statuses: Vec<&str> = classes.iter().map(|c| c.status.as_str()).collect();
+        assert!(statuses.contains(&"Open"));
+        assert!(statuses.contains(&"Wait List"));
+        assert!(statuses.contains(&"Closed"));
+    }
+
+    #[test]
+    fn parse_directory_extracts_people() {
+        let result = parse_directory(DIRECTORY_FIXTURE, "tantalo");
+        assert_eq!(result.query, "tantalo");
+        // Two tbody rows; the thead row must not be counted.
+        assert_eq!(result.entries.len(), 2, "got: {:#?}", result.entries);
+    }
+
+    #[test]
+    fn parse_directory_decodes_base64_email() {
+        let result = parse_directory(DIRECTORY_FIXTURE, "tantalo");
+        let tantalo = &result.entries[0];
+        assert_eq!(tantalo.name, "Tantalo, Patrick");
+        assert_eq!(tantalo.email.as_deref(), Some("ptantalo@ucsc.edu"));
+        assert_eq!(
+            tantalo.department.as_deref(),
+            Some("Computer Science & Engineering")
+        );
+        assert_eq!(tantalo.title.as_deref(), Some("Teaching Professor"));
+        assert_eq!(tantalo.affiliation.as_deref(), Some("Staff & Faculty"));
+        assert_eq!(tantalo.office.as_deref(), Some("SOE3"));
+        assert_eq!(tantalo.phone.as_deref(), Some("(831) 459-1234"));
+        // guid pulled from the cd_detail link.
+        assert_eq!(tantalo.uid.as_deref(), Some("G089085136"));
+    }
+
+    #[test]
+    fn parse_directory_uid_strips_extra_query_params() {
+        let result = parse_directory(DIRECTORY_FIXTURE, "frigaard");
+        let owen = &result.entries[1];
+        assert_eq!(owen.name, "Frigaard, Owen");
+        assert_eq!(owen.email.as_deref(), Some("ofrigaar@ucsc.edu"));
+        // href was cd_detail?guid=G077012988&ref=search → guid only.
+        assert_eq!(owen.uid.as_deref(), Some("G077012988"));
+        assert_eq!(
+            owen.department.as_deref(),
+            Some("Molecular, Cell & Developmental Biology")
+        );
+    }
+}

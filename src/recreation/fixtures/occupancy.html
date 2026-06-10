@@ -1,0 +1,50 @@
+<!--
+  Trimmed capture of https://campusrec.ucsc.edu/FacilityOccupancy.
+  Each facility renders a <canvas class="occupancy-chart" id="occupancyChart-<uuid>"
+  data-occupancy="N" data-remaining="M"> inside a card whose facility name lives in
+  a sibling <strong>. The page emits a duplicate "-sm" (mobile) canvas per facility
+  that the parser must skip.
+  Facilities:
+    - Fitness Center: 250 / 250  -> AT capacity (0 remaining, 100% utilization)
+    - Pool:           18 / 60    -> normal
+    - Climbing Wall:  data-remaining missing/garbage -> max == occupancy (100%)
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Facility Occupancy</title></head>
+<body>
+  <div class="facility-row">
+
+    <div class="facility-card">
+      <strong>1. Fitness Center</strong>
+      <span class="muted">Max Occupancy: 250</span>
+      <canvas class="occupancy-chart"
+              id="occupancyChart-11111111-aaaa-bbbb-cccc-222222222222"
+              data-occupancy="250" data-remaining="0"></canvas>
+      <canvas class="occupancy-chart"
+              id="occupancyChart-11111111-aaaa-bbbb-cccc-222222222222-sm"
+              data-occupancy="250" data-remaining="0"></canvas>
+    </div>
+
+    <div class="facility-card">
+      <strong>2. Swimming Pool</strong>
+      <span class="muted">Max Occupancy: 60</span>
+      <canvas class="occupancy-chart"
+              id="occupancyChart-33333333-dddd-eeee-ffff-444444444444"
+              data-occupancy="18" data-remaining="42"></canvas>
+      <canvas class="occupancy-chart"
+              id="occupancyChart-33333333-dddd-eeee-ffff-444444444444-sm"
+              data-occupancy="18" data-remaining="42"></canvas>
+    </div>
+
+    <div class="facility-card">
+      <strong>3. Climbing Wall</strong>
+      <span class="muted">Max Occupancy: --</span>
+      <canvas class="occupancy-chart"
+              id="occupancyChart-55555555-6666-7777-8888-999999999999"
+              data-occupancy="44" data-remaining="closed"></canvas>
+    </div>
+
+  </div>
+</body>
+</html>

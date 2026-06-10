@@ -1,0 +1,31 @@
+<!--
+  Trimmed capture of https://classrooms.ucsc.edu/classroomlist/ (a WordPress
+  block-query archive). Each classroom is an <li class="wp-block-post ..."> whose
+  taxonomy term slugs are baked into the class attribute:
+    seating-capacity-<n>, seating-style-<slug>, area-<slug>,
+    technology-<slug> (repeatable), physical-feature-<slug> (repeatable).
+  The name + detail URL come from the nested <h2 class="wp-block-post-title"><a>.
+  Three rooms with varied seating (theater / banquet / classroom) and tech
+  (projector, document-camera, smart-board, etc.). A non-post <li> is included
+  to confirm the li.wp-block-post selector is what gates parsing.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Classroom List</title></head>
+<body>
+  <ul class="wp-block-post-template">
+    <li class="wp-block-post post-101 classroom type-classroom seating-capacity-450 seating-style-theater area-science-hill technology-projector technology-document-camera technology-microphone physical-feature-wheelchair-accessible physical-feature-hearing-loop">
+      <h2 class="wp-block-post-title"><a href="https://classrooms.ucsc.edu/classroom/classroom-unit-2/">Classroom Unit 2</a></h2>
+    </li>
+    <li class="wp-block-post post-102 classroom type-classroom seating-capacity-40 seating-style-banquet area-mchenry technology-smart-board technology-projector physical-feature-wheelchair-accessible">
+      <h2 class="wp-block-post-title"><a href="https://classrooms.ucsc.edu/classroom/mchenry-1240/">McHenry 1240</a></h2>
+    </li>
+    <li class="wp-block-post post-103 classroom type-classroom seating-capacity-32 seating-style-classroom area-engineering technology-projector physical-feature-movable-furniture">
+      <h2 class="wp-block-post-title"><a href="https://classrooms.ucsc.edu/classroom/baskin-152/">Baskin Engineering 152</a></h2>
+    </li>
+    <li class="wp-block-query-no-results">
+      <p>No classrooms found.</p>
+    </li>
+  </ul>
+</body>
+</html>

@@ -407,10 +407,10 @@ async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
     };
 
     let session_manager = Arc::new(LocalSessionManager::default());
-    let sse_config = StreamableHttpServerConfig {
-        stateful_mode: true,
-        ..Default::default()
-    };
+    // StreamableHttpServerConfig is #[non_exhaustive] as of rmcp 1.x — build
+    // from Default and set the fields we care about.
+    let mut sse_config = StreamableHttpServerConfig::default();
+    sse_config.stateful_mode = true;
 
     let service = StreamableHttpService::new(
         move || Ok(server::SlugMcpServer::new(ctx.clone())),

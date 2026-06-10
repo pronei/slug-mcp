@@ -167,66 +167,60 @@ pub fn build_authenticated_client(cookie_data: &str) -> Result<reqwest::Client> 
 /// submit. We accept it with "remember consent" so subsequent flows (LibCal,
 /// cbord, …) skip the page for the rest of the IdP session.
 pub async fn saml_aware_get(client: &reqwest::Client, url: &str) -> Result<SamlResponse> {
-    let mut resp = client.get(url).send().await.context("request failed")?;
+    let resp = client.get(url).send().await.context("request failed")?;
+    let start = SamlResponse {
+        status: resp.status(),
+        final_url: resp.url().clone(),
+        body: resp.text().await.context("failed to read response body")?,
+    };
+    saml_continue(client, start).await
+}
 
+/// Continue a SAML/consent chain from an already-received response.
+///
+/// Useful when an AJAX endpoint gets intercepted by SSO mid-flight (reqwest
+/// follows the redirects, so the caller ends up holding the IdP page body
+/// instead of the JSON it asked for). Pass that response here; it auto-submits
+/// SAML POST binding forms and consent pages until it lands on a page that is
+/// neither — typically back on the service provider, authenticated.
+pub async fn saml_continue(
+    client: &reqwest::Client,
+    mut current: SamlResponse,
+) -> Result<SamlResponse> {
     // Follow up to 8 intermediate hops (SAML POST forms + consent pages)
     for _ in 0..8 {
-        let status = resp.status();
-        let final_url = resp.url().clone();
-        let content_type = resp
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-
-        if !content_type.contains("text/html") {
-            return Ok(SamlResponse {
-                status,
-                final_url,
-                body: resp.text().await.context("failed to read response body")?,
-            });
-        }
-
-        let body = resp.text().await.context("failed to read response body")?;
-
-        let next_post = parse_saml_form(&body)
+        let next_post = parse_saml_form(&current.body)
             .map(|(action, fields)| ("SAML POST binding", action, fields))
             .or_else(|| {
-                parse_consent_form(&body)
+                parse_consent_form(&current.body)
                     .map(|(action, fields)| ("IdP consent accept", action, fields))
             });
 
-        if let Some((kind, action_url, fields)) = next_post {
-            // Form actions are usually absolute for SAML, but the consent
-            // form's is relative — resolve against the page that served it.
-            let action_abs = final_url
-                .join(&action_url)
-                .context("invalid intermediate form action URL")?;
-            tracing::debug!("Following {kind} to {action_abs}");
-            resp = client
-                .post(action_abs)
-                .form(&fields)
-                .send()
-                .await
-                .with_context(|| format!("{kind} POST failed"))?;
-        } else {
-            return Ok(SamlResponse {
-                status,
-                final_url,
-                body,
-            });
-        }
+        let Some((kind, action_url, fields)) = next_post else {
+            return Ok(current);
+        };
+
+        // Form actions are usually absolute for SAML, but the consent
+        // form's is relative — resolve against the page that served it.
+        let action_abs = current
+            .final_url
+            .join(&action_url)
+            .context("invalid intermediate form action URL")?;
+        tracing::debug!("Following {kind} to {action_abs}");
+        let resp = client
+            .post(action_abs)
+            .form(&fields)
+            .send()
+            .await
+            .with_context(|| format!("{kind} POST failed"))?;
+        current = SamlResponse {
+            status: resp.status(),
+            final_url: resp.url().clone(),
+            body: resp.text().await.context("failed to read response body")?,
+        };
     }
 
-    let status = resp.status();
-    let final_url = resp.url().clone();
-    let body = resp.text().await.unwrap_or_default();
-    Ok(SamlResponse {
-        status,
-        final_url,
-        body,
-    })
+    Ok(current)
 }
 
 /// Response from a SAML-aware request.

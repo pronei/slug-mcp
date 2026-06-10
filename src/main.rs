@@ -64,8 +64,8 @@ enum Command {
     /// Use this token with the `authenticate` tool on a remote SSE server.
     #[cfg(feature = "auth")]
     ExportToken,
-    /// TEMP: interactive live check of the auth flow — login, meal balance,
-    /// and an S&E study-room booking on a given date.
+    /// Interactive live check of the auth flow — login, meal balance, and an
+    /// S&E study-room booking on a given date.
     #[cfg(feature = "auth")]
     VerifyAuth {
         /// Date to book (YYYY-MM-DD).
@@ -74,6 +74,18 @@ enum Command {
         /// Actually submit the booking (otherwise stops after showing availability).
         #[arg(long)]
         book: bool,
+        /// Space ID to book (default: first room with the longest open block).
+        #[arg(long)]
+        space_id: Option<u32>,
+        /// Booking start time, e.g. "14:00" (default: earliest available).
+        #[arg(long)]
+        start: Option<String>,
+        /// Booking end time, e.g. "16:00" (default: start + up to 2h contiguous).
+        #[arg(long)]
+        end: Option<String>,
+        /// Group name for the booking form, if the room requires one.
+        #[arg(long)]
+        group: Option<String>,
     },
 }
 
@@ -88,12 +100,19 @@ async fn main() -> Result<()> {
         #[cfg(feature = "auth")]
         Command::ExportToken => run_export_token().await,
         #[cfg(feature = "auth")]
-        Command::VerifyAuth { date, book } => {
+        Command::VerifyAuth {
+            date,
+            book,
+            space_id,
+            start,
+            end,
+            group,
+        } => {
             tracing_subscriber::fmt()
                 .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
                 .with_writer(std::io::stderr)
                 .init();
-            run_verify_auth(date, book).await
+            run_verify_auth(date, book, space_id, start, end, group).await
         }
         Command::Serve { sse, port } => {
             tracing_subscriber::fmt()
@@ -154,7 +173,14 @@ async fn run_export_token() -> Result<()> {
 }
 
 #[cfg(feature = "auth")]
-async fn run_verify_auth(date: String, book: bool) -> Result<()> {
+async fn run_verify_auth(
+    date: String,
+    book: bool,
+    space_override: Option<u32>,
+    start_override: Option<String>,
+    end_override: Option<String>,
+    group: Option<String>,
+) -> Result<()> {
     let config = Arc::new(config::Config::load()?);
     let cache = Arc::new(cache::CacheStore::new(1_000));
     let http = reqwest::Client::builder()
@@ -180,14 +206,6 @@ async fn run_verify_auth(date: String, book: bool) -> Result<()> {
     };
 
     let client = auth::build_authenticated_client(&session.cookies)?;
-
-    // TEMP: list captured cookie domains/names to debug LibCal SSO.
-    if let Ok(cookies) = auth::browser::deserialize_cookies(&session.cookies) {
-        eprintln!("\n── captured cookies ({}) ──", cookies.len());
-        for c in &cookies {
-            eprintln!("  {:<40} {}", c.domain, c.name);
-        }
-    }
 
     // 2. Meal balance (exercises saml_aware_get + cbord scrape).
     eprintln!("\n── Meal balance ──");
@@ -216,31 +234,65 @@ async fn run_verify_auth(date: String, book: bool) -> Result<()> {
         return Ok(());
     }
 
-    // 4. Pick the first room with the longest contiguous open block (cap 2h)
-    //    and book it.
+    // 4. Resolve the room + window: explicit overrides win; otherwise pick the
+    //    first room with the longest contiguous open block (cap 2h).
     let avail = library::scraper::scrape_availability(&client, 16578, &date).await?;
-    let Some((space_id, start, end, name)) = avail
-        .rooms
-        .iter()
-        .filter_map(|r| {
-            let sid = r.space_id?;
-            let (s, e) = best_window(&r.available_slots)?;
-            Some((sid, s, e, r.name.clone()))
-        })
-        .next()
-    else {
-        eprintln!("No bookable open slots at S&E on {date}.");
+    let pick = match space_override {
+        Some(sid) => avail
+            .rooms
+            .iter()
+            .find(|r| r.space_id == Some(sid))
+            .and_then(|r| {
+                let (s, e) = match (&start_override, &end_override) {
+                    (Some(s), Some(e)) => (s.clone(), e.clone()),
+                    _ => best_window(&r.available_slots)?,
+                };
+                Some((sid, s, e, r.name.clone()))
+            }),
+        None => avail
+            .rooms
+            .iter()
+            .filter_map(|r| {
+                let sid = r.space_id?;
+                let (s, e) = match (&start_override, &end_override) {
+                    (Some(s), Some(e)) => {
+                        // Room must have the whole window open as a contiguous
+                        // chain of slots, not merely the starting slot.
+                        window_is_open(&r.available_slots, s, e).then_some(())?;
+                        (s.clone(), e.clone())
+                    }
+                    _ => best_window(&r.available_slots)?,
+                };
+                Some((sid, s, e, r.name.clone()))
+            })
+            .next(),
+    };
+    let Some((space_id, start, end, name)) = pick else {
+        eprintln!("No bookable open slots match at S&E on {date}.");
         return Ok(());
     };
 
     eprintln!("\n── Booking {name} (space {space_id}) {date} {start}–{end} ──");
     let result = library
-        .book(&client, space_id, &date, &start, &end, None)
+        .book(&client, space_id, &date, &start, &end, group.as_deref())
         .await
         .context("booking failed")?;
     println!("{result}");
 
     Ok(())
+}
+
+/// True if `[start, end)` is fully covered by a contiguous chain of slots.
+#[cfg(feature = "auth")]
+fn window_is_open(slots: &[library::scraper::TimeSlot], start: &str, end: &str) -> bool {
+    let mut cursor = start.to_string();
+    while cursor != end {
+        match slots.iter().find(|t| t.start == cursor) {
+            Some(t) => cursor = t.end.clone(),
+            None => return false,
+        }
+    }
+    true
 }
 
 /// Longest contiguous run of 30-min slots from the earliest available start,

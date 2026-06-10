@@ -1,6 +1,9 @@
 use std::fmt::Write;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use regex::Regex;
 use scraper::Html;
 
 use crate::util::selectors;
@@ -11,13 +14,17 @@ selectors! {
     SEL_STATUS_IMG => "img",
     SEL_PANEL_BODY => "div.panel-body",
     SEL_BOLD => "b, strong",
-    SEL_DIR_ROW => "tr",
+    SEL_DIR_ROW => "tbody tr",
+    SEL_DIR_TD => "td",
     SEL_DIR_LINK => "a[href*='cd_detail']",
-    SEL_DIR_RESULT => ".cd-result, .search-result, .result-row",
 }
 
 const CLASS_SEARCH_URL: &str = "https://pisa.ucsc.edu/class_search/index.php";
-const DIRECTORY_SEARCH_URL: &str = "https://campusdirectory.ucsc.edu/cd_search";
+// The legacy `cd_search` endpoint is now behind Shibboleth (302 → SAML).
+// The public unauthenticated path is the `cd_simple` POST form on the homepage,
+// guarded by per-session CSRF tokens.
+const DIRECTORY_HOME_URL: &str = "https://campusdirectory.ucsc.edu/";
+const DIRECTORY_SIMPLE_URL: &str = "https://campusdirectory.ucsc.edu/cd_simple";
 
 // ─── Class Search ───
 
@@ -419,11 +426,17 @@ pub struct DirectoryResult {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DirectoryEntry {
     pub name: String,
+    /// Detail-page guid (e.g. "G089085136") — link via `cd_detail?guid=…`.
     pub uid: Option<String>,
     pub title: Option<String>,
     pub department: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
+    /// Mail-stop / building code (e.g. "SOE3"). Full office room is on the
+    /// detail page, not the search results.
+    pub office: Option<String>,
+    /// Faculty / Staff / Student.
+    pub affiliation: Option<String>,
 }
 
 impl DirectoryResult {
@@ -444,11 +457,17 @@ impl DirectoryResult {
 impl DirectoryEntry {
     pub fn format(&self) -> String {
         let mut out = format!("### {}", self.name);
+        if let Some(a) = &self.affiliation {
+            let _ = write!(out, "  _({})_", a);
+        }
         if let Some(t) = &self.title {
             let _ = write!(out, "\n- **Title**: {}", t);
         }
         if let Some(d) = &self.department {
             let _ = write!(out, "\n- **Department**: {}", d);
+        }
+        if let Some(o) = &self.office {
+            let _ = write!(out, "\n- **Mail Stop**: {}", o);
         }
         if let Some(e) = &self.email {
             let _ = write!(out, "\n- **Email**: {}", e);
@@ -456,29 +475,64 @@ impl DirectoryEntry {
         if let Some(p) = &self.phone {
             let _ = write!(out, "\n- **Phone**: {}", p);
         }
+        if let Some(g) = &self.uid {
+            let _ = write!(
+                out,
+                "\n- **Detail**: <https://campusdirectory.ucsc.edu/cd_detail?guid={}>",
+                g
+            );
+        }
         out
     }
 }
 
 pub async fn scrape_directory(
-    client: &reqwest::Client,
+    _client: &reqwest::Client,
     query: &str,
     search_type: &str,
 ) -> Result<DirectoryResult> {
-    let url = format!(
-        "{}?type={}&search={}",
-        DIRECTORY_SEARCH_URL,
-        search_type,
-        urlencoding::encode(query)
-    );
+    // Build a per-call client with a cookie jar — the cd_simple form is
+    // CSRF-guarded and tokens are bound to AWS-ALB session cookies that must
+    // round-trip from the GET into the POST.
+    let client = reqwest::Client::builder()
+        .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
+        .cookie_store(true)
+        .gzip(true)
+        .build()
+        .context("Failed to build directory http client")?;
 
-    let resp = client
-        .get(&url)
+    // 1. GET homepage → seeds session cookies + delivers fresh CSRF tokens.
+    let home = client
+        .get(DIRECTORY_HOME_URL)
         .send()
         .await
-        .context("Failed to fetch directory search")?;
+        .context("Failed to fetch directory homepage")?
+        .text()
+        .await
+        .context("Failed to read directory homepage")?;
 
-    let html = resp
+    let (csrf_name, csrf_token) = extract_csrf_for(&home, "cd_simple")
+        .context("Could not find CSRF tokens in cd_simple form (form may have moved)")?;
+
+    let affiliation = match search_type.to_lowercase().as_str() {
+        "staff" | "faculty" | "staff & faculty" => "Staff & Faculty",
+        "student" | "students" => "Students",
+        _ => "All",
+    };
+
+    // 2. POST to cd_simple with the CSRF token + query.
+    let html = client
+        .post(DIRECTORY_SIMPLE_URL)
+        .form(&[
+            ("CSRFName", csrf_name.as_str()),
+            ("CSRFToken", csrf_token.as_str()),
+            ("keyword", query),
+            ("Action", "Find"),
+            ("affiliation", affiliation),
+        ])
+        .send()
+        .await
+        .context("Failed to POST directory search")?
         .text()
         .await
         .context("Failed to read directory results")?;
@@ -486,69 +540,78 @@ pub async fn scrape_directory(
     Ok(parse_directory(&html, query))
 }
 
+/// Find the form block whose `action` matches `form_action`, and pull out its
+/// `CSRFName` / `CSRFToken` hidden inputs.
+fn extract_csrf_for(html: &str, form_action: &str) -> Option<(String, String)> {
+    static FORM_RE: OnceLock<Regex> = OnceLock::new();
+    let form_re = FORM_RE.get_or_init(|| Regex::new(r"(?s)<form[^>]*>.*?</form>").unwrap());
+
+    let needle = format!("\"{form_action}\"");
+    let block = form_re
+        .find_iter(html)
+        .map(|m| m.as_str())
+        .find(|f| f.contains(&needle))?;
+
+    let attr = |name: &str| -> Option<String> {
+        let re = Regex::new(&format!(
+            r#"name=['"]{name}['"]\s+value=['"]([^'"]+)['"]"#
+        ))
+        .ok()?;
+        re.captures(block).map(|c| c[1].to_string())
+    };
+    Some((attr("CSRFName")?, attr("CSRFToken")?))
+}
+
+/// The email cell wraps the address in `Base64.decode('…')` to deter scrapers.
+/// Decode the payload and pull the `mailto:` target.
+fn decode_email_cell(cell_html: &str) -> Option<String> {
+    static B64_RE: OnceLock<Regex> = OnceLock::new();
+    static MAIL_RE: OnceLock<Regex> = OnceLock::new();
+    let b64_re =
+        B64_RE.get_or_init(|| Regex::new(r"Base64\.decode\('([A-Za-z0-9+/=]+)'\)").unwrap());
+    let mail_re = MAIL_RE.get_or_init(|| Regex::new(r#"mailto:([^"'\s>]+)"#).unwrap());
+
+    let payload = b64_re.captures(cell_html)?.get(1)?.as_str();
+    let decoded = String::from_utf8(STANDARD.decode(payload).ok()?).ok()?;
+    mail_re.captures(&decoded).map(|c| c[1].to_string())
+}
+
 fn parse_directory(html: &str, query: &str) -> DirectoryResult {
     let document = Html::parse_document(html);
-
     let mut entries = Vec::new();
 
-    // Try to find results in table rows (common directory pattern)
+    // Layout (cd_simple, 2026): name | phone | email | dept | title | affil | mailstop | sortname
     for row in document.select(&SEL_DIR_ROW) {
-        let cells: Vec<String> = row
-            .children()
-            .filter_map(|child| {
-                scraper::ElementRef::wrap(child).map(|el| el.text().collect::<String>().trim().to_string())
-            })
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        if cells.is_empty() {
+        let tds: Vec<scraper::ElementRef> = row.select(&SEL_DIR_TD).collect();
+        if tds.is_empty() {
             continue;
         }
+        let text_at = |i: usize| -> Option<String> {
+            tds.get(i).and_then(|td| {
+                let s = td.text().collect::<String>().trim().to_string();
+                (!s.is_empty()).then_some(s)
+            })
+        };
 
-        // Extract link for uid
+        let Some(name) = text_at(0) else { continue };
         let uid = row.select(&SEL_DIR_LINK).next().and_then(|a| {
             a.value()
                 .attr("href")
-                .and_then(|h| h.split("uid=").nth(1))
-                .map(|s| s.to_string())
+                .and_then(|h| h.split("guid=").nth(1))
+                .map(|s| s.split('&').next().unwrap_or(s).to_string())
         });
-
-        // Skip header rows
-        if cells.first().is_some_and(|c| c == "Name" || c == "Department") {
-            continue;
-        }
-
-        let name = cells.first().cloned().unwrap_or_default();
-        if name.is_empty() {
-            continue;
-        }
+        let email = tds.get(2).and_then(|td| decode_email_cell(&td.html()));
 
         entries.push(DirectoryEntry {
             name,
             uid,
-            title: cells.get(1).cloned().filter(|s| !s.is_empty()),
-            department: cells.get(2).cloned().filter(|s| !s.is_empty()),
-            email: cells.get(3).cloned().filter(|s| !s.is_empty()),
-            phone: cells.get(4).cloned().filter(|s| !s.is_empty()),
+            phone: text_at(1),
+            email,
+            department: text_at(3),
+            title: text_at(4),
+            affiliation: text_at(5),
+            office: text_at(6),
         });
-    }
-
-    // If table parsing found nothing, try div-based layout
-    if entries.is_empty() {
-        for el in document.select(&SEL_DIR_RESULT) {
-            let text = el.text().collect::<String>();
-            let lines: Vec<&str> = text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-            if let Some(name) = lines.first() {
-                entries.push(DirectoryEntry {
-                    name: name.to_string(),
-                    uid: None,
-                    title: lines.get(1).map(|s| s.to_string()),
-                    department: lines.get(2).map(|s| s.to_string()),
-                    email: lines.iter().find(|s| s.contains('@')).map(|s| s.to_string()),
-                    phone: None,
-                });
-            }
-        }
     }
 
     DirectoryResult {

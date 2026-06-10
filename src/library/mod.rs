@@ -96,6 +96,7 @@ impl LibraryService {
     }
 
     #[cfg(feature = "auth")]
+    #[allow(clippy::too_many_arguments)]
     pub async fn book(
         &self,
         auth_client: &reqwest::Client,
@@ -104,9 +105,18 @@ impl LibraryService {
         start_time: &str,
         end_time: &str,
         group_name: Option<&str>,
+        flexible: bool,
     ) -> Result<String> {
-        let result =
-            book_room(auth_client, space_id, date, start_time, end_time, group_name).await?;
+        let result = book_room(
+            auth_client,
+            space_id,
+            date,
+            start_time,
+            end_time,
+            group_name,
+            flexible,
+        )
+        .await?;
 
         // Invalidate availability caches for all libraries on this date
         for lib in LIBRARIES {

@@ -666,10 +666,66 @@ fn upsert_field(fields: &mut Vec<(String, String)>, name: &str, value: String) {
 /// Outcome of claiming a pending hold on a slot.
 #[cfg(feature = "auth")]
 enum ClaimHold {
-    /// A live hold covering the requested window.
-    Held(Vec<PendingBooking>),
+    /// A live hold, plus the "HH:MM" start/end actually claimed (may differ
+    /// from the request when `flexible` shifted to the nearest open block).
+    Held {
+        bookings: Vec<PendingBooking>,
+        start_hm: String,
+        end_hm: String,
+    },
     /// LibCal refused — message is user-facing.
     Failed(String),
+}
+
+/// Count of 30-minute slots between two "HH:MM" times (end exclusive).
+#[cfg(feature = "auth")]
+fn slot_span(start_hm: &str, end_hm: &str) -> usize {
+    let mins = |hm: &str| -> i32 {
+        let (h, m) = hm.split_once(':').unwrap_or((hm, "0"));
+        h.parse::<i32>().unwrap_or(0) * 60 + m.parse::<i32>().unwrap_or(0)
+    };
+    (((mins(end_hm) - mins(start_hm)) / 30).max(1)) as usize
+}
+
+/// "HH:MM" plus `slots` × 30 minutes.
+#[cfg(feature = "auth")]
+fn add_slots(start_hm: &str, slots: usize) -> String {
+    let (h, m) = start_hm.split_once(':').unwrap_or((start_hm, "0"));
+    let total = h.parse::<i32>().unwrap_or(0) * 60 + m.parse::<i32>().unwrap_or(0) + slots as i32 * 30;
+    format!("{:02}:{:02}", total / 60, total % 60)
+}
+
+/// From a room's grid slots, find the earliest contiguous run of `want`
+/// available 30-min slots starting at or after 08:00 (library hours). Returns
+/// the raw "YYYY-MM-DD HH:MM:SS" start string of the run's first slot.
+#[cfg(feature = "auth")]
+fn first_open_run(slots: &[GridSlot], space_id: u32, want: usize) -> Option<String> {
+    let mut open: Vec<&GridSlot> = slots
+        .iter()
+        .filter(|s| {
+            s.item_id == space_id && s.class_name.is_empty() && format_time(&s.start).as_str() >= "08:00"
+        })
+        .collect();
+    open.sort_by(|a, b| a.start.cmp(&b.start));
+    for i in 0..open.len() {
+        let mut end = open[i].end.clone();
+        let mut have = 1;
+        if have >= want {
+            return Some(open[i].start.clone());
+        }
+        for w in &open[i + 1..] {
+            if w.start == end {
+                end = w.end.clone();
+                have += 1;
+                if have >= want {
+                    return Some(open[i].start.clone());
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    None
 }
 
 /// Fetch the availability grid, claim the start slot, and extend to the
@@ -688,6 +744,7 @@ async fn claim_hold(
     start_hm: &str,
     end_hm: &str,
     room_name: &str,
+    flexible: bool,
 ) -> Result<ClaimHold> {
     let grid_url = format!("{}/spaces/availability/grid", LIBCAL_BASE);
     let grid: GridResponse = auth_client
@@ -714,25 +771,59 @@ async fn claim_hold(
         .await
         .context("Failed to parse availability grid JSON")?;
 
+    // Resolve the slot to claim against THIS grid (no read-to-claim gap). If
+    // the exact start is taken and `flexible`, shift to the earliest open block
+    // of the same duration; otherwise fail with the available starts.
+    let want = slot_span(start_hm, end_hm);
     let slot_prefix = format!("{date} {start_hm}");
-    let Some(slot) = grid.slots.iter().find(|s| {
-        s.item_id == space_id && s.start.starts_with(&slot_prefix) && s.class_name.is_empty()
-    }) else {
-        let available: Vec<&str> = grid
-            .slots
-            .iter()
-            .filter(|s| s.item_id == space_id && s.class_name.is_empty())
-            .map(|s| s.start.as_str())
-            .collect();
-        return Ok(ClaimHold::Failed(if available.is_empty() {
-            format!("No available slots for {room_name} (space {space_id}) on {date}.")
-        } else {
-            format!(
-                "No available slot at {slot_prefix} for {room_name}. Available starts: {}",
-                available.join(", ")
-            )
-        }));
+    let exact = grid
+        .slots
+        .iter()
+        .find(|s| {
+            s.item_id == space_id && s.start.starts_with(&slot_prefix) && s.class_name.is_empty()
+        })
+        .map(|s| (s.start.clone(), s.checksum.clone()));
+
+    let (claim_start_raw, claim_checksum) = match exact {
+        Some(pair) => pair,
+        None if flexible => match first_open_run(&grid.slots, space_id, want) {
+            // Match by start AND item_id — many rooms share a start time, and
+            // each slot's checksum is room-specific (a cross-room match yields
+            // "Invalid Checksum" at add).
+            Some(run_start) => grid
+                .slots
+                .iter()
+                .find(|s| s.start == run_start && s.item_id == space_id)
+                .map(|s| (s.start.clone(), s.checksum.clone()))
+                .expect("run_start came from this room's grid slots"),
+            None => {
+                return Ok(ClaimHold::Failed(format!(
+                    "No open {}-hour block for {room_name} on {date}.",
+                    want as f64 / 2.0
+                )));
+            }
+        },
+        None => {
+            let available: Vec<&str> = grid
+                .slots
+                .iter()
+                .filter(|s| s.item_id == space_id && s.class_name.is_empty())
+                .map(|s| s.start.as_str())
+                .collect();
+            return Ok(ClaimHold::Failed(if available.is_empty() {
+                format!("No available slots for {room_name} (space {space_id}) on {date}.")
+            } else {
+                format!(
+                    "No available slot at {slot_prefix} for {room_name}. Available starts: {}",
+                    available.join(", ")
+                )
+            }));
+        }
     };
+
+    // Actual window we're claiming (may differ from the request under flexible).
+    let actual_start_hm = format_time(&claim_start_raw);
+    let actual_end_hm = add_slots(&actual_start_hm, want);
 
     // ── Claim the start slot ──
     let add_url = format!("{}/spaces/availability/booking/add", LIBCAL_BASE);
@@ -741,24 +832,61 @@ async fn claim_hold(
         ("add[seat_id]".into(), "0".into()),
         ("add[gid]".into(), gid.to_string()),
         ("add[lid]".into(), lid.to_string()),
-        ("add[start]".into(), slot.start.clone()),
-        ("add[checksum]".into(), slot.checksum.clone()),
+        ("add[start]".into(), claim_start_raw.clone()),
+        ("add[checksum]".into(), claim_checksum.clone()),
         ("lid".into(), lid.to_string()),
         ("gid".into(), gid.to_string()),
         ("start".into(), date.to_string()),
         ("end".into(), end_date.to_string()),
     ];
-    let add_resp: BookingAddResponse = auth_client
-        .post(&add_url)
-        .header("Referer", spaces_url)
-        .header("X-Requested-With", "XMLHttpRequest")
-        .form(&add_form)
-        .send()
-        .await
-        .context("booking/add request failed")?
-        .json()
-        .await
-        .context("booking/add returned non-JSON")?;
+    // The first authenticated LibCal action in an IdP session can bounce
+    // through Shibboleth, so `add` may return an IdP HTML page instead of JSON.
+    // Distinguish that (a real SSO page → establish the session and re-POST)
+    // from a plain error body like "Invalid Checksum." (surface as-is). Two
+    // tries max.
+    let mut add_resp: Option<BookingAddResponse> = None;
+    for attempt in 0..2 {
+        let raw = auth_client
+            .post(&add_url)
+            .header("Referer", spaces_url)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .form(&add_form)
+            .send()
+            .await
+            .context("booking/add request failed")?;
+        let status = raw.status();
+        let final_url = raw.url().clone();
+        let text = raw.text().await.context("reading booking/add response")?;
+        if let Ok(parsed) = serde_json::from_str::<BookingAddResponse>(&text) {
+            add_resp = Some(parsed);
+            break;
+        }
+        let looks_like_sso = text.contains("SAMLResponse")
+            || text.contains("Shibboleth")
+            || text.contains("_eventId_proceed") // IdP consent page
+            || final_url.host_str() == Some("login.ucsc.edu");
+        if attempt == 0 && looks_like_sso {
+            let landed = crate::auth::saml_continue(
+                auth_client,
+                crate::auth::SamlResponse { status, final_url, body: text },
+            )
+            .await
+            .context("SSO establishment for LibCal booking failed")?;
+            if landed.final_url.host_str() == Some("login.ucsc.edu") {
+                return Ok(ClaimHold::Failed(
+                    "Shibboleth wants interactive login (IdP session missing or expired). Run the `login` tool, then book again.".to_string(),
+                ));
+            }
+            // Session established — loop to re-POST add.
+        } else {
+            // Plain error body (e.g. "Invalid Checksum.", "Slot unavailable").
+            return Ok(ClaimHold::Failed(format!(
+                "LibCal rejected the slot claim: {}",
+                crate::util::truncate(&crate::util::strip_html_tags(&text), 200)
+            )));
+        }
+    }
+    let add_resp = add_resp.expect("add loop sets Some or returns");
     if let Some(err) = add_resp.error {
         return Ok(ClaimHold::Failed(format!(
             "LibCal rejected the slot: {}",
@@ -773,13 +901,13 @@ async fn claim_hold(
     }
 
     // ── Extend the end time if the default hold is shorter ──
-    let end_prefix = format!("{date} {end_hm}");
+    let end_prefix = format!("{date} {actual_end_hm}");
     if !bookings[0].end.starts_with(&end_prefix) {
         let booking = &bookings[0];
         let Some(idx) = booking.options.iter().position(|o| o.starts_with(&end_prefix)) else {
             let opts: Vec<&str> = booking.options.iter().map(String::as_str).collect();
             return Ok(ClaimHold::Failed(format!(
-                "End time {end_hm} not offered for this slot. Available end times: {}",
+                "End time {actual_end_hm} not offered for this slot. Available end times: {}",
                 if opts.is_empty() {
                     bookings[0].end.clone()
                 } else {
@@ -824,7 +952,50 @@ async fn claim_hold(
         }
     }
 
-    Ok(ClaimHold::Held(bookings))
+    Ok(ClaimHold::Held {
+        bookings,
+        start_hm: actual_start_hm,
+        end_hm: actual_end_hm,
+    })
+}
+
+/// True if a LibCal error/body indicates the pending hold lapsed.
+#[cfg(feature = "auth")]
+fn is_hold_expired(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("become unavailable") || m.contains("no longer available") || m.contains("expired")
+}
+
+/// Re-run `claim_hold`, flattening to `Ok((bookings, start, end))` or
+/// `Err(user_message)`.
+#[cfg(feature = "auth")]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+async fn reclaim(
+    auth_client: &reqwest::Client,
+    lid: u32,
+    gid: u32,
+    space_id: u32,
+    date: &str,
+    end_date: &str,
+    spaces_url: &str,
+    start_hm: &str,
+    end_hm: &str,
+    room_name: &str,
+    flexible: bool,
+) -> Result<std::result::Result<(Vec<PendingBooking>, String, String), String>> {
+    Ok(match claim_hold(
+        auth_client, lid, gid, space_id, date, end_date, spaces_url, start_hm, end_hm, room_name,
+        flexible,
+    )
+    .await?
+    {
+        ClaimHold::Held {
+            bookings,
+            start_hm,
+            end_hm,
+        } => Ok((bookings, start_hm, end_hm)),
+        ClaimHold::Failed(message) => Err(message),
+    })
 }
 
 #[cfg(feature = "auth")]
@@ -835,6 +1006,7 @@ pub async fn book_room(
     start_time: &str,
     end_time: &str,
     group_name: Option<&str>,
+    flexible: bool,
 ) -> Result<BookingResult> {
     let Some(start_hm) = normalize_time(start_time) else {
         return Ok(BookingResult {
@@ -883,13 +1055,14 @@ pub async fn book_room(
     // Claim an initial hold up front. If the `times` step later bounces through
     // SSO (first contact with LibCal's Shibboleth SP), the hold will have
     // expired by the time we return — so we re-claim a fresh one per attempt.
-    let mut bookings = match claim_hold(
+    // `actual_*` track the window actually held (flexible may shift it).
+    let (mut bookings, mut actual_start, mut actual_end) = match claim_hold(
         auth_client, lid, gid, space_id, date, &end_date, &spaces_url, &start_hm, &end_hm,
-        &room_name,
+        &room_name, flexible,
     )
     .await?
     {
-        ClaimHold::Held(b) => b,
+        ClaimHold::Held { bookings, start_hm, end_hm } => (bookings, start_hm, end_hm),
         ClaimHold::Failed(message) => {
             return Ok(BookingResult { success: false, message })
         }
@@ -904,7 +1077,10 @@ pub async fn book_room(
     // hold (the original expires during the detour) and POST times again.
     let times_url = format!("{}/ajax/space/times", LIBCAL_BASE);
     let mut form_html: Option<String> = None;
-    for attempt in 0..2 {
+    let mut authed = false; // have we already completed the SSO handshake?
+    // Up to 4 passes: SSO establish, hold re-claim after expiry, and the
+    // authenticated retry that returns the form.
+    for _ in 0..4 {
         let mut times_form: Vec<(String, String)> = vec![
             ("patron".into(), String::new()),
             ("patronHash".into(), String::new()),
@@ -927,13 +1103,36 @@ pub async fn book_room(
             .await
             .context("reading ajax/space/times response")?;
 
-        // Resolve to the SSO landing page (if any) and whether we already hold
-        // the booking form. Three shapes: JSON {html} (authed, has form),
-        // JSON {redirect} (follow it), or non-JSON (inline SSO already followed).
-        let landed: Option<crate::auth::SamlResponse> =
+        // Classify the response. JSON {html}=form (done), JSON {redirect}=follow
+        // SSO, JSON {error}/non-JSON content = maybe an expired hold, otherwise
+        // a non-JSON body = inline SSO that reqwest already followed.
+        let redirect_or_sso: Option<crate::auth::SamlResponse> =
             match serde_json::from_str::<TimesResponse>(&times_text) {
                 Ok(resp) => {
+                    if let Some(html) = resp.html {
+                        form_html = Some(html);
+                        break;
+                    }
                     if let Some(err) = resp.error {
+                        // An expired/stale hold is recoverable: re-claim once.
+                        if is_hold_expired(&err) && authed {
+                            match reclaim(
+                                auth_client, lid, gid, space_id, date, &end_date, &spaces_url,
+                                &start_hm, &end_hm, &room_name, flexible,
+                            )
+                            .await?
+                            {
+                                Ok((b, s, e)) => {
+                                    bookings = b;
+                                    actual_start = s;
+                                    actual_end = e;
+                                    continue;
+                                }
+                                Err(message) => {
+                                    return Ok(BookingResult { success: false, message })
+                                }
+                            }
+                        }
                         return Ok(BookingResult {
                             success: false,
                             message: format!(
@@ -941,10 +1140,6 @@ pub async fn book_room(
                                 crate::util::strip_html_tags(&err)
                             ),
                         });
-                    }
-                    if let Some(html) = resp.html {
-                        form_html = Some(html);
-                        break;
                     }
                     match resp.redirect {
                         Some(redirect) => {
@@ -967,6 +1162,30 @@ pub async fn book_room(
                         }
                     }
                 }
+                // Non-JSON "Sorry, the dates have become unavailable." = expired
+                // hold (a 400 text body, not an SSO page).
+                Err(_) if is_hold_expired(&times_text) => {
+                    if !authed {
+                        return Ok(BookingResult {
+                            success: false,
+                            message: "LibCal reports the slot is unavailable before authentication — try a different time.".to_string(),
+                        });
+                    }
+                    match reclaim(
+                        auth_client, lid, gid, space_id, date, &end_date, &spaces_url, &start_hm,
+                        &end_hm, &room_name, flexible,
+                    )
+                    .await?
+                    {
+                        Ok((b, s, e)) => {
+                            bookings = b;
+                            actual_start = s;
+                            actual_end = e;
+                            continue;
+                        }
+                        Err(message) => return Ok(BookingResult { success: false, message }),
+                    }
+                }
                 Err(_) => Some(
                     crate::auth::saml_continue(
                         auth_client,
@@ -981,45 +1200,49 @@ pub async fn book_room(
                 ),
             };
 
-        // We needed SSO. If that was already our second try, give up.
-        if attempt == 1 {
-            return Ok(BookingResult {
-                success: false,
-                message: "LibCal kept bouncing through SSO — the stored session can't authenticate. Run the `login` tool again.".to_string(),
-            });
-        }
-        if let Some(landed) = landed {
-            tracing::debug!(
-                "LibCal SSO landed on {} (status {})",
-                landed.final_url,
-                landed.status
-            );
+        if let Some(landed) = redirect_or_sso {
+            if authed {
+                // We already authenticated once and times still bounces.
+                return Ok(BookingResult {
+                    success: false,
+                    message: "LibCal kept bouncing through SSO — the stored session can't authenticate. Run the `login` tool again.".to_string(),
+                });
+            }
             if landed.final_url.host_str() == Some("login.ucsc.edu") {
                 return Ok(BookingResult {
                     success: false,
                     message: "Shibboleth wants interactive login (IdP session missing or expired). Run the `login` tool, then book again.".to_string(),
                 });
             }
-            // Session is now established for calendar.library.ucsc.edu. The
-            // original hold expired during the detour — claim a fresh one before
-            // the next times POST.
-            bookings = match claim_hold(
-                auth_client, lid, gid, space_id, date, &end_date, &spaces_url, &start_hm,
-                &end_hm, &room_name,
-            )
-            .await?
-            {
-                ClaimHold::Held(b) => b,
-                ClaimHold::Failed(message) => {
-                    return Ok(BookingResult { success: false, message })
+            tracing::debug!("LibCal booking SSO established at {}", landed.final_url);
+            // LibCal's token callback (/spaces/auth?token=…&returnUrl=…) sets the
+            // session but finalizes by navigating to returnUrl — which a non-JS
+            // client must do explicitly, or the session won't stick for the next
+            // AJAX call. Follow it.
+            if landed.final_url.path().contains("/spaces/auth") {
+                if let Some(ret) = landed
+                    .final_url
+                    .query_pairs()
+                    .find(|(k, _)| k == "returnUrl")
+                    .map(|(_, v)| v.into_owned())
+                {
+                    let ret_abs = reqwest::Url::parse(LIBCAL_BASE)
+                        .and_then(|b| b.join(&ret))
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|_| format!("{LIBCAL_BASE}{ret}"));
+                    let _ = auth_client.get(&ret_abs).send().await;
                 }
-            };
+            }
+            authed = true;
+            // The session is now live. Reuse the existing hold for the next
+            // times POST — it usually survives the ~1s SSO hop; if it expired,
+            // the next pass detects "dates unavailable" and re-claims.
         }
     }
     let Some(form_html) = form_html else {
         return Ok(BookingResult {
             success: false,
-            message: "Never received the booking form from LibCal.".to_string(),
+            message: "Never received the booking form from LibCal after authenticating.".to_string(),
         });
     };
 
@@ -1077,7 +1300,7 @@ pub async fn book_room(
             let text = crate::util::truncate(&crate::util::strip_html_tags(&html), 400);
             return Ok(BookingResult {
                 success: true,
-                message: format!("{room_name}, {date} {start_hm}–{end_hm}. {text}"),
+                message: format!("{room_name}, {date} {actual_start}–{actual_end}. {text}"),
             });
         }
     }
@@ -1086,7 +1309,7 @@ pub async fn book_room(
         Ok(BookingResult {
             success: true,
             message: format!(
-                "{room_name}, {date} {start_hm}–{end_hm}. {}",
+                "{room_name}, {date} {actual_start}–{actual_end}. {}",
                 crate::util::truncate(&crate::util::strip_html_tags(&body), 400)
             ),
         })
@@ -1104,6 +1327,46 @@ pub async fn book_room(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_slot_span_and_add_slots() {
+        assert_eq!(slot_span("13:00", "15:00"), 4);
+        assert_eq!(slot_span("09:00", "09:30"), 1);
+        assert_eq!(slot_span("09:00", "09:00"), 1); // never zero
+        assert_eq!(add_slots("13:00", 4), "15:00");
+        assert_eq!(add_slots("08:30", 3), "10:00");
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_first_open_run_skips_booked_and_early() {
+        let slots: Vec<GridSlot> = serde_json::from_str(
+            r#"[
+            {"start":"2026-06-12 07:00:00","end":"2026-06-12 07:30:00","itemId":1,"checksum":"a","className":""},
+            {"start":"2026-06-12 09:00:00","end":"2026-06-12 09:30:00","itemId":1,"checksum":"b","className":""},
+            {"start":"2026-06-12 09:30:00","end":"2026-06-12 10:00:00","itemId":1,"checksum":"c","className":""},
+            {"start":"2026-06-12 10:00:00","end":"2026-06-12 10:30:00","itemId":1,"checksum":"d","className":"booked"},
+            {"start":"2026-06-12 11:00:00","end":"2026-06-12 11:30:00","itemId":1,"checksum":"e","className":""},
+            {"start":"2026-06-12 11:30:00","end":"2026-06-12 12:00:00","itemId":1,"checksum":"f","className":""},
+            {"start":"2026-06-12 12:00:00","end":"2026-06-12 12:30:00","itemId":1,"checksum":"g","className":""}
+        ]"#,
+        )
+        .unwrap();
+        // Want 3 contiguous: 07:00 is before-hours; 09:00-09:30 is only 2 long
+        // (10:00 booked); first 3-run is 11:00-12:30.
+        assert_eq!(
+            first_open_run(&slots, 1, 3).as_deref(),
+            Some("2026-06-12 11:00:00")
+        );
+        // Want 2: the 09:00-10:00 pair qualifies first.
+        assert_eq!(
+            first_open_run(&slots, 1, 2).as_deref(),
+            Some("2026-06-12 09:00:00")
+        );
+        // No room 2.
+        assert_eq!(first_open_run(&slots, 2, 1), None);
+    }
 
     #[test]
     fn test_parse_grid_response() {

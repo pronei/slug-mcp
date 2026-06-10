@@ -274,7 +274,10 @@ async fn run_verify_auth(
 
     eprintln!("\n── Booking {name} (space {space_id}) {date} {start}–{end} ──");
     let result = library
-        .book(&client, space_id, &date, &start, &end, group.as_deref())
+        // Flexible: the verify harness just wants a confirmed reservation, so
+        // claim_hold may shift to the nearest open block of the same length —
+        // this closes the read-to-claim race on a contended day.
+        .book(&client, space_id, &date, &start, &end, group.as_deref(), true)
         .await
         .context("booking failed")?;
     println!("{result}");

@@ -1236,6 +1236,9 @@ define_tools!({
                 &req.start_time,
                 &req.end_time,
                 req.group_name.as_deref(),
+                // Book the exact requested window — don't silently shift an
+                // LLM/user's chosen time to a different open block.
+                false,
             )
             .await
             .map_err(internal_err)?;

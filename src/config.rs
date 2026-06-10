@@ -12,6 +12,7 @@ pub struct Config {
     pub firms_map_key: Option<String>,
     pub airnow_api_key: Option<String>,
     pub ebird_api_key: Option<String>,
+    pub nps_api_key: Option<String>,
 }
 
 impl Config {
@@ -35,6 +36,7 @@ impl Config {
             firms_map_key: std::env::var("SLUG_MCP_FIRMS_KEY").ok(),
             airnow_api_key: std::env::var("AIRNOW_API_KEY").ok(),
             ebird_api_key: std::env::var("EBIRD_API_KEY").ok(),
+            nps_api_key: std::env::var("NPS_API_KEY").ok(),
         })
     }
 

@@ -24,7 +24,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 directories = "6"
 aes-gcm = { version = "0.10", optional = true }
-sha2 = { version = "0.10", optional = true }
+sha2 = "0.10"
 hostname = { version = "0.4", optional = true }
 urlencoding = "2"
 chrono = "0.4"
@@ -39,7 +39,7 @@ regex = "1"
 
 [features]
 default = ["auth"]
-auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:sha2", "dep:hostname"]
+auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:hostname"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -30,9 +30,12 @@ pub struct SearchClassesRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchDirectoryRequest {
-    /// Search query (name, department, etc.)
+    /// Search keyword — matches names, NetIDs, and partial last/first names
+    /// (e.g. "gilpin", "leilani gilpin", "lgilpin"). The campus directory's
+    /// keyword search is fuzzy on names but does not search department text.
     pub query: String,
-    /// Search type: "people" (default) or "departments".
+    /// Affiliation filter: "all" (default), "faculty", "staff", or "students".
+    /// Maps to the `cd_simple` form's affiliation radio.
     pub search_type: Option<String>,
 }
 

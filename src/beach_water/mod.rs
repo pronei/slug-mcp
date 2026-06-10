@@ -177,7 +177,14 @@ async fn fetch_records(
     );
 
     if let Some(beach) = beach_filter {
-        write!(sql, r#" AND LOWER("StationName") LIKE '%{}%'"#, beach).unwrap();
+        // Escape for a SQL string literal embedded in the CKAN datastore_search_sql
+        // query: double single-quotes, and neutralize LIKE wildcards so user
+        // input can't widen the match or break out of the literal.
+        let escaped = beach
+            .replace('\'', "''")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        write!(sql, r#" AND LOWER("StationName") LIKE '%{}%'"#, escaped.to_lowercase()).unwrap();
     }
 
     write!(

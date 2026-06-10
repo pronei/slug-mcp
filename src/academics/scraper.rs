@@ -491,15 +491,24 @@ pub async fn scrape_directory(
     query: &str,
     search_type: &str,
 ) -> Result<DirectoryResult> {
-    // Build a per-call client with a cookie jar — the cd_simple form is
-    // CSRF-guarded and tokens are bound to AWS-ALB session cookies that must
-    // round-trip from the GET into the POST.
-    let client = reqwest::Client::builder()
-        .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
-        .cookie_store(true)
-        .gzip(true)
-        .build()
-        .context("Failed to build directory http client")?;
+    // A dedicated directory client with its own cookie jar — the cd_simple form
+    // is CSRF-guarded and tokens are bound to AWS-ALB session cookies that must
+    // round-trip from the GET into the POST. Built once (the passed-in shared
+    // client has no cookie store); each call re-GETs the homepage for fresh
+    // tokens, so cookie persistence across calls is harmless.
+    static DIRECTORY_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    let client = DIRECTORY_CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
+                .cookie_store(true)
+                .gzip(true)
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("failed to build directory http client")
+        })
+        .clone();
 
     // 1. GET homepage → seeds session cookies + delivers fresh CSRF tokens.
     let home = client

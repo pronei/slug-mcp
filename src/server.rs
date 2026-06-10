@@ -1206,7 +1206,7 @@ define_tools!({
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    #[tool(description = "Book a study room at a UCSC library. Requires authentication — call 'login' first if not already logged in. Use space_id from get_study_room_availability.")]
+    #[tool(description = "Book a study room at a UCSC library via LibCal. Requires authentication — call 'login' first if not already logged in. Use space_id from get_study_room_availability. Patron name/email come from your SSO session; pass group_name if the room's booking form asks for a group/booking name. If the form has other required questions the tool can't infer, it returns them so you can retry.")]
     async fn book_study_room(
         &self,
         Parameters(req): Parameters<BookStudyRoomRequest>,
@@ -1225,7 +1225,14 @@ define_tools!({
 
         let result = self
             .library
-            .book(&client, req.space_id, &req.date, &req.start_time, &req.end_time)
+            .book(
+                &client,
+                req.space_id,
+                &req.date,
+                &req.start_time,
+                &req.end_time,
+                req.group_name.as_deref(),
+            )
             .await
             .map_err(internal_err)?;
 

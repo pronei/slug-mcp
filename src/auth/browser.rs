@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use chromiumoxide::browser::{Browser, BrowserConfig};
+use chromiumoxide::cdp::browser_protocol::storage::GetCookiesParams as StorageGetCookiesParams;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
@@ -91,11 +92,18 @@ async fn do_login_flow(browser: &Browser) -> Result<Vec<StoredCookie>> {
         if current_url.contains(AUTH_SUCCESS_PATTERN) && !current_url.contains("login.php") {
             tracing::info!("Authentication completed! Extracting cookies...");
 
-            // Get ALL cookies from the browser (includes session cookies)
+            // Get ALL cookies browser-wide via Storage.getCookies. The
+            // page-scoped Network.getCookies (`page.get_cookies()`) only
+            // returns cookies for the *current* URL — that drops the
+            // login.ucsc.edu Shibboleth IdP session cookies, which are the
+            // single sign-on token every other UCSC service (LibCal, GET
+            // re-auth) needs for SAML auto-assertion.
             let cdp_cookies = page
-                .get_cookies()
+                .execute(StorageGetCookiesParams::default())
                 .await
-                .context("failed to extract cookies from browser")?;
+                .context("failed to extract cookies from browser")?
+                .result
+                .cookies;
 
             let cookies: Vec<StoredCookie> = cdp_cookies
                 .into_iter()

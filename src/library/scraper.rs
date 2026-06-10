@@ -168,6 +168,9 @@ struct RoomMeta {
     name: String,
     capacity: Option<u32>,
     lid: u32,
+    /// Booking group id (`gid`) — varies per library/category and is required
+    /// by the booking endpoints.
+    gid: Option<u32>,
 }
 
 /// Extract room metadata from the LibCal spaces page JavaScript.
@@ -215,6 +218,8 @@ fn extract_room_metadata(html: &str) -> Vec<RoomMeta> {
         };
         // Extract lid
         let lid = extract_field(chunk, "lid: ");
+        // Extract gid (booking group, needed by the booking endpoints)
+        let gid = extract_field(chunk, "gid: ");
         // Extract capacity
         let capacity = extract_field(chunk, "capacity: ");
 
@@ -229,6 +234,7 @@ fn extract_room_metadata(html: &str) -> Vec<RoomMeta> {
             name,
             capacity,
             lid,
+            gid,
         });
     }
 
@@ -402,6 +408,261 @@ pub async fn scrape_availability(
     })
 }
 
+// ─── Booking flow ───
+//
+// The real LibCal Spaces booking protocol, reverse-engineered from the
+// spaces page JS (June 2026). All requests ride one cookie session:
+//
+//   1. POST /spaces/availability/booking/add — claim a slot. Requires the
+//      slot `checksum` from the availability grid. Returns a pending
+//      booking carrying end-time `options` + `optionChecksums`.
+//   2. If the requested end is later than the returned end, POST the same
+//      endpoint with `update{id, end, checksum: optionChecksums[k]}`.
+//   3. POST /ajax/space/times (patron/patronHash blank for SSO sites).
+//      Unauthenticated → `{redirect: <libauth SSO url>}`; authenticated →
+//      `{html: <patron booking form>}`.
+//   4. Follow the redirect through Shibboleth with `saml_aware_get` (the
+//      IdP cookies captured at browser login auto-assert), then retry 3.
+//   5. Parse the form, fill patron answers (group name etc.), append the
+//      hidden `bookings`/`returnUrl`/`method` fields the page JS would
+//      add, and POST to the form action.
+
+/// `springyPage.bookingMethod` on the spaces page.
+#[cfg(feature = "auth")]
+const BOOKING_METHOD: &str = "11";
+
+#[cfg(feature = "auth")]
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PendingBooking {
+    id: u64,
+    eid: u64,
+    #[serde(default)]
+    seat_id: u64,
+    gid: u64,
+    lid: u64,
+    start: String,
+    end: String,
+    checksum: String,
+    #[serde(default)]
+    options: Vec<String>,
+    #[serde(default, rename = "optionChecksums")]
+    option_checksums: Vec<String>,
+}
+
+#[cfg(feature = "auth")]
+#[derive(Debug, serde::Deserialize)]
+struct BookingAddResponse {
+    #[serde(default)]
+    bookings: Vec<PendingBooking>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[cfg(feature = "auth")]
+#[derive(Debug, serde::Deserialize)]
+struct TimesResponse {
+    #[serde(default)]
+    redirect: Option<String>,
+    #[serde(default)]
+    html: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+/// jQuery-style bracket-encoded pairs for the pending bookings array, as
+/// `preparePendingBookingsPayload()` would serialize them.
+#[cfg(feature = "auth")]
+fn booking_context_pairs(bookings: &[PendingBooking]) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for (i, b) in bookings.iter().enumerate() {
+        let mut push = |f: &str, v: String| pairs.push((format!("bookings[{i}][{f}]"), v));
+        push("id", b.id.to_string());
+        push("eid", b.eid.to_string());
+        push("seat_id", b.seat_id.to_string());
+        push("gid", b.gid.to_string());
+        push("lid", b.lid.to_string());
+        push("start", b.start.clone());
+        push("end", b.end.clone());
+        push("checksum", b.checksum.clone());
+    }
+    pairs
+}
+
+/// JSON form of the pending bookings for the hidden `bookings` form field.
+#[cfg(feature = "auth")]
+fn bookings_json(bookings: &[PendingBooking]) -> String {
+    let arr: Vec<serde_json::Value> = bookings
+        .iter()
+        .map(|b| {
+            serde_json::json!({
+                "id": b.id,
+                "eid": b.eid,
+                "seat_id": b.seat_id,
+                "gid": b.gid,
+                "lid": b.lid,
+                "start": b.start,
+                "end": b.end,
+                "checksum": b.checksum,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(arr).to_string()
+}
+
+/// Normalize a user-supplied time ("9:00", "09:00", "2:00 PM", "2pm") to "HH:MM".
+#[cfg(feature = "auth")]
+fn normalize_time(s: &str) -> Option<String> {
+    let mut s = s.trim().to_uppercase();
+    // chrono needs minutes — expand bare-hour forms ("2 PM", "2PM", "14")
+    if !s.contains(':') {
+        if let Some(pos) = s.find(|c: char| !c.is_ascii_digit()) {
+            if pos > 0 {
+                s.insert_str(pos, ":00");
+            }
+        } else if !s.is_empty() {
+            s.push_str(":00");
+        }
+    }
+    let formats = ["%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M%p"];
+    for fmt in formats {
+        if let Ok(t) = chrono::NaiveTime::parse_from_str(&s, fmt) {
+            return Some(t.format("%H:%M").to_string());
+        }
+    }
+    None
+}
+
+/// A parsed patron booking form (the HTML returned by /ajax/space/times).
+#[cfg(feature = "auth")]
+#[derive(Debug)]
+struct BookingForm {
+    action: String,
+    /// name → value for every submittable field, in document order.
+    fields: Vec<(String, String)>,
+    /// Names of required fields that are still empty.
+    missing_required: Vec<String>,
+}
+
+/// Parse the booking form fragment: collect every submittable field with its
+/// current value, auto-check agreement checkboxes, pick selected/first
+/// options for selects, and fill any field whose name/id/label/placeholder
+/// mentions "group" or "nickname" with `group_name`.
+#[cfg(feature = "auth")]
+fn parse_booking_form(html: &str, group_name: Option<&str>) -> Option<BookingForm> {
+    use std::sync::LazyLock;
+
+    static FORM_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("form").expect("hardcoded selector"));
+    static FIELD_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("input, select, textarea").expect("hardcoded selector"));
+    static LABEL_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("label").expect("hardcoded selector"));
+    static OPTION_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("option").expect("hardcoded selector"));
+
+    let document = Html::parse_document(html);
+
+    // Label text by `for` target, used to identify the group-name question.
+    let mut labels: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for label in document.select(&LABEL_SEL) {
+        if let Some(target) = label.value().attr("for") {
+            labels.insert(
+                target.to_string(),
+                label.text().collect::<String>().to_lowercase(),
+            );
+        }
+    }
+
+    // The /ajax/space/times fragment contains exactly one form; if several,
+    // take the one with the most fields.
+    let form = document
+        .select(&FORM_SEL)
+        .max_by_key(|f| f.select(&FIELD_SEL).count())?;
+
+    let mut fields: Vec<(String, String)> = Vec::new();
+    let mut missing_required: Vec<String> = Vec::new();
+
+    for el in form.select(&FIELD_SEL) {
+        let v = el.value();
+        let Some(name) = v.attr("name").map(str::to_string) else {
+            continue;
+        };
+        let id = v.attr("id").unwrap_or_default();
+        let label_text = labels.get(id).cloned().unwrap_or_default();
+        let placeholder = v.attr("placeholder").unwrap_or_default().to_lowercase();
+        let is_group_field = {
+            let hay = format!("{} {} {} {}", name.to_lowercase(), id.to_lowercase(), label_text, placeholder);
+            hay.contains("group") || hay.contains("nickname")
+        };
+        let required = v.attr("required").is_some()
+            || v.attr("aria-required") == Some("true")
+            || v.attr("class").unwrap_or_default().contains("required");
+
+        let mut value = match v.name() {
+            "input" => {
+                let input_type = v.attr("type").unwrap_or("text");
+                match input_type {
+                    // Auto-agree: the user initiated this booking; terms
+                    // checkboxes gate the submit button in the page JS.
+                    "checkbox" => v.attr("value").unwrap_or("1").to_string(),
+                    "radio" => {
+                        if v.attr("checked").is_some() {
+                            v.attr("value").unwrap_or_default().to_string()
+                        } else {
+                            continue;
+                        }
+                    }
+                    "submit" | "button" | "image" | "reset" => continue,
+                    _ => v.attr("value").unwrap_or_default().to_string(),
+                }
+            }
+            "select" => el
+                .select(&OPTION_SEL)
+                .find(|o| o.value().attr("selected").is_some())
+                .or_else(|| el.select(&OPTION_SEL).find(|o| !o.value().attr("value").unwrap_or_default().is_empty()))
+                .and_then(|o| o.value().attr("value").map(str::to_string))
+                .unwrap_or_default(),
+            "textarea" => el.text().collect::<String>().trim().to_string(),
+            _ => continue,
+        };
+
+        if is_group_field && value.is_empty() {
+            if let Some(g) = group_name {
+                value = g.to_string();
+            }
+        }
+
+        if required && value.is_empty() {
+            let display = if label_text.is_empty() {
+                name.clone()
+            } else {
+                label_text.trim().to_string()
+            };
+            missing_required.push(display);
+        }
+
+        fields.push((name, value));
+    }
+
+    let action = form.value().attr("action").unwrap_or_default().to_string();
+
+    Some(BookingForm {
+        action,
+        fields,
+        missing_required,
+    })
+}
+
+/// Set or replace a field value by name.
+#[cfg(feature = "auth")]
+fn upsert_field(fields: &mut Vec<(String, String)>, name: &str, value: String) {
+    if let Some(f) = fields.iter_mut().find(|(n, _)| n == name) {
+        f.1 = value;
+    } else {
+        fields.push((name.to_string(), value));
+    }
+}
+
 #[cfg(feature = "auth")]
 pub async fn book_room(
     auth_client: &reqwest::Client,
@@ -409,90 +670,348 @@ pub async fn book_room(
     date: &str,
     start_time: &str,
     end_time: &str,
+    group_name: Option<&str>,
 ) -> Result<BookingResult> {
-    // Visit the space page via SAML-aware GET to follow Shibboleth SSO redirects
-    // and establish a LibCal session using the IdP cookies from browser login.
-    let space_url = format!("{}/space/{}", LIBCAL_BASE, space_id);
-    let saml_resp = crate::auth::saml_aware_get(auth_client, &space_url)
-        .await
-        .context("Failed to load space page for booking")?;
+    let Some(start_hm) = normalize_time(start_time) else {
+        return Ok(BookingResult {
+            success: false,
+            message: format!("Could not parse start time '{start_time}'. Use e.g. \"09:00\" or \"2:00 PM\"."),
+        });
+    };
+    let Some(end_hm) = normalize_time(end_time) else {
+        return Ok(BookingResult {
+            success: false,
+            message: format!("Could not parse end time '{end_time}'. Use e.g. \"10:00\" or \"3:00 PM\"."),
+        });
+    };
 
-    let page_html = saml_resp.body;
-
-    // Look for CSRF token in the page
-    let csrf_token = extract_csrf_token(&page_html);
-
-    // Attempt to create a booking via the AJAX cart endpoint
-    let cart_url = format!("{}/ajax/space/createcart", LIBCAL_BASE);
-    let mut form: Vec<(&str, String)> = vec![
-        ("id", space_id.to_string()),
-        ("date", date.to_string()),
-        ("start", start_time.to_string()),
-        ("end", end_time.to_string()),
-    ];
-
-    if let Some(token) = &csrf_token {
-        form.push(("_token", token.clone()));
+    // ── Locate the room (lid + gid) from the spaces page metadata ──
+    let mut room_info: Option<(u32, u32, String)> = None; // (lid, gid, name)
+    for lib in LIBRARIES {
+        let spaces_url = format!("{}/spaces?lid={}&d={}", LIBCAL_BASE, lib.lid, date);
+        let html = auth_client
+            .get(&spaces_url)
+            .send()
+            .await
+            .context("Failed to load spaces page")?
+            .text()
+            .await
+            .context("Failed to read spaces page")?;
+        if let Some(meta) = extract_room_metadata(&html).into_iter().find(|m| m.eid == space_id) {
+            room_info = Some((meta.lid, meta.gid.unwrap_or(STUDY_ROOMS_GID), meta.name));
+            break;
+        }
     }
+    let Some((lid, gid, room_name)) = room_info else {
+        return Ok(BookingResult {
+            success: false,
+            message: format!(
+                "Space {space_id} not found at any library. Use get_study_room_availability to list valid space_ids."
+            ),
+        });
+    };
 
-    let resp = auth_client
-        .post(&cart_url)
-        .form(&form)
+    let spaces_url = format!("{}/spaces?lid={}&d={}", LIBCAL_BASE, lid, date);
+    let return_url = format!("/spaces?lid={lid}");
+
+    // ── Fetch the grid to obtain the slot checksum for the start time ──
+    let grid_url = format!("{}/spaces/availability/grid", LIBCAL_BASE);
+    let end_date = next_day(date);
+    let grid_resp = auth_client
+        .post(&grid_url)
+        .header("Referer", &spaces_url)
+        .header("X-Requested-With", "XMLHttpRequest")
+        .form(&[
+            ("lid", lid.to_string()),
+            ("gid", gid.to_string()),
+            ("eid", space_id.to_string()),
+            ("seat", "0".to_string()),
+            ("seatId", "0".to_string()),
+            ("zone", String::new()),
+            ("filters", String::new()),
+            ("start", date.to_string()),
+            ("end", end_date.clone()),
+            ("pageIndex", "0".to_string()),
+            ("pageSize", "50".to_string()),
+        ])
         .send()
         .await
-        .context("Failed to submit booking request")?;
+        .context("Failed to fetch availability grid")?;
+    let grid: GridResponse = grid_resp
+        .json()
+        .await
+        .context("Failed to parse availability grid JSON")?;
 
+    let slot_prefix = format!("{date} {start_hm}");
+    let Some(slot) = grid
+        .slots
+        .iter()
+        .find(|s| s.item_id == space_id && s.start.starts_with(&slot_prefix) && s.class_name.is_empty())
+    else {
+        let available: Vec<&str> = grid
+            .slots
+            .iter()
+            .filter(|s| s.item_id == space_id && s.class_name.is_empty())
+            .map(|s| s.start.as_str())
+            .collect();
+        return Ok(BookingResult {
+            success: false,
+            message: if available.is_empty() {
+                format!("No available slots for {room_name} (space {space_id}) on {date}.")
+            } else {
+                format!(
+                    "No available slot at {slot_prefix} for {room_name}. Available starts: {}",
+                    available.join(", ")
+                )
+            },
+        });
+    };
+
+    // ── Step 1: claim the slot ──
+    let mut add_form: Vec<(String, String)> = vec![
+        ("add[eid]".into(), space_id.to_string()),
+        ("add[seat_id]".into(), "0".into()),
+        ("add[gid]".into(), gid.to_string()),
+        ("add[lid]".into(), lid.to_string()),
+        ("add[start]".into(), slot.start.clone()),
+        ("add[checksum]".into(), slot.checksum.clone()),
+        ("lid".into(), lid.to_string()),
+        ("gid".into(), gid.to_string()),
+        ("start".into(), date.to_string()),
+        ("end".into(), end_date.clone()),
+    ];
+    let add_url = format!("{}/spaces/availability/booking/add", LIBCAL_BASE);
+    let add_resp: BookingAddResponse = auth_client
+        .post(&add_url)
+        .header("Referer", &spaces_url)
+        .header("X-Requested-With", "XMLHttpRequest")
+        .form(&add_form)
+        .send()
+        .await
+        .context("booking/add request failed")?
+        .json()
+        .await
+        .context("booking/add returned non-JSON")?;
+
+    if let Some(err) = add_resp.error {
+        return Ok(BookingResult {
+            success: false,
+            message: format!("LibCal rejected the slot: {}", crate::util::strip_html_tags(&err)),
+        });
+    }
+    let mut bookings = add_resp.bookings;
+    if bookings.is_empty() {
+        return Ok(BookingResult {
+            success: false,
+            message: "LibCal accepted the request but returned no pending booking.".to_string(),
+        });
+    }
+
+    // ── Step 2: extend the end time if needed ──
+    let end_prefix = format!("{date} {end_hm}");
+    let current_end_ok = bookings[0].end.starts_with(&end_prefix);
+    if !current_end_ok {
+        let booking = &bookings[0];
+        let Some(idx) = booking.options.iter().position(|o| o.starts_with(&end_prefix)) else {
+            let opts: Vec<&str> = booking.options.iter().map(String::as_str).collect();
+            return Ok(BookingResult {
+                success: false,
+                message: format!(
+                    "End time {end_hm} not offered for this slot. Available end times: {}",
+                    if opts.is_empty() { bookings[0].end.clone() } else { opts.join(", ") }
+                ),
+            });
+        };
+        let update_checksum = booking
+            .option_checksums
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| booking.checksum.clone());
+        let mut update_form: Vec<(String, String)> = vec![
+            ("update[id]".into(), booking.id.to_string()),
+            ("update[checksum]".into(), update_checksum),
+            ("update[end]".into(), booking.options[idx].clone()),
+            ("lid".into(), lid.to_string()),
+            ("gid".into(), gid.to_string()),
+            ("start".into(), date.to_string()),
+            ("end".into(), end_date.clone()),
+        ];
+        update_form.append(&mut booking_context_pairs(&bookings));
+        let update_resp: BookingAddResponse = auth_client
+            .post(&add_url)
+            .header("Referer", &spaces_url)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .form(&update_form)
+            .send()
+            .await
+            .context("booking update request failed")?
+            .json()
+            .await
+            .context("booking update returned non-JSON")?;
+        if let Some(err) = update_resp.error {
+            return Ok(BookingResult {
+                success: false,
+                message: format!("Could not extend end time: {}", crate::util::strip_html_tags(&err)),
+            });
+        }
+        if !update_resp.bookings.is_empty() {
+            bookings = update_resp.bookings;
+        }
+    }
+    // keep borrowck happy; add_form is not reused
+    add_form.clear();
+
+    // ── Step 3/4: submit times, authenticating through Shibboleth if asked ──
+    let times_url = format!("{}/ajax/space/times", LIBCAL_BASE);
+    let mut form_html: Option<String> = None;
+    for attempt in 0..2 {
+        let mut times_form: Vec<(String, String)> = vec![
+            ("patron".into(), String::new()),
+            ("patronHash".into(), String::new()),
+            ("returnUrl".into(), return_url.clone()),
+            ("method".into(), BOOKING_METHOD.into()),
+        ];
+        times_form.append(&mut booking_context_pairs(&bookings));
+        let times_resp: TimesResponse = auth_client
+            .post(&times_url)
+            .header("Referer", &spaces_url)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .form(&times_form)
+            .send()
+            .await
+            .context("ajax/space/times request failed")?
+            .json()
+            .await
+            .context("ajax/space/times returned non-JSON")?;
+
+        if let Some(err) = times_resp.error {
+            return Ok(BookingResult {
+                success: false,
+                message: format!("LibCal rejected the booking times: {}", crate::util::strip_html_tags(&err)),
+            });
+        }
+        if let Some(html) = times_resp.html {
+            form_html = Some(html);
+            break;
+        }
+        if let Some(redirect) = times_resp.redirect {
+            if attempt == 1 {
+                return Ok(BookingResult {
+                    success: false,
+                    message: "LibCal kept redirecting to SSO login — the stored session can't authenticate. Run the `login` tool again.".to_string(),
+                });
+            }
+            // Follow the libauth → Shibboleth chain. With valid IdP cookies
+            // this lands back on LibCal authenticated; the checkout page it
+            // returns may itself contain the booking form.
+            let redirect_abs = reqwest::Url::parse(LIBCAL_BASE)
+                .and_then(|b| b.join(&redirect))
+                .map(|u| u.to_string())
+                .unwrap_or(redirect);
+            let sso = crate::auth::saml_aware_get(auth_client, &redirect_abs)
+                .await
+                .context("SSO redirect for LibCal failed")?;
+            if sso.final_url.host_str() == Some("login.ucsc.edu") {
+                return Ok(BookingResult {
+                    success: false,
+                    message: "Shibboleth wants interactive login (IdP session missing or expired). Run the `login` tool, then book again.".to_string(),
+                });
+            }
+            if sso.body.contains("<form") && sso.body.contains("bookings") {
+                form_html = Some(sso.body);
+                break;
+            }
+            // else: authenticated now — loop to re-POST times
+        } else {
+            return Ok(BookingResult {
+                success: false,
+                message: "Unexpected response from LibCal (no form, no redirect).".to_string(),
+            });
+        }
+    }
+    let Some(form_html) = form_html else {
+        return Ok(BookingResult {
+            success: false,
+            message: "Never received the booking form from LibCal.".to_string(),
+        });
+    };
+
+    // ── Step 5: fill and submit the patron form ──
+    let Some(mut form) = parse_booking_form(&form_html, group_name) else {
+        return Ok(BookingResult {
+            success: false,
+            message: "Could not find the booking form in LibCal's response.".to_string(),
+        });
+    };
+    if !form.missing_required.is_empty() {
+        return Ok(BookingResult {
+            success: false,
+            message: format!(
+                "The booking form has required fields I can't infer: {}. Provide them (e.g. group_name) and retry.",
+                form.missing_required.join("; ")
+            ),
+        });
+    }
+
+    upsert_field(&mut form.fields, "bookings", bookings_json(&bookings));
+    upsert_field(&mut form.fields, "returnUrl", return_url.clone());
+    upsert_field(&mut form.fields, "pickupHolds", String::new());
+    upsert_field(&mut form.fields, "method", BOOKING_METHOD.into());
+
+    let action_abs = if form.action.is_empty() {
+        format!("{}/ajax/space/book", LIBCAL_BASE)
+    } else {
+        reqwest::Url::parse(LIBCAL_BASE)
+            .and_then(|b| b.join(&form.action))
+            .map(|u| u.to_string())
+            .unwrap_or(form.action.clone())
+    };
+
+    let resp = auth_client
+        .post(&action_abs)
+        .header("Referer", &spaces_url)
+        .header("X-Requested-With", "XMLHttpRequest")
+        .form(&form.fields)
+        .send()
+        .await
+        .context("Final booking submit failed")?;
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
 
-    if status.is_success() && !body.contains("error") && !body.contains("Error") {
+    // Outcome: JSON {error} | JSON {html: confirmation} | HTML page
+    if let Ok(outcome) = serde_json::from_str::<TimesResponse>(&body) {
+        if let Some(err) = outcome.error {
+            return Ok(BookingResult {
+                success: false,
+                message: crate::util::strip_html_tags(&err),
+            });
+        }
+        if let Some(html) = outcome.html {
+            let text = crate::util::truncate(&crate::util::strip_html_tags(&html), 400);
+            return Ok(BookingResult {
+                success: true,
+                message: format!("{room_name}, {date} {start_hm}–{end_hm}. {text}"),
+            });
+        }
+    }
+    let text_lower = body.to_lowercase();
+    if status.is_success() && (text_lower.contains("confirm") || text_lower.contains("booking id")) {
         Ok(BookingResult {
             success: true,
             message: format!(
-                "Room {} booked for {} from {} to {}. Check your email for confirmation.",
-                space_id, date, start_time, end_time
+                "{room_name}, {date} {start_hm}–{end_hm}. {}",
+                crate::util::truncate(&crate::util::strip_html_tags(&body), 400)
             ),
         })
     } else {
-        // Try to extract error message
-        let msg = if body.contains("already booked") {
-            "This room is already booked for the requested time.".to_string()
-        } else if body.contains("login") || body.contains("Login") || body.contains("authenticate")
-        {
-            "Authentication required. Please use the `login` tool first.".to_string()
-        } else if body.contains("maximum") {
-            "You've reached your maximum booking limit (4 hours/day).".to_string()
-        } else {
-            format!(
-                "Server returned status {}. The booking may require different parameters or authentication.",
-                status
-            )
-        };
-
         Ok(BookingResult {
             success: false,
-            message: msg,
+            message: format!(
+                "Final submit returned HTTP {status}: {}",
+                crate::util::truncate(&crate::util::strip_html_tags(&body), 400)
+            ),
         })
     }
-}
-
-#[cfg(feature = "auth")]
-fn extract_csrf_token(html: &str) -> Option<String> {
-    use std::sync::LazyLock;
-
-    static CSRF_SEL: LazyLock<Selector> = LazyLock::new(|| {
-        Selector::parse(
-            "input[name='_token'], input[name='csrf_token'], meta[name='csrf-token']",
-        )
-        .expect("hardcoded selector")
-    });
-
-    let document = Html::parse_document(html);
-    let el = document.select(&CSRF_SEL).next()?;
-    el.value()
-        .attr("value")
-        .or(el.value().attr("content"))
-        .map(|s| s.to_string())
 }
 
 #[cfg(test)]
@@ -578,10 +1097,148 @@ mod tests {
         assert_eq!(rooms[0].name, "4th Floor Room 4360");
         assert_eq!(rooms[0].capacity, Some(10));
         assert_eq!(rooms[0].lid, 16577);
+        assert_eq!(rooms[0].gid, Some(34977));
 
         assert_eq!(rooms[1].eid, 139537);
         assert_eq!(rooms[1].name, "Room 200");
         assert_eq!(rooms[1].capacity, Some(6));
         assert_eq!(rooms[1].lid, 16578);
+        assert_eq!(rooms[1].gid, Some(34977));
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_normalize_time() {
+        assert_eq!(normalize_time("09:00").as_deref(), Some("09:00"));
+        assert_eq!(normalize_time("9:00").as_deref(), Some("09:00"));
+        assert_eq!(normalize_time("2:00 PM").as_deref(), Some("14:00"));
+        assert_eq!(normalize_time("2:30pm").as_deref(), Some("14:30"));
+        assert_eq!(normalize_time("2 PM").as_deref(), Some("14:00"));
+        assert_eq!(normalize_time("14:00:00").as_deref(), Some("14:00"));
+        assert_eq!(normalize_time("not a time"), None);
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_times_response_variants() {
+        let r: TimesResponse =
+            serde_json::from_str(r#"{"redirect":"/libauth/checkout/123"}"#).unwrap();
+        assert_eq!(r.redirect.as_deref(), Some("/libauth/checkout/123"));
+        assert!(r.html.is_none());
+
+        let r: TimesResponse = serde_json::from_str(r#"{"html":"<form></form>"}"#).unwrap();
+        assert!(r.html.is_some());
+
+        let r: TimesResponse =
+            serde_json::from_str(r#"{"error":"Sorry, this exceeds your limit"}"#).unwrap();
+        assert!(r.error.is_some());
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_booking_add_response_parse() {
+        let json = r#"{
+            "bookings": [{
+                "id": 1, "eid": 139537, "seat_id": 0, "gid": 34972, "lid": 16578,
+                "start": "2026-06-12 09:00:00", "end": "2026-06-12 09:30:00",
+                "checksum": "abc123",
+                "options": ["2026-06-12 09:30:00", "2026-06-12 10:00:00"],
+                "optionChecksums": ["crc1", "crc2"],
+                "optionSelected": 0, "cost": 0, "name": "Room 200"
+            }],
+            "limitIssues": null
+        }"#;
+        let resp: BookingAddResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.bookings.len(), 1);
+        let b = &resp.bookings[0];
+        assert_eq!(b.eid, 139537);
+        assert_eq!(b.option_checksums, vec!["crc1", "crc2"]);
+        assert!(resp.error.is_none());
+
+        // The end-extension lookup: find option matching desired end prefix
+        let idx = b.options.iter().position(|o| o.starts_with("2026-06-12 10:00"));
+        assert_eq!(idx, Some(1));
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_booking_context_pairs_shape() {
+        let b = PendingBooking {
+            id: 1,
+            eid: 139537,
+            seat_id: 0,
+            gid: 34972,
+            lid: 16578,
+            start: "2026-06-12 09:00:00".into(),
+            end: "2026-06-12 10:00:00".into(),
+            checksum: "abc".into(),
+            options: vec![],
+            option_checksums: vec![],
+        };
+        let pairs = booking_context_pairs(std::slice::from_ref(&b));
+        assert!(pairs.contains(&("bookings[0][eid]".to_string(), "139537".to_string())));
+        assert!(pairs.contains(&("bookings[0][checksum]".to_string(), "abc".to_string())));
+
+        let json = bookings_json(std::slice::from_ref(&b));
+        assert!(json.starts_with('['));
+        assert!(json.contains("\"checksum\":\"abc\""));
+        assert!(json.contains("\"eid\":139537"));
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_parse_booking_form_fills_group_and_terms() {
+        let html = r#"
+        <div id="s-lc-eq-form">
+        <form action="/ajax/space/book" method="post">
+            <input type="hidden" name="session" value="se55ion" />
+            <input type="text" name="fname" id="fname" value="Sammy" required />
+            <input type="text" name="lname" id="lname" value="Slug" required />
+            <input type="email" name="email" id="email" value="sammy@ucsc.edu" required />
+            <label for="q43210">Group Name</label>
+            <input type="text" name="q43210" id="q43210" value="" />
+            <select name="q999"><option value="">Choose</option><option value="2-3">2-3 people</option></select>
+            <input type="checkbox" name="terms" value="1" required />
+            <button type="submit">Submit my Booking</button>
+        </form>
+        </div>"#;
+
+        let form = parse_booking_form(html, Some("CSE 115A standup")).unwrap();
+        assert_eq!(form.action, "/ajax/space/book");
+        assert!(form.missing_required.is_empty(), "missing: {:?}", form.missing_required);
+
+        let get = |n: &str| {
+            form.fields
+                .iter()
+                .find(|(name, _)| name == n)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(get("session"), Some("se55ion"));
+        assert_eq!(get("fname"), Some("Sammy"));
+        assert_eq!(get("q43210"), Some("CSE 115A standup")); // group filled
+        assert_eq!(get("q999"), Some("2-3")); // first non-empty option
+        assert_eq!(get("terms"), Some("1")); // auto-agreed
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_parse_booking_form_reports_missing_required() {
+        let html = r#"
+        <form action="/ajax/space/book">
+            <label for="q1">Department</label>
+            <input type="text" name="q1" id="q1" value="" required />
+        </form>"#;
+        let form = parse_booking_form(html, None).unwrap();
+        assert_eq!(form.missing_required, vec!["department"]);
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn test_upsert_field_replaces() {
+        let mut fields = vec![("method".to_string(), "old".to_string())];
+        upsert_field(&mut fields, "method", "11".into());
+        upsert_field(&mut fields, "bookings", "[]".into());
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].1, "11");
     }
 }

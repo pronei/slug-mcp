@@ -25,6 +25,9 @@ pub struct BookStudyRoomRequest {
     pub start_time: String,
     /// End time (e.g., "10:00", "3:00 PM").
     pub end_time: String,
+    /// Group/booking name if the room's booking form asks for one. Optional —
+    /// the booking proceeds without it unless the form requires it.
+    pub group_name: Option<String>,
 }
 
 use crate::cache::CacheStore;
@@ -100,8 +103,10 @@ impl LibraryService {
         date: &str,
         start_time: &str,
         end_time: &str,
+        group_name: Option<&str>,
     ) -> Result<String> {
-        let result = book_room(auth_client, space_id, date, start_time, end_time).await?;
+        let result =
+            book_room(auth_client, space_id, date, start_time, end_time, group_name).await?;
 
         // Invalidate availability caches for all libraries on this date
         for lib in LIBRARIES {

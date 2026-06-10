@@ -163,6 +163,7 @@ pub async fn saml_aware_get(client: &reqwest::Client, url: &str) -> Result<SamlR
     // Follow up to 5 SAML POST binding forms
     for _ in 0..5 {
         let status = resp.status();
+        let final_url = resp.url().clone();
         let content_type = resp
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
@@ -173,33 +174,52 @@ pub async fn saml_aware_get(client: &reqwest::Client, url: &str) -> Result<SamlR
         if !content_type.contains("text/html") {
             return Ok(SamlResponse {
                 status,
-                body: resp.text().await.unwrap_or_default(),
+                final_url,
+                body: resp.text().await.context("failed to read response body")?,
             });
         }
 
         let body = resp.text().await.context("failed to read response body")?;
 
         if let Some((action_url, fields)) = parse_saml_form(&body) {
-            tracing::debug!("Following SAML POST binding to {}", action_url);
+            // Form actions are usually absolute, but resolve against the
+            // page that served the form to be safe.
+            let action_abs = final_url
+                .join(&action_url)
+                .context("invalid SAML form action URL")?;
+            tracing::debug!("Following SAML POST binding to {}", action_abs);
             resp = client
-                .post(&action_url)
+                .post(action_abs)
                 .form(&fields)
                 .send()
                 .await
                 .context("SAML POST binding failed")?;
         } else {
-            return Ok(SamlResponse { status, body });
+            return Ok(SamlResponse {
+                status,
+                final_url,
+                body,
+            });
         }
     }
 
     let status = resp.status();
+    let final_url = resp.url().clone();
     let body = resp.text().await.unwrap_or_default();
-    Ok(SamlResponse { status, body })
+    Ok(SamlResponse {
+        status,
+        final_url,
+        body,
+    })
 }
 
 /// Response from a SAML-aware request.
 pub struct SamlResponse {
     pub status: reqwest::StatusCode,
+    /// URL of the final response in the redirect/SAML chain — tells the
+    /// caller where it actually landed (e.g. back on the SP vs. stuck on
+    /// the IdP login page).
+    pub final_url: reqwest::Url,
     pub body: String,
 }
 

@@ -657,11 +657,8 @@ pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    let snippet = if clean_text.len() > 1000 {
-        format!("{}...", &clean_text[..1000])
-    } else {
-        clean_text
-    };
+    // char-safe truncation — byte-slicing panics if 1000 lands mid-codepoint
+    let snippet = crate::util::truncate(&clean_text, 1000);
 
     Ok(BalanceResult {
         balance: MealBalance {

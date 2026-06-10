@@ -12,19 +12,6 @@ const LOGIN_ENTRY_URL: &str = "https://get.cbord.com/ucsc/full/login.php";
 /// URL pattern indicating successful authentication (back on GET site).
 const AUTH_SUCCESS_PATTERN: &str = "get.cbord.com/ucsc/full/";
 
-/// LibCal patron-login initiator. Visiting it in the *browser* (with the IdP
-/// session already established) lets Shibboleth auto-assert and LibCal run its
-/// JS token→session exchange — which a non-JS HTTP client can't replicate.
-/// Warming it here captures the `calendar.library.ucsc.edu` session cookie so
-/// the `book_study_room` tool can check out over plain HTTP afterward.
-const LIBCAL_WARMUP_URL: &str = "https://calendar.library.ucsc.edu/login";
-
-/// Host that, once the browser lands back on it, means LibCal SSO finished.
-const LIBCAL_HOST: &str = "calendar.library.ucsc.edu";
-
-/// Max time to wait for the LibCal warm-up SSO to settle (best-effort).
-const LIBCAL_WARMUP_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// How long to wait for the user to complete authentication.
 const AUTH_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
@@ -103,15 +90,7 @@ async fn do_login_flow(browser: &Browser) -> Result<Vec<StoredCookie>> {
 
         // Check if we're back on the GET site (auth completed)
         if current_url.contains(AUTH_SUCCESS_PATTERN) && !current_url.contains("login.php") {
-            tracing::info!("Authentication completed! Warming up LibCal session...");
-
-            // Best-effort: drive the browser through LibCal's patron SSO so its
-            // JS-finalized session cookie is captured alongside the rest. If it
-            // doesn't settle, we still capture everything we have — the meal
-            // balance / IdP cookies don't depend on it.
-            warm_up_libcal(&page).await;
-
-            tracing::info!("Extracting cookies...");
+            tracing::info!("Authentication completed! Extracting cookies...");
 
             // Get ALL cookies browser-wide via Storage.getCookies. The
             // page-scoped Network.getCookies (`page.get_cookies()`) only
@@ -140,35 +119,6 @@ async fn do_login_flow(browser: &Browser) -> Result<Vec<StoredCookie>> {
 
             tracing::info!("Captured {} cookies from browser session", cookies.len());
             return Ok(cookies);
-        }
-    }
-}
-
-/// Navigate the already-authenticated browser through LibCal's patron SSO so
-/// the JS token→session exchange runs and sets the LibCal session cookie.
-/// Best-effort: logs and returns on any error or timeout without failing login.
-async fn warm_up_libcal(page: &chromiumoxide::Page) {
-    if let Err(e) = page.goto(LIBCAL_WARMUP_URL).await {
-        tracing::debug!("LibCal warm-up navigation failed: {e}");
-        return;
-    }
-    let deadline = tokio::time::Instant::now() + LIBCAL_WARMUP_TIMEOUT;
-    loop {
-        if tokio::time::Instant::now() >= deadline {
-            tracing::debug!("LibCal warm-up did not settle in time; continuing");
-            return;
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
-        let url = match page.url().await {
-            Ok(Some(u)) => u,
-            _ => continue,
-        };
-        // Back on the LibCal host (not the IdP) means SSO + token exchange done.
-        if url.contains(LIBCAL_HOST) && !url.contains("login.ucsc.edu") {
-            // Give the JS a beat to commit the session cookie, then return.
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            tracing::info!("LibCal session warmed up");
-            return;
         }
     }
 }

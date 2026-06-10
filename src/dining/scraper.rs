@@ -808,7 +808,11 @@ pub async fn scrape_nutrition(
     client: &reqwest::Client,
     recipe_id: &str,
 ) -> Result<NutritionInfo> {
-    let url = format!("{}?RecNumAndPort={}", LABEL_URL, recipe_id);
+    let url = format!(
+        "{}?RecNumAndPort={}",
+        LABEL_URL,
+        urlencoding::encode(recipe_id)
+    );
     let html = fetch_with_cookies(client, &url).await?;
     Ok(parse_nutrition_label(&html))
 }

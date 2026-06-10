@@ -185,7 +185,11 @@ pub async fn scrape_schedule(
     client: &reqwest::Client,
     facility_id: &str,
 ) -> Result<FacilitySchedule> {
-    let url = format!("{}?facilityId={}", SCHEDULE_URL, facility_id);
+    let url = format!(
+        "{}?facilityId={}",
+        SCHEDULE_URL,
+        urlencoding::encode(facility_id)
+    );
     let resp = client
         .get(&url)
         .send()
@@ -249,7 +253,7 @@ fn parse_schedule(html: &str, facility_id: &str) -> FacilitySchedule {
     }
 
     if facility_name.is_empty() {
-        facility_name = format!("Facility {}", &facility_id[..8.min(facility_id.len())]);
+        facility_name = format!("Facility {}", facility_id.chars().take(8).collect::<String>());
     }
 
     FacilitySchedule {

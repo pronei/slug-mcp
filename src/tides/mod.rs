@@ -98,14 +98,20 @@ async fn fetch_predictions(
     let begin_date = today.format("%Y%m%d").to_string();
     let end_date = end.format("%Y%m%d").to_string();
 
-    let url = format!(
-        "{}?product=predictions&application=slug-mcp&begin_date={}&end_date={}\
-         &datum=MLLW&station={}&time_zone=lst_ldt&units=english&interval=hilo&format=json",
-        COOPS_BASE, begin_date, end_date, station
-    );
-
     let resp = http
-        .get(&url)
+        .get(COOPS_BASE)
+        .query(&[
+            ("product", "predictions"),
+            ("application", "slug-mcp"),
+            ("begin_date", begin_date.as_str()),
+            ("end_date", end_date.as_str()),
+            ("datum", "MLLW"),
+            ("station", station),
+            ("time_zone", "lst_ldt"),
+            ("units", "english"),
+            ("interval", "hilo"),
+            ("format", "json"),
+        ])
         .send()
         .await
         .context("CO-OPS HTTP request failed")?;

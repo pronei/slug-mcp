@@ -78,12 +78,13 @@ async fn fetch_iv(
     site: &str,
     parameters: &str,
 ) -> Result<Vec<StreamReading>> {
-    let url = format!(
-        "https://waterservices.usgs.gov/nwis/iv/?sites={}&parameterCd={}&format=json",
-        site, parameters
-    );
     let resp = http
-        .get(&url)
+        .get("https://waterservices.usgs.gov/nwis/iv/")
+        .query(&[
+            ("sites", site),
+            ("parameterCd", parameters),
+            ("format", "json"),
+        ])
         .send()
         .await
         .context("USGS IV HTTP request failed")?;

@@ -42,9 +42,15 @@ impl ClimbingService {
 
         let (cache_key, query) = if let Some(area) = &req.area {
             let key = format!("climbing:area:{}", area.to_lowercase());
+            // Build the string literal via serde_json so all escaping (quotes,
+            // backslashes, control chars) is handled correctly — a raw replace
+            // of only `"` lets an `area` ending in `\` break out of the literal.
+            // serde_json::to_string yields a quoted, fully-escaped JSON string,
+            // which is also a valid GraphQL string literal.
+            let area_literal = serde_json::to_string(area).unwrap_or_else(|_| "\"\"".to_string());
             let q = format!(
-                r#"{{ areas(filter: {{area_name: {{match: "{}"}}}}) {{ area_name totalClimbs metadata {{ lat lng }} pathTokens children {{ area_name totalClimbs }} climbs {{ name grades {{ yds }} type {{ sport trad bouldering tr }} fa length }} }} }}"#,
-                area.replace('"', r#"\""#)
+                r#"{{ areas(filter: {{area_name: {{match: {}}}}}) {{ area_name totalClimbs metadata {{ lat lng }} pathTokens children {{ area_name totalClimbs }} climbs {{ name grades {{ yds }} type {{ sport trad bouldering tr }} fa length }} }} }}"#,
+                area_literal
             );
             (key, q)
         } else {

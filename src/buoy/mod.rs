@@ -77,10 +77,26 @@ impl BuoyService {
     }
 }
 
+/// NDBC station IDs are short alphanumeric codes (typically 5 chars, e.g.
+/// "46042"). Reject anything else before it reaches the URL path so a crafted
+/// `station` can't traverse paths or inject extra request targets.
+fn validate_station(station: &str) -> Result<()> {
+    let ok = (4..=6).contains(&station.len())
+        && station.chars().all(|c| c.is_ascii_alphanumeric());
+    if !ok {
+        anyhow::bail!(
+            "invalid NDBC station ID '{}': expected 4-6 alphanumeric characters (e.g. 46042)",
+            station
+        );
+    }
+    Ok(())
+}
+
 async fn fetch_observations(
     http: &reqwest::Client,
     station: &str,
 ) -> Result<Vec<BuoyObservation>> {
+    validate_station(station)?;
     let url = format!("https://www.ndbc.noaa.gov/data/realtime2/{}.txt", station);
     let resp = http
         .get(&url)

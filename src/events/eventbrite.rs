@@ -15,16 +15,30 @@ static SEL_EVENT_HREF: LazyLock<Selector> =
 
 // ─── Step 1: Scrape event IDs from the Eventbrite discover page ───
 
+/// Restrict a slug to URL-safe `[a-z0-9-]`, dropping every other character
+/// (including path-significant ones like `/`, `.`, `?`). Collapses the
+/// whitespace-to-dash step into the same pass so callers can hand us raw input.
+fn sanitize_slug(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for c in raw.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() || c == '-' {
+            out.push(c);
+        } else if c.is_whitespace() {
+            out.push('-');
+        }
+        // everything else (/, ., ?, &, etc.) is dropped
+    }
+    out
+}
+
 /// Build a discover URL like `https://www.eventbrite.com/d/ca--santa-cruz/music/`
 fn build_discover_url(location_slug: &str, query: Option<&str>) -> String {
     let q = query.unwrap_or("events");
-    // Replace spaces with dashes for URL
-    let q_slug: String = q
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join("-")
-        .to_lowercase();
-    format!("{}/d/{}/{}/", EVENTBRITE_BASE, location_slug, q_slug)
+    // Sanitize to [a-z0-9-]: spaces become dashes, other chars are dropped so
+    // a malicious query can't inject extra URL path segments.
+    let q_slug = sanitize_slug(q);
+    let q_slug = if q_slug.is_empty() { "events".to_string() } else { q_slug };
+    format!("{}/d/{}/{}/", EVENTBRITE_BASE, sanitize_slug(location_slug), q_slug)
 }
 
 /// Convert a location string like "Santa Cruz, CA" to a slug like "ca--santa-cruz".
@@ -254,7 +268,7 @@ impl EventbriteClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Eventbrite detail API returned {}: {}", status, &body[..body.len().min(200)]);
+            anyhow::bail!("Eventbrite detail API returned {}: {}", status, crate::util::truncate(&body, 200));
         }
 
         let data: DestinationResponse = resp
@@ -396,6 +410,31 @@ mod tests {
         assert_eq!(
             build_discover_url("ca--santa-cruz", Some("tech meetup")),
             "https://www.eventbrite.com/d/ca--santa-cruz/tech-meetup/"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_slug_drops_path_chars() {
+        // Path-significant chars are dropped, spaces become dashes.
+        assert_eq!(sanitize_slug("tech meetup"), "tech-meetup");
+        assert_eq!(sanitize_slug("ca--santa-cruz"), "ca--santa-cruz");
+        assert_eq!(sanitize_slug("../../etc/passwd"), "etcpasswd");
+        assert_eq!(sanitize_slug("a/b?c=d&e"), "abcde");
+        // Multibyte input doesn't panic and non-ascii is dropped.
+        assert_eq!(sanitize_slug("café münchen"), "caf-mnchen");
+    }
+
+    #[test]
+    fn test_build_discover_url_sanitizes() {
+        // Injection attempt can't escape the query path segment.
+        assert_eq!(
+            build_discover_url("ca--santa-cruz", Some("music/../../admin")),
+            "https://www.eventbrite.com/d/ca--santa-cruz/musicadmin/"
+        );
+        // Empty-after-sanitize query falls back to "events".
+        assert_eq!(
+            build_discover_url("ca--santa-cruz", Some("///")),
+            "https://www.eventbrite.com/d/ca--santa-cruz/events/"
         );
     }
 

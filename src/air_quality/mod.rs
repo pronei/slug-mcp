@@ -93,13 +93,21 @@ async fn fetch_airnow(
     zip: &str,
     distance: u32,
 ) -> Result<Vec<AirReading>> {
-    let url = format!(
-        "https://www.airnowapi.org/aq/observation/zipCode/current/?format=application/json\
-         &zipCode={}&distance={}&API_KEY={}",
-        zip, distance, key
-    );
+    // AirNow ZIPs are 5 digits — reject anything else before it reaches the
+    // query string so a crafted `zip` can't inject extra parameters.
+    if zip.len() != 5 || !zip.chars().all(|c| c.is_ascii_digit()) {
+        anyhow::bail!("invalid ZIP code '{}': expected 5 digits (e.g. 95064)", zip);
+    }
+
+    let distance_str = distance.to_string();
     let resp = http
-        .get(&url)
+        .get("https://www.airnowapi.org/aq/observation/zipCode/current/")
+        .query(&[
+            ("format", "application/json"),
+            ("zipCode", zip),
+            ("distance", distance_str.as_str()),
+            ("API_KEY", key),
+        ])
         .send()
         .await
         .context("AirNow HTTP request failed")?;

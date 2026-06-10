@@ -72,22 +72,28 @@ impl DiningService {
         include_all: bool,
     ) -> Result<String> {
         // Convert ISO date (YYYY-MM-DD) to M/D/YYYY for the nutrition site.
-        // Cache key always uses the canonical ISO date for consistency.
+        // Cache key always uses the canonical ISO date for consistency. A
+        // missing date canonicalizes to *today in Pacific* (not a literal
+        // "today" key) so the key matches what the 5 AM pre-warmer writes and
+        // rolls over at midnight instead of serving yesterday's menu.
         let (iso_date, formatted_date) = match date {
             Some(d) => {
                 if let Ok(parsed) = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d") {
                     let iso = d.to_string();
                     let formatted = format!("{}/{}/{}", parsed.month(), parsed.day(), parsed.year());
-                    (Some(iso), Some(formatted))
+                    (iso, Some(formatted))
                 } else {
                     // Assume it's already in M/D/YYYY — store raw as cache key
-                    (Some(d.to_string()), Some(d.to_string()))
+                    (d.to_string(), Some(d.to_string()))
                 }
             }
-            None => (None, None),
+            None => {
+                let now = crate::util::now_pacific();
+                (now.format("%Y-%m-%d").to_string(), None)
+            }
         };
         let scraper_date = formatted_date.as_deref();
-        let cache_date = iso_date.as_deref().unwrap_or("today");
+        let cache_date = iso_date.as_str();
 
         let halls: Vec<&scraper::DiningHall> = if let Some(hall_query) = hall {
             let hall = find_hall(hall_query).ok_or_else(|| {
@@ -195,11 +201,18 @@ impl DiningService {
     }
 
     #[cfg(feature = "auth")]
-    pub async fn get_balance(&self, auth_client: &reqwest::Client) -> Result<BalanceResult> {
-        // Balance uses conditional caching (only cache on success), so we
-        // don't use get_or_fetch here — debug_snippet means parse failed and
-        // we want to refetch next time.
-        if let Some(balance) = self.cache.get::<MealBalance>("dining:balance").await {
+    pub async fn get_balance(
+        &self,
+        auth_client: &reqwest::Client,
+        session_key: &str,
+    ) -> Result<BalanceResult> {
+        // Balance is per-user, so the cache key MUST include a session
+        // discriminator — a global key would serve one user's balance to
+        // another in SSE mode (multiple authenticated sessions per process).
+        // Conditional caching (only on success): a debug_snippet means the
+        // parse failed and we want to refetch next time, so no get_or_fetch.
+        let cache_key = format!("dining:balance:{session_key}");
+        if let Some(balance) = self.cache.get::<MealBalance>(&cache_key).await {
             return Ok(BalanceResult { balance, debug_snippet: None });
         }
 
@@ -208,7 +221,7 @@ impl DiningService {
         if result.debug_snippet.is_none() {
             self.cache
                 .set(
-                    "dining:balance",
+                    &cache_key,
                     result.balance.clone(),
                     std::time::Duration::from_secs(300),
                 )

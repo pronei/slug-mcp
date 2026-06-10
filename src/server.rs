@@ -1191,7 +1191,11 @@ define_tools!({
         let client =
             crate::auth::build_authenticated_client(&session.cookies).map_err(internal_err)?;
 
-        let result = self.dining.get_balance(&client).await.map_err(internal_err)?;
+        let result = self
+            .dining
+            .get_balance(&client, &session.username)
+            .await
+            .map_err(internal_err)?;
 
         let mut output = result.balance.format();
 

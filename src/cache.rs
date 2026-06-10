@@ -84,9 +84,11 @@ impl CacheStore {
         self.inner.invalidate(key).await;
     }
 
-    /// Cache-aside fetch: return cached `T` (cloned), or invoke `fetch` and
-    /// cache the result before returning it. Type mismatches in the cache are
-    /// treated as misses.
+    /// Cache-aside fetch with single-flight: return cached `T` (cloned), or
+    /// invoke `fetch` and cache the result before returning it. Concurrent
+    /// misses for the same key are coalesced — only one `fetch` runs and the
+    /// rest await its result (moka's `or_try_insert_with`). Type mismatches in
+    /// the cache are treated as misses.
     pub async fn get_or_fetch<T, F, Fut>(
         &self,
         key: &str,
@@ -98,13 +100,40 @@ impl CacheStore {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = anyhow::Result<T>>,
     {
+        // Fast path: a type-correct hit avoids the entry machinery entirely.
         if let Some(cached) = self.get::<T>(key).await {
             return Ok(cached);
         }
-        let value = fetch().await?;
-        let arc = Arc::new(value);
-        self.set_arc(key, Arc::clone(&arc), Duration::from_secs(ttl_secs))
-            .await;
-        Ok((*arc).clone())
+        // A wrong-typed entry squatting the key would make the coalesced
+        // insert below return it (and skip the fetch). All callers of a given
+        // key use the same `T`, so this only happens across a `T`-for-key code
+        // change; drop the stale entry so the fetch runs and re-types it.
+        if self.inner.contains_key(key) {
+            self.inner.invalidate(key).await;
+        }
+
+        let ttl = Duration::from_secs(ttl_secs);
+        let entry = self
+            .inner
+            .entry(key.to_string())
+            .or_try_insert_with(async move {
+                let value = fetch().await?;
+                Ok::<CacheEntry, anyhow::Error>(CacheEntry {
+                    value: Arc::new(value) as Arc<dyn Any + Send + Sync>,
+                    ttl,
+                })
+            })
+            .await
+            .map_err(|e: Arc<anyhow::Error>| anyhow::anyhow!("cache fetch failed: {e}"))?;
+
+        match Arc::downcast::<T>(entry.into_value().value) {
+            Ok(arc) => Ok((*arc).clone()),
+            // We invalidated any wrong-typed entry above and the coalesced
+            // fetch inserts a `T`, so this is unreachable in practice. Surface
+            // an error rather than panic if the invariant ever breaks.
+            Err(_) => Err(anyhow::anyhow!(
+                "cache type mismatch for key '{key}' after fetch"
+            )),
+        }
     }
 }

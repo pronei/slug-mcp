@@ -210,7 +210,7 @@ async fn run_verify_auth(
     // 2. Meal balance (exercises saml_aware_get + cbord scrape).
     eprintln!("\n── Meal balance ──");
     let dining = dining::DiningService::new(http.clone(), cache.clone());
-    match dining.get_balance(&client).await {
+    match dining.get_balance(&client, &session.username).await {
         Ok(result) => {
             println!("{}", result.balance.format());
             if let Some(snippet) = result.debug_snippet {
@@ -321,10 +321,14 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
 
     // Shared HTTP client: gzip for smaller responses, explicit User-Agent so
     // public upstream APIs (notably NOAA NWS, which rejects blank UAs) can
-    // identify us. All services clone from this single client.
+    // identify us, and bounded timeouts so one hung upstream (Overpass,
+    // ERDDAP, NDBC…) can't wedge a tool call forever. All services clone from
+    // this single client.
     let http = reqwest::Client::builder()
         .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
         .gzip(true)
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {}", e))?;
     #[cfg(feature = "auth")]

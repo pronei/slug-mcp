@@ -1,4 +1,5 @@
 use anyhow::{Result, bail};
+use futures_util::future::join_all;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -33,6 +34,21 @@ struct DayForecast {
 }
 
 pub async fn fetch_typed(erddap: &ErddapClient, req: &HabRequest) -> Result<HabSnapshot> {
+    // Cache the typed snapshot under the same TTL as the single-tool string
+    // path (3600s) so fusion callers hit cache instead of refetching ERDDAP.
+    let cache_key = format!(
+        "ocean:charm:typed:{:.2}:{:.2}:r{}",
+        req.lat.unwrap_or(36.96),
+        req.lon.unwrap_or(-122.02),
+        req.snap_radius.unwrap_or(5),
+    );
+    erddap
+        .cache()
+        .get_or_fetch(&cache_key, 3600, || fetch_typed_uncached(erddap, req))
+        .await
+}
+
+async fn fetch_typed_uncached(erddap: &ErddapClient, req: &HabRequest) -> Result<HabSnapshot> {
     let lat = req.lat.unwrap_or(36.96);
     let lon_west = req.lon.unwrap_or(-122.02);
     let lon_360 = lon_to_360(lon_west);
@@ -43,24 +59,32 @@ pub async fn fetch_typed(erddap: &ErddapClient, req: &HabRequest) -> Result<HabS
     let lon_lo = lon_360 - 0.1 * snap_r as f64;
     let lon_hi = lon_360 + 0.1 * snap_r as f64;
 
-    let mut forecasts = Vec::new();
+    // Fetch all 4 forecast horizons concurrently. Partial failures are
+    // tolerated: a failed dataset becomes an "unavailable" placeholder so the
+    // remaining horizons still render.
+    let results = join_all(DATASETS.iter().map(|&ds| {
+        fetch_one_day(erddap, ds, (lat_lo, lat_hi), (lon_lo, lon_hi), lat, lon_360)
+    }))
+    .await;
 
-    for &ds in DATASETS {
-        match fetch_one_day(erddap, ds, (lat_lo, lat_hi), (lon_lo, lon_hi), lat, lon_360).await {
-            Ok(f) => forecasts.push(f),
+    let forecasts: Vec<DayForecast> = DATASETS
+        .iter()
+        .zip(results)
+        .map(|(&ds, res)| match res {
+            Ok(f) => f,
             Err(e) => {
                 tracing::warn!("C-HARM {} fetch failed: {}", ds, e);
-                forecasts.push(DayForecast {
+                DayForecast {
                     dataset: ds.to_string(),
                     date: "unavailable".into(),
                     p_pseudo_nitzschia: None,
                     p_particulate_domoic: None,
                     p_cellular_domoic: None,
                     chla_filled: None,
-                });
+                }
             }
-        }
-    }
+        })
+        .collect();
 
     if forecasts.iter().all(|f| f.p_pseudo_nitzschia.is_none()) {
         bail!("C-HARM: all 4 forecast horizons returned no data near ({}, {})", lat, lon_west);
@@ -87,40 +111,8 @@ pub async fn fetch_typed(erddap: &ErddapClient, req: &HabRequest) -> Result<HabS
 }
 
 pub async fn fetch_and_format(erddap: &ErddapClient, req: &HabRequest) -> Result<String> {
-    let lat = req.lat.unwrap_or(36.96);
-    let lon_west = req.lon.unwrap_or(-122.02);
-    let lon_360 = lon_to_360(lon_west);
-    let snap_r = req.snap_radius.unwrap_or(5);
-
-    let lat_lo = lat - 0.1 * snap_r as f64;
-    let lat_hi = lat + 0.1 * snap_r as f64;
-    let lon_lo = lon_360 - 0.1 * snap_r as f64;
-    let lon_hi = lon_360 + 0.1 * snap_r as f64;
-
-    let mut forecasts = Vec::new();
-
-    for &ds in DATASETS {
-        match fetch_one_day(erddap, ds, (lat_lo, lat_hi), (lon_lo, lon_hi), lat, lon_360).await {
-            Ok(f) => forecasts.push(f),
-            Err(e) => {
-                tracing::warn!("C-HARM {} fetch failed: {}", ds, e);
-                forecasts.push(DayForecast {
-                    dataset: ds.to_string(),
-                    date: "unavailable".into(),
-                    p_pseudo_nitzschia: None,
-                    p_particulate_domoic: None,
-                    p_cellular_domoic: None,
-                    chla_filled: None,
-                });
-            }
-        }
-    }
-
-    if forecasts.iter().all(|f| f.p_pseudo_nitzschia.is_none()) {
-        bail!("C-HARM: all 4 forecast horizons returned no data near ({}, {})", lat, lon_west);
-    }
-
-    format_output(&forecasts, lat, lon_west)
+    let snap = fetch_typed(erddap, req).await?;
+    format_output(&snap)
 }
 
 async fn fetch_one_day(
@@ -212,7 +204,11 @@ fn risk_class(p: Option<f64>) -> &'static str {
     }
 }
 
-fn format_output(forecasts: &[DayForecast], lat: f64, lon_west: f64) -> Result<String> {
+fn format_output(snap: &HabSnapshot) -> Result<String> {
+    let lat = snap.query_lat;
+    let lon_west = snap.query_lon;
+    let forecasts = &snap.forecasts;
+
     let mut out = format!(
         "# C-HARM v3.1 — HAB Risk Forecast\n\n\
          _Nearest valid cell to ({:.2}°N, {:.2}°W)_\n\n\

@@ -57,8 +57,11 @@ impl DegreeService {
         let http = self.http.clone();
         self.cache
             .get_or_fetch("degrees:program_index", CACHE_TTL, || async {
-                let bachelors = scrape_program_list(&http, BACHELORS_URL).await?;
-                let masters = scrape_program_list(&http, MASTERS_URL).await?;
+                // Scrape the bachelors and masters lists concurrently.
+                let (bachelors, masters) = tokio::try_join!(
+                    scrape_program_list(&http, BACHELORS_URL),
+                    scrape_program_list(&http, MASTERS_URL),
+                )?;
                 Ok(ProgramIndex { bachelors, masters })
             })
             .await

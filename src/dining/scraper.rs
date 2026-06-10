@@ -289,11 +289,16 @@ pub async fn scrape_menu(
     let mut menu = parse_shortmenu(&html, hall.name);
     menu.date = date.map(|s| s.to_string());
 
-    // Best-effort: enrich with recipe IDs from longmenu (one page per meal)
+    // Best-effort: enrich with recipe IDs from longmenu (one page per meal).
+    // Fetch all meal pages concurrently so a cold menu isn't N serialized GETs.
     let meal_names: Vec<String> = menu.meals.iter().map(|m| m.name.clone()).collect();
-    for meal_name in &meal_names {
+    let long_fetches = meal_names.iter().map(|meal_name| {
         let long_url = menu_url(LONGMENU_BASE, hall, date, Some(meal_name));
-        match fetch_with_cookies(client, &long_url).await {
+        async move { (meal_name, fetch_with_cookies(client, &long_url).await) }
+    });
+    let long_results = futures_util::future::join_all(long_fetches).await;
+    for (meal_name, result) in long_results {
+        match result {
             Ok(long_html) => {
                 let long_menu = parse_longmenu(&long_html, hall.name);
                 enrich_recipe_ids(&mut menu, &long_menu);

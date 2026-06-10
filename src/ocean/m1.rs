@@ -44,6 +44,21 @@ pub async fn fetch_typed(
     erddap: &ErddapClient,
     req: &M1Request,
 ) -> Result<M1SnapTyped> {
+    // Cache the typed snapshot under the same TTL as the single-tool string
+    // path (1800s) so fusion callers hit cache instead of refetching ERDDAP.
+    let hours = req.hours.unwrap_or(24);
+    let profile = req.include_profile.unwrap_or(true);
+    let cache_key = format!("ocean:m1:typed:h{}:p{}", hours, profile);
+    erddap
+        .cache()
+        .get_or_fetch(&cache_key, 1800, || fetch_typed_uncached(erddap, req))
+        .await
+}
+
+async fn fetch_typed_uncached(
+    erddap: &ErddapClient,
+    req: &M1Request,
+) -> Result<M1SnapTyped> {
     let hours = req.hours.unwrap_or(24).clamp(1, 168);
     let include_profile = req.include_profile.unwrap_or(true);
 

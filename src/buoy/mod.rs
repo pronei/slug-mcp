@@ -113,7 +113,11 @@ async fn fetch_observations(
         anyhow::bail!("NDBC returned HTTP {}", resp.status());
     }
     let body = resp.text().await.context("reading NDBC body")?;
-    parse_realtime2(&body)
+    let mut obs = parse_realtime2(&body)?;
+    // Only rows 0 (latest) and ~18 (the ~3h-earlier trend row) are ever read,
+    // so cap the cached value at 24 rows instead of all ~2,500 45-day rows.
+    obs.truncate(24);
+    Ok(obs)
 }
 
 /// Parse the realtime2 .txt format. Returns observations newest-first.

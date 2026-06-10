@@ -30,6 +30,23 @@ pub struct SstRequest {
 }
 
 pub async fn fetch_typed(erddap: &ErddapClient, req: &SstRequest) -> Result<SstSnapshot> {
+    // Cache the typed snapshot under the same key/TTL as the single-tool
+    // string path so fusion callers hit cache instead of refetching ERDDAP.
+    let cache_key = format!(
+        "ocean:sst:typed:{:.1}:{:.1}:{:.1}:{:.1}:s{}",
+        req.lat_min.unwrap_or(36.5),
+        req.lat_max.unwrap_or(37.2),
+        req.lon_min.unwrap_or(-122.5),
+        req.lon_max.unwrap_or(-121.8),
+        req.stride.unwrap_or(2),
+    );
+    erddap
+        .cache()
+        .get_or_fetch(&cache_key, 3600, || fetch_typed_uncached(erddap, req))
+        .await
+}
+
+async fn fetch_typed_uncached(erddap: &ErddapClient, req: &SstRequest) -> Result<SstSnapshot> {
     let lat_range = (
         req.lat_min.unwrap_or(DEFAULT_LAT.0),
         req.lat_max.unwrap_or(DEFAULT_LAT.1),

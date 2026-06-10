@@ -165,24 +165,18 @@ pub async fn fetch_typed(
             "unknown latitude band '{}'. Available: 31N–47N in 1° steps", lat_band
         ))?;
 
+    // Read the parsed archives as `Arc` to avoid deep-cloning ~2 MB out of the
+    // cache on every call.
     let (cuti_data, beuti_data) = tokio::try_join!(
-        fetch_index(http, cache, "cuti", CUTI_URL),
-        fetch_index(http, cache, "beuti", BEUTI_URL),
+        fetch_index_arc(http, cache, "cuti", CUTI_URL),
+        fetch_index_arc(http, cache, "beuti", BEUTI_URL),
     )?;
 
-    let cuti_clim = cache
-        .get_or_fetch::<Climatology, _, _>("ocean:cuti_climatology", 86400 * 365, {
-            let data = cuti_data.clone();
-            move || async move { Ok(compute_climatology(&data)) }
-        })
-        .await?;
-
-    let beuti_clim = cache
-        .get_or_fetch::<Climatology, _, _>("ocean:beuti_climatology", 86400 * 365, {
-            let data = beuti_data.clone();
-            move || async move { Ok(compute_climatology(&data)) }
-        })
-        .await?;
+    // Compute-or-get climatology; the index data is only cloned into the
+    // compute path on a cache miss.
+    let cuti_clim = get_or_compute_climatology(cache, "ocean:cuti_climatology", &cuti_data).await;
+    let beuti_clim =
+        get_or_compute_climatology(cache, "ocean:beuti_climatology", &beuti_data).await;
 
     let n_cuti = cuti_data.rows.len();
     let n_beuti = beuti_data.rows.len();
@@ -270,24 +264,18 @@ pub async fn fetch_and_format(
         ))?;
     let days_back = req.days_back.unwrap_or(7).clamp(1, 90) as usize;
 
+    // Read the parsed archives as `Arc` to avoid deep-cloning ~2 MB out of the
+    // cache on every call.
     let (cuti_data, beuti_data) = tokio::try_join!(
-        fetch_index(http, cache, "cuti", CUTI_URL),
-        fetch_index(http, cache, "beuti", BEUTI_URL),
+        fetch_index_arc(http, cache, "cuti", CUTI_URL),
+        fetch_index_arc(http, cache, "beuti", BEUTI_URL),
     )?;
 
-    let cuti_clim = cache
-        .get_or_fetch::<Climatology, _, _>("ocean:cuti_climatology", 86400 * 365, {
-            let data = cuti_data.clone();
-            move || async move { Ok(compute_climatology(&data)) }
-        })
-        .await?;
-
-    let beuti_clim = cache
-        .get_or_fetch::<Climatology, _, _>("ocean:beuti_climatology", 86400 * 365, {
-            let data = beuti_data.clone();
-            move || async move { Ok(compute_climatology(&data)) }
-        })
-        .await?;
+    // Compute-or-get climatology; the index data is only cloned into the
+    // compute path on a cache miss.
+    let cuti_clim = get_or_compute_climatology(cache, "ocean:cuti_climatology", &cuti_data).await;
+    let beuti_clim =
+        get_or_compute_climatology(cache, "ocean:beuti_climatology", &beuti_data).await;
 
     let n_cuti = cuti_data.rows.len();
     let n_beuti = beuti_data.rows.len();
@@ -441,27 +429,48 @@ fn latency_days(data_date: &str) -> i64 {
         .unwrap_or(0)
 }
 
-async fn fetch_index(
+/// Fetch and cache the parsed CUTI/BEUTI archive, returning the cached
+/// `Arc<IndexData>` directly to avoid a deep clone of the ~2 MB archive on
+/// cache hits.
+async fn fetch_index_arc(
     http: &reqwest::Client,
     cache: &Arc<CacheStore>,
     name: &str,
     url: &str,
-) -> Result<IndexData> {
+) -> Result<Arc<IndexData>> {
     let cache_key = format!("ocean:{}:csv", name);
-    let http = http.clone();
-    let url = url.to_string();
+    if let Some(arc) = cache.get_arc::<IndexData>(&cache_key).await {
+        return Ok(arc);
+    }
+    let body = http
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let data = Arc::new(parse_index_csv(&body)?);
     cache
-        .get_or_fetch(&cache_key, 21600, move || async move {
-            let body = http
-                .get(&url)
-                .send()
-                .await?
-                .error_for_status()?
-                .text()
-                .await?;
-            parse_index_csv(&body)
-        })
-        .await
+        .set_arc(&cache_key, Arc::clone(&data), std::time::Duration::from_secs(21600))
+        .await;
+    Ok(data)
+}
+
+/// Return the cached climatology if present, otherwise compute it (cloning the
+/// index data only on this miss path) and cache it.
+async fn get_or_compute_climatology(
+    cache: &Arc<CacheStore>,
+    cache_key: &str,
+    data: &Arc<IndexData>,
+) -> Arc<Climatology> {
+    if let Some(arc) = cache.get_arc::<Climatology>(cache_key).await {
+        return arc;
+    }
+    let clim = Arc::new(compute_climatology(data));
+    cache
+        .set_arc(cache_key, Arc::clone(&clim), std::time::Duration::from_secs(86400 * 365))
+        .await;
+    clim
 }
 
 #[cfg(test)]

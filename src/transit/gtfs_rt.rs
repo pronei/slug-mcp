@@ -7,8 +7,8 @@
 //!
 //! **Not gRPC.** GTFS-RT is a static Protocol Buffer document served over
 //! plain HTTP GET. We fetch the bytes, decode via `prost::Message::decode`,
-//! and store the raw bytes (base64-encoded) in the shared `CacheStore` for a
-//! short TTL so concurrent tool calls share a single fetch.
+//! and store the decoded `FeedMessage` (as a shared `Arc`) in the `CacheStore`
+//! for a short TTL so concurrent tool calls share a single fetch and decode.
 //!
 //! Backend choice: since 2026-04-10 this module powers `get_bus_predictions`
 //! instead of the authenticated BusTime API. The `bustime.rs` module is left
@@ -17,6 +17,7 @@
 //! accurate than BusTime's pre-computed ETAs.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -38,16 +39,17 @@ pub const BACKEND_NAME: &str = "GTFS-RT (no API key)";
 
 // ───── feed fetching (shared by all callers) ─────
 
-/// Fetch a feed URL, caching the decoded `FeedMessage` so concurrent tool
-/// calls reuse a single upstream GET (no base64 / re-decode round trip).
+/// Fetch a feed URL, caching the decoded `FeedMessage` (as a shared `Arc`) so
+/// concurrent tool calls reuse a single upstream GET and decode. The feed is
+/// read-only, so callers share the `Arc` without cloning the whole message.
 pub async fn fetch_feed(
     http: &reqwest::Client,
     cache: &CacheStore,
     feed_name: &'static str,
     url: &'static str,
-) -> Result<gtfs_realtime::FeedMessage> {
+) -> Result<Arc<gtfs_realtime::FeedMessage>> {
     let cache_key = format!("transit:gtfsrt:{}", feed_name);
-    if let Some(msg) = cache.get::<gtfs_realtime::FeedMessage>(&cache_key).await {
+    if let Some(msg) = cache.get_arc::<gtfs_realtime::FeedMessage>(&cache_key).await {
         return Ok(msg);
     }
 
@@ -64,11 +66,13 @@ pub async fn fetch_feed(
         .await
         .with_context(|| format!("reading {} body", feed_name))?;
 
-    let msg = gtfs_realtime::FeedMessage::decode(&bytes[..])
-        .with_context(|| format!("decoding {} protobuf", feed_name))?;
+    let msg = Arc::new(
+        gtfs_realtime::FeedMessage::decode(&bytes[..])
+            .with_context(|| format!("decoding {} protobuf", feed_name))?,
+    );
 
     cache
-        .set(&cache_key, msg.clone(), Duration::from_secs(FEED_TTL_SECS))
+        .set_arc(&cache_key, Arc::clone(&msg), Duration::from_secs(FEED_TTL_SECS))
         .await;
 
     Ok(msg)
@@ -184,9 +188,9 @@ pub async fn get_predictions_for_stop(
                 .and_then(|v| v.id.clone())
                 .unwrap_or_default();
 
-            let passenger_load = vehicle_id
-                .get(..)
-                .and_then(|id| vehicles_lookup.get(id).and_then(|v| v.occupancy.clone()));
+            let passenger_load = vehicles_lookup
+                .get(&vehicle_id)
+                .and_then(|v| v.occupancy.clone());
 
             predictions.push(Prediction {
                 route: route_id.clone(),

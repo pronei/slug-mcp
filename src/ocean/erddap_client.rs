@@ -97,6 +97,12 @@ impl ErddapClient {
         Self { http, cache }
     }
 
+    /// Shared cache handle, so typed-snapshot fetchers can cache their parsed
+    /// result under the same TTL the single-tool string paths use.
+    pub fn cache(&self) -> &Arc<CacheStore> {
+        &self.cache
+    }
+
     pub async fn tabledap(
         &self,
         server: &str,

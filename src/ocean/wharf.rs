@@ -17,6 +17,17 @@ pub struct WharfRequest {
 }
 
 pub async fn fetch_typed(erddap: &ErddapClient, req: &WharfRequest) -> Result<WharfSnapshot> {
+    // Cache the typed snapshot under the same TTL as the single-tool string
+    // path (300s) so fusion callers hit cache instead of refetching ERDDAP.
+    let hours = req.hours.unwrap_or(6);
+    let cache_key = format!("ocean:wharf:typed:h{}", hours);
+    erddap
+        .cache()
+        .get_or_fetch(&cache_key, 300, || fetch_typed_uncached(erddap, req))
+        .await
+}
+
+async fn fetch_typed_uncached(erddap: &ErddapClient, req: &WharfRequest) -> Result<WharfSnapshot> {
     let hours = req.hours.unwrap_or(6).clamp(1, 48);
 
     let now = chrono::Utc::now();

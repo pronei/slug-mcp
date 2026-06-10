@@ -233,35 +233,37 @@ fn evaluate_rule(rule: &CourseRule, completed_set: &HashSet<String>) -> RuleProg
     }
 }
 
+/// Normalize a GE area code for matching: uppercase, drop '.' and '-' so
+/// "pr-c", "PR.C", and "PRC" all compare equal. Both the user's completed
+/// codes and the requirement's `area.code` must go through this.
+fn norm_ge_code(s: &str) -> String {
+    s.trim().to_uppercase().replace(['.', '-'], "")
+}
+
 fn check_ge_progress(ge: &GeRequirements, completed_ge: Option<&[String]>) -> GeProgress {
     let completed: HashSet<String> = completed_ge
         .unwrap_or(&[])
         .iter()
-        .map(|s| s.trim().to_uppercase().replace('.', "").replace('-', "-"))
+        .map(|s| norm_ge_code(s))
         .collect();
+    let has = |code: &str| completed.contains(&norm_ge_code(code));
 
     let required: Vec<(String, String, bool)> = ge
         .required
         .iter()
-        .map(|area| {
-            (
-                area.code.clone(),
-                area.name.clone(),
-                completed.contains(&area.code),
-            )
-        })
+        .map(|area| (area.code.clone(), area.name.clone(), has(&area.code)))
         .collect();
 
     let perspective_completed = ge
         .perspectives
         .iter()
-        .find(|a| completed.contains(&a.code))
+        .find(|a| has(&a.code))
         .map(|a| a.code.clone());
 
     let practice_completed = ge
         .practice
         .iter()
-        .find(|a| completed.contains(&a.code))
+        .find(|a| has(&a.code))
         .map(|a| a.code.clone());
 
     GeProgress {
@@ -270,7 +272,7 @@ fn check_ge_progress(ge: &GeRequirements, completed_ge: Option<&[String]>) -> Ge
         perspective_completed,
         practice_satisfied: practice_completed.is_some(),
         practice_completed,
-        composition_satisfied: completed.contains("C"),
+        composition_satisfied: has("C"),
     }
 }
 
@@ -647,5 +649,37 @@ mod tests {
         assert_eq!(progress.perspective_completed.as_deref(), Some("PE-H"));
         assert!(!progress.practice_satisfied);
         assert!(progress.composition_satisfied);
+    }
+
+    #[test]
+    fn test_ge_code_normalization_matches_across_formats() {
+        let ge = GeRequirements {
+            required: vec![GeArea {
+                code: "CC".into(),
+                name: "Cross-Cultural Analysis".into(),
+                credits: 5,
+            }],
+            perspectives: vec![],
+            practice: vec![GeArea {
+                code: "PR-C".into(),
+                name: "Creative".into(),
+                credits: 2,
+            }],
+            composition: GeArea {
+                code: "C".into(),
+                name: "Composition".into(),
+                credits: 5,
+            },
+        };
+
+        // User enters codes without the hyphen / lowercased / dotted — all must
+        // still match the canonical requirement codes.
+        let completed = vec!["prc".to_string(), "c.c".to_string()];
+        let progress = check_ge_progress(&ge, Some(&completed));
+        assert!(progress.required[0].2, "'c.c' should match required 'CC'");
+        assert!(
+            progress.practice_satisfied,
+            "'prc' should match practice 'PR-C'"
+        );
     }
 }

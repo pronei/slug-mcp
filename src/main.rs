@@ -64,6 +64,17 @@ enum Command {
     /// Use this token with the `authenticate` tool on a remote SSE server.
     #[cfg(feature = "auth")]
     ExportToken,
+    /// TEMP: interactive live check of the auth flow — login, meal balance,
+    /// and an S&E study-room booking on a given date.
+    #[cfg(feature = "auth")]
+    VerifyAuth {
+        /// Date to book (YYYY-MM-DD).
+        #[arg(long, default_value = "2026-06-12")]
+        date: String,
+        /// Actually submit the booking (otherwise stops after showing availability).
+        #[arg(long)]
+        book: bool,
+    },
 }
 
 #[tokio::main]
@@ -76,6 +87,14 @@ async fn main() -> Result<()> {
     }) {
         #[cfg(feature = "auth")]
         Command::ExportToken => run_export_token().await,
+        #[cfg(feature = "auth")]
+        Command::VerifyAuth { date, book } => {
+            tracing_subscriber::fmt()
+                .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+                .with_writer(std::io::stderr)
+                .init();
+            run_verify_auth(date, book).await
+        }
         Command::Serve { sse, port } => {
             tracing_subscriber::fmt()
                 .with_env_filter(
@@ -132,6 +151,116 @@ async fn run_export_token() -> Result<()> {
     println!("{}", token);
 
     Ok(())
+}
+
+#[cfg(feature = "auth")]
+async fn run_verify_auth(date: String, book: bool) -> Result<()> {
+    let config = Arc::new(config::Config::load()?);
+    let cache = Arc::new(cache::CacheStore::new(1_000));
+    let http = reqwest::Client::builder()
+        .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
+        .gzip(true)
+        .build()?;
+
+    let auth = auth::AuthManager::new(config.session_path());
+
+    // 1. Reuse a saved session if still valid, else open a browser to log in.
+    let session = match auth.get_session()? {
+        Some(s) => {
+            eprintln!("✓ Reusing saved session for {}", s.username);
+            s
+        }
+        None => {
+            eprintln!("Opening Chrome for UCSC login — complete CruzID + Duo in the window…");
+            let username = auth.login().await.context("browser login failed")?;
+            eprintln!("✓ Logged in as {username}");
+            auth.get_session()?
+                .context("session not found after login")?
+        }
+    };
+
+    let client = auth::build_authenticated_client(&session.cookies)?;
+
+    // TEMP: list captured cookie domains/names to debug LibCal SSO.
+    if let Ok(cookies) = auth::browser::deserialize_cookies(&session.cookies) {
+        eprintln!("\n── captured cookies ({}) ──", cookies.len());
+        for c in &cookies {
+            eprintln!("  {:<40} {}", c.domain, c.name);
+        }
+    }
+
+    // 2. Meal balance (exercises saml_aware_get + cbord scrape).
+    eprintln!("\n── Meal balance ──");
+    let dining = dining::DiningService::new(http.clone(), cache.clone());
+    match dining.get_balance(&client).await {
+        Ok(result) => {
+            println!("{}", result.balance.format());
+            if let Some(snippet) = result.debug_snippet {
+                eprintln!("⚠ balance parse failed; page text:\n{snippet}");
+            }
+        }
+        Err(e) => eprintln!("✗ balance error: {e:#}"),
+    }
+
+    // 3. S&E availability for the target date.
+    eprintln!("\n── S&E availability for {date} ──");
+    let library = library::LibraryService::new(http.clone(), cache.clone());
+    let availability = library
+        .get_availability(Some("science"), Some(&date))
+        .await
+        .context("availability fetch failed")?;
+    println!("{availability}");
+
+    if !book {
+        eprintln!("\n(--book not set; stopping before reservation)");
+        return Ok(());
+    }
+
+    // 4. Pick the first room with the longest contiguous open block (cap 2h)
+    //    and book it.
+    let avail = library::scraper::scrape_availability(&client, 16578, &date).await?;
+    let Some((space_id, start, end, name)) = avail
+        .rooms
+        .iter()
+        .filter_map(|r| {
+            let sid = r.space_id?;
+            let (s, e) = best_window(&r.available_slots)?;
+            Some((sid, s, e, r.name.clone()))
+        })
+        .next()
+    else {
+        eprintln!("No bookable open slots at S&E on {date}.");
+        return Ok(());
+    };
+
+    eprintln!("\n── Booking {name} (space {space_id}) {date} {start}–{end} ──");
+    let result = library
+        .book(&client, space_id, &date, &start, &end, None)
+        .await
+        .context("booking failed")?;
+    println!("{result}");
+
+    Ok(())
+}
+
+/// Longest contiguous run of 30-min slots from the earliest available start,
+/// capped at 2 hours. Returns ("HH:MM" start, "HH:MM" end).
+#[cfg(feature = "auth")]
+fn best_window(slots: &[library::scraper::TimeSlot]) -> Option<(String, String)> {
+    let mut s: Vec<&library::scraper::TimeSlot> = slots.iter().collect();
+    s.sort_by(|a, b| a.start.cmp(&b.start));
+    let first = s.first()?;
+    let mut end = first.end.clone();
+    let mut count = 1;
+    for w in s.windows(2) {
+        if w[0].end == w[1].start && count < 4 {
+            end = w[1].end.clone();
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    Some((first.start.clone(), end))
 }
 
 async fn run_serve(sse: bool, port: u16) -> Result<()> {

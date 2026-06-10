@@ -911,6 +911,11 @@ pub async fn book_room(
             let sso = crate::auth::saml_aware_get(auth_client, &redirect_abs)
                 .await
                 .context("SSO redirect for LibCal failed")?;
+            tracing::debug!(
+                "LibCal SSO hop landed on {} (status {})",
+                sso.final_url,
+                sso.status
+            );
             if sso.final_url.host_str() == Some("login.ucsc.edu") {
                 return Ok(BookingResult {
                     success: false,

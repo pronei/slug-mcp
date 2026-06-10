@@ -148,20 +148,29 @@ pub fn build_authenticated_client(cookie_data: &str) -> Result<reqwest::Client> 
     reqwest::Client::builder()
         .cookie_provider(Arc::new(jar))
         .redirect(reqwest::redirect::Policy::limited(20))
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
         .build()
         .context("failed to build authenticated HTTP client")
 }
 
-/// Make an authenticated GET request that follows SAML POST binding forms.
+/// Make an authenticated GET request that follows SAML POST binding forms
+/// and Shibboleth attribute-release consent pages.
 ///
 /// SAML POST binding uses an intermediate HTML form with hidden fields
 /// (`SAMLResponse`, `RelayState`) that browsers auto-submit via JavaScript.
 /// Since `reqwest` doesn't execute JS, we parse the form and POST manually.
+///
+/// The UCSC IdP may also interpose an "Information Release" consent page the
+/// first time a service provider asks for attributes. That form has no SAML
+/// fields — just `_shib_idp_consentOptions` radios and an `_eventId_proceed`
+/// submit. We accept it with "remember consent" so subsequent flows (LibCal,
+/// cbord, …) skip the page for the rest of the IdP session.
 pub async fn saml_aware_get(client: &reqwest::Client, url: &str) -> Result<SamlResponse> {
     let mut resp = client.get(url).send().await.context("request failed")?;
 
-    // Follow up to 5 SAML POST binding forms
-    for _ in 0..5 {
+    // Follow up to 8 intermediate hops (SAML POST forms + consent pages)
+    for _ in 0..8 {
         let status = resp.status();
         let final_url = resp.url().clone();
         let content_type = resp
@@ -181,19 +190,26 @@ pub async fn saml_aware_get(client: &reqwest::Client, url: &str) -> Result<SamlR
 
         let body = resp.text().await.context("failed to read response body")?;
 
-        if let Some((action_url, fields)) = parse_saml_form(&body) {
-            // Form actions are usually absolute, but resolve against the
-            // page that served the form to be safe.
+        let next_post = parse_saml_form(&body)
+            .map(|(action, fields)| ("SAML POST binding", action, fields))
+            .or_else(|| {
+                parse_consent_form(&body)
+                    .map(|(action, fields)| ("IdP consent accept", action, fields))
+            });
+
+        if let Some((kind, action_url, fields)) = next_post {
+            // Form actions are usually absolute for SAML, but the consent
+            // form's is relative — resolve against the page that served it.
             let action_abs = final_url
                 .join(&action_url)
-                .context("invalid SAML form action URL")?;
-            tracing::debug!("Following SAML POST binding to {}", action_abs);
+                .context("invalid intermediate form action URL")?;
+            tracing::debug!("Following {kind} to {action_abs}");
             resp = client
                 .post(action_abs)
                 .form(&fields)
                 .send()
                 .await
-                .context("SAML POST binding failed")?;
+                .with_context(|| format!("{kind} POST failed"))?;
         } else {
             return Ok(SamlResponse {
                 status,
@@ -270,9 +286,123 @@ fn parse_saml_form(html: &str) -> Option<(String, Vec<(String, String)>)> {
     None
 }
 
+/// Parse a Shibboleth IdP attribute-release consent form.
+///
+/// Recognized by a form action under `/idp/profile/` containing an
+/// `_eventId_proceed` submit input. Returns the form action and the fields
+/// for an "Accept" submission: all hidden inputs (e.g. `csrf_token` on newer
+/// IdPs), every pre-checked radio/checkbox — except we force the consent
+/// option to `_shib_idp_rememberConsent` when that radio group is present —
+/// and the `_eventId_proceed` submit itself.
+fn parse_consent_form(html: &str) -> Option<(String, Vec<(String, String)>)> {
+    use std::sync::LazyLock;
+
+    use scraper::{Html, Selector};
+
+    static FORM_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("form").expect("hardcoded selector"));
+    static INPUT_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("input").expect("hardcoded selector"));
+
+    let document = Html::parse_document(html);
+
+    for form in document.select(&FORM_SEL) {
+        let action = form.value().attr("action").unwrap_or_default();
+        if !action.contains("/idp/profile/") {
+            continue;
+        }
+
+        let mut fields: Vec<(String, String)> = Vec::new();
+        let mut has_proceed = false;
+        let mut consent_radio_seen = false;
+
+        for input in form.select(&INPUT_SEL) {
+            let v = input.value();
+            let name = v.attr("name").unwrap_or_default();
+            if name.is_empty() {
+                continue;
+            }
+            let value = v.attr("value").unwrap_or_default();
+            match v.attr("type").unwrap_or("text") {
+                "hidden" => fields.push((name.to_string(), value.to_string())),
+                "radio" if name == "_shib_idp_consentOptions" => {
+                    // Pick "remember consent" regardless of the page default so
+                    // the IdP stores the decision and later SP flows skip the page.
+                    if !consent_radio_seen && value == "_shib_idp_rememberConsent" {
+                        consent_radio_seen = true;
+                        fields.push((name.to_string(), value.to_string()));
+                    }
+                }
+                "radio" | "checkbox" => {
+                    if v.attr("checked").is_some() {
+                        fields.push((name.to_string(), value.to_string()));
+                    }
+                }
+                "submit" if name == "_eventId_proceed" => {
+                    has_proceed = true;
+                    fields.push((name.to_string(), value.to_string()));
+                }
+                _ => {}
+            }
+        }
+
+        if has_proceed {
+            return Some((action.to_string(), fields));
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const IDP_CONSENT_FIXTURE: &str = include_str!("fixtures/idp_consent.html");
+
+    #[test]
+    fn test_parse_consent_form_fixture() {
+        let (action, fields) = parse_consent_form(IDP_CONSENT_FIXTURE).expect("consent form");
+        assert_eq!(action, "/idp/profile/SAML2/Redirect/SSO?execution=e4s1");
+        assert!(fields
+            .iter()
+            .any(|(n, v)| n == "_shib_idp_consentOptions" && v == "_shib_idp_rememberConsent"));
+        assert!(fields.iter().any(|(n, _)| n == "_eventId_proceed"));
+        // Reject button must NOT be submitted
+        assert!(!fields
+            .iter()
+            .any(|(n, _)| n == "_eventId_AttributeReleaseRejected"));
+        // Exactly one consent option
+        assert_eq!(
+            fields
+                .iter()
+                .filter(|(n, _)| n == "_shib_idp_consentOptions")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_parse_consent_form_ignores_saml_and_plain_forms() {
+        // A SAML POST binding form must not be misidentified as consent.
+        let saml = r#"<form action="https://get.cbord.com/ucsc/Shibboleth.sso/SAML2/POST">
+            <input type="hidden" name="SAMLResponse" value="x"/></form>"#;
+        assert!(parse_consent_form(saml).is_none());
+        let plain = r#"<form action="/login"><input type="text" name="user"/></form>"#;
+        assert!(parse_consent_form(plain).is_none());
+    }
+
+    #[test]
+    fn test_consent_form_round_trips_hidden_csrf() {
+        // Newer Shibboleth IdPs add a csrf_token hidden input — must round-trip.
+        let html = r#"<form action="/idp/profile/SAML2/Redirect/SSO?execution=e2s2" method="post">
+            <input type="hidden" name="csrf_token" value="tok123"/>
+            <input type="radio" name="_shib_idp_consentOptions" value="_shib_idp_rememberConsent" checked/>
+            <input type="submit" name="_eventId_proceed" value="Accept"/>
+        </form>"#;
+        let (_, fields) = parse_consent_form(html).unwrap();
+        assert!(fields.iter().any(|(n, v)| n == "csrf_token" && v == "tok123"));
+    }
 
     #[test]
     fn test_parse_saml_form() {

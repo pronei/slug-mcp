@@ -80,6 +80,8 @@ impl CacheStore {
         self.inner.insert(key.to_string(), entry).await;
     }
 
+    /// Evict a single key. Part of the cache API; no caller at present.
+    #[allow(dead_code)]
     pub async fn invalidate(&self, key: &str) {
         self.inner.invalidate(key).await;
     }

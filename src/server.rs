@@ -36,8 +36,6 @@ use crate::degrees::{DegreeProgressRequest, DegreeRequirementsRequest, DegreeSer
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
 use crate::events::{EventsService, SearchEventbriteRequest, SearchEventsRequest, UpcomingEventsRequest};
 use crate::fire::{FireDetectionsRequest, FireService};
-#[cfg(feature = "auth")]
-use crate::library::BookStudyRoomRequest;
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
 use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest};
 use crate::ocean::{
@@ -1207,42 +1205,6 @@ define_tools!({
 
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
-
-    #[tool(description = "Book a study room at a UCSC library via LibCal. Requires authentication — call 'login' first if not already logged in. Use space_id from get_study_room_availability. Patron name/email come from your SSO session; pass group_name if the room's booking form asks for a group/booking name. If the form has other required questions the tool can't infer, it returns them so you can retry.")]
-    async fn book_study_room(
-        &self,
-        Parameters(req): Parameters<BookStudyRoomRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let session = match self.get_active_session().await {
-            Some(s) => s,
-            None => {
-                return Ok(CallToolResult::success(vec![Content::text(
-                    "You need to log in first. Call the `login` tool to authenticate.",
-                )]));
-            }
-        };
-
-        let client =
-            crate::auth::build_authenticated_client(&session.cookies).map_err(internal_err)?;
-
-        let result = self
-            .library
-            .book(
-                &client,
-                req.space_id,
-                &req.date,
-                &req.start_time,
-                &req.end_time,
-                req.group_name.as_deref(),
-                // Book the exact requested window — don't silently shift an
-                // LLM/user's chosen time to a different open block.
-                false,
-            )
-            .await
-            .map_err(internal_err)?;
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
 });
 
 // Public-only build: no auth tools
@@ -1281,7 +1243,7 @@ impl ServerHandler for SlugMcpServer {
              nutrition info, meal plan balances, campus events and Eventbrite \
              community events (use both event tools together for complete \
              coverage), recreation facility occupancy, group exercise class \
-             schedules, library study room availability and booking, class \
+             schedules, library study room availability, class \
              schedule search, campus directory \
              lookup, classroom search, real-time bus arrival predictions via \
              GTFS-RT, transit service alerts, system-wide SC Metro service \

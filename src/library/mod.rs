@@ -14,25 +14,7 @@ pub struct StudyRoomAvailabilityRequest {
     pub date: Option<String>,
 }
 
-#[cfg(feature = "auth")]
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct BookStudyRoomRequest {
-    /// Space/room ID from get_study_room_availability output.
-    pub space_id: u32,
-    /// Date in YYYY-MM-DD format.
-    pub date: String,
-    /// Start time (e.g., "09:00", "2:00 PM").
-    pub start_time: String,
-    /// End time (e.g., "10:00", "3:00 PM").
-    pub end_time: String,
-    /// Group/booking name if the room's booking form asks for one. Optional —
-    /// the booking proceeds without it unless the form requires it.
-    pub group_name: Option<String>,
-}
-
 use crate::cache::CacheStore;
-#[cfg(feature = "auth")]
-use scraper::book_room;
 use scraper::{find_library, library_names, scrape_availability, RoomAvailability, LIBRARIES};
 
 pub struct LibraryService {
@@ -93,37 +75,5 @@ impl LibraryService {
             .join("\n\n");
 
         Ok(output)
-    }
-
-    #[cfg(feature = "auth")]
-    #[allow(clippy::too_many_arguments)]
-    pub async fn book(
-        &self,
-        auth_client: &reqwest::Client,
-        space_id: u32,
-        date: &str,
-        start_time: &str,
-        end_time: &str,
-        group_name: Option<&str>,
-        flexible: bool,
-    ) -> Result<String> {
-        let result = book_room(
-            auth_client,
-            space_id,
-            date,
-            start_time,
-            end_time,
-            group_name,
-            flexible,
-        )
-        .await?;
-
-        // Invalidate availability caches for all libraries on this date
-        for lib in LIBRARIES {
-            let cache_key = format!("library:availability:{}:{}", lib.lid, date);
-            self.cache.invalidate(&cache_key).await;
-        }
-
-        Ok(result.format())
     }
 }

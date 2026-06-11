@@ -76,7 +76,7 @@ cargo build --release
 
 ## Client Setup
 
-The fastest path is the hosted instance — no build required. Build locally if you want authenticated tools (meal balance, room booking) or to run your own server.
+The fastest path is the hosted instance — no build required. Build locally if you want the authenticated meal-balance tool or to run your own server.
 
 ### Hosted (no install)
 
@@ -145,9 +145,8 @@ For remote connections, start the SSE server and point your client at the endpoi
 
 > ⚠️ **Work in progress.** The CruzID + Duo MFA flow is functional locally but not yet stable across the hosted server, headless environments, and all clients. Expect rough edges — flow details, token format, and the `login` / `authenticate` / `export-token` surface may change. Read-only tools are unaffected; the items below are the only ones gated on auth.
 
-Most tools work without login. Two tools require UCSC authentication:
+Most tools work without login. One tool requires UCSC authentication:
 - **Meal balance** — Slug Points / Banana Bucks
-- **Room booking** — reserve study rooms
 
 When you ask for something that needs auth, the assistant will call the `login` tool, which opens a Chrome window for CruzID + Duo MFA. The session is captured automatically and lasts 8 hours.
 
@@ -192,7 +191,7 @@ src/
 ├── dining/              # Menu scraping, nutrition, hours, balance
 ├── events/              # Tribe Events REST API client
 ├── recreation/          # Facility occupancy + schedules
-├── library/             # LibCal study room availability + booking
+├── library/             # LibCal study room availability
 ├── academics/           # PISA class search + campus directory
 ├── classrooms/          # Classroom directory + campus locations
 ├── transit/             # Santa Cruz Metro real-time predictions

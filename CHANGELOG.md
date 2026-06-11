@@ -51,6 +51,7 @@
 - Replaced legacy CAS module with CDP-based browser automation supporting full Shibboleth + Duo MFA flow.
 
 ### Removed
+- **Study-room booking** — removed the `book_study_room` tool and the entire LibCal checkout protocol (`book_room`, slot-claim/hold, patron-form parsing). LibCal finalizes patron checkout with a JavaScript token→session exchange that a non-JS HTTP client can't complete, so booking couldn't reliably succeed over the wire. Study-room **availability** (`get_study_room_availability`) is unaffected.
 - **SlugLoop campus loop bus module** — removed `src/slugloop/` (api.rs, mod.rs, stops.rs) and associated tool handlers (`get_loop_bus_locations`, `get_loop_bus_eta`). The SlugLoop API was decommissioned (site converted to React SPA with Firebase backend, no public REST endpoints). SC Metro BusTime API remains available for metro bus tracking.
 
 ## [0.1.0] — 2026-03-19

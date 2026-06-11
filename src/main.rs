@@ -421,10 +421,18 @@ async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
         sse_config,
     );
 
-    let app = axum::Router::new().nest_service("/mcp", service);
+    let app = axum::Router::new()
+        // Liveness probe for the deploy script / nginx upstream check.
+        .route("/healthz", axum::routing::get(|| async { "ok" }))
+        .nest_service("/mcp", service);
 
-    let listener = tokio::net::TcpListener::bind(format!("localhost:{}", port)).await?;
-    tracing::info!("SSE server listening on http://localhost:{}/mcp", port);
+    // Bind to the IPv4 loopback explicitly. Binding "localhost" resolves to
+    // whichever family is first in the resolver (often IPv6 ::1), which leaves
+    // nginx's `proxy_pass http://127.0.0.1:PORT` with a connection refused —
+    // the server looks "down" even though it's listening on ::1.
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    tracing::info!("SSE server listening on http://{addr}/mcp");
 
     axum::serve(listener, app).await?;
 

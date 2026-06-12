@@ -53,7 +53,11 @@ struct UsgsResponse {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct UsgsMetadata {
-    count: u32,
+    /// USGS omits `count` from the GeoJSON metadata when a `limit` is set
+    /// (it returns `limit`/`offset` instead), so this must be optional — the
+    /// display falls back to the number of features returned.
+    #[serde(default)]
+    count: Option<u32>,
     title: Option<String>,
 }
 
@@ -240,10 +244,11 @@ fn format_output(
     );
 
     let day_word = if days == 1 { "day" } else { "days" };
+    let count = resp.metadata.count.unwrap_or(resp.features.len() as u32);
     let _ = writeln!(
         out,
         "_{} events above M{} in the last {} {}_\n",
-        resp.metadata.count, min_magnitude, days, day_word
+        count, min_magnitude, days, day_word
     );
 
     if resp.features.is_empty() {
@@ -390,7 +395,7 @@ mod tests {
         }"#;
 
         let resp: UsgsResponse = serde_json::from_str(json).expect("should parse");
-        assert_eq!(resp.metadata.count, 2);
+        assert_eq!(resp.metadata.count, Some(2));
         assert_eq!(resp.features.len(), 2);
 
         let first = &resp.features[0];
@@ -416,7 +421,7 @@ mod tests {
     fn format_output_renders() {
         let resp = UsgsResponse {
             metadata: UsgsMetadata {
-                count: 1,
+                count: Some(1),
                 title: Some("test".to_string()),
             },
             features: vec![UsgsFeature {
@@ -475,7 +480,7 @@ mod tests {
     fn empty_features_message() {
         let resp = UsgsResponse {
             metadata: UsgsMetadata {
-                count: 0,
+                count: Some(0),
                 title: Some("test".to_string()),
             },
             features: vec![],

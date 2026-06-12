@@ -289,7 +289,9 @@ struct GqlClimb {
     #[serde(rename = "type")]
     climb_type: Option<GqlClimbType>,
     fa: Option<String>,
-    length: Option<u32>,
+    // OpenBeta uses -1 to mean "unknown length", so this must be signed; the
+    // formatter only renders it when `> 0`.
+    length: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -635,5 +637,22 @@ mod tests {
         // gradeless boulder shows "?" placeholder
         assert!(out.contains("**Sad Boulder Problem** \u{00b7} ? \u{00b7} Boulder"));
         assert!(out.contains("**Toprope Slab** \u{00b7} 5.4 \u{00b7} TR"));
+    }
+
+    #[test]
+    fn climb_length_negative_one_parses_as_unknown() {
+        // OpenBeta sends length: -1 for unknown — must deserialize (not u32) and
+        // not render a length line.
+        let json = r#"{"data":{"areas":[{
+            "area_name":"Test","totalClimbs":1,
+            "climbs":[{"name":"Mystery","grades":{"yds":"5.9"},
+                "type":{"sport":true,"trad":false,"bouldering":false,"tr":false},
+                "fa":null,"length":-1}]
+        }]}}"#;
+        let resp: GqlResponse = serde_json::from_str(json).expect("length -1 must parse");
+        let data = resp.data.unwrap();
+        let climb = &data.areas[0].climbs.as_ref().unwrap()[0];
+        assert_eq!(climb.length, Some(-1));
+        // -1 length is suppressed in the rendered output (formatter guards `len > 0`).
     }
 }

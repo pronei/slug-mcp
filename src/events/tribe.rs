@@ -29,11 +29,15 @@ pub struct TribeEvent {
     pub tags: Vec<TribeTag>,
 }
 
+/// The Tribe API is inconsistent about `venue`: a single object when the event
+/// has one venue, an **array** of venue objects for multi-venue events, or an
+/// empty array `[]` when there's none. `Venues(Vec<_>)` covers both array
+/// shapes (including empty); `Venue` covers the single-object shape.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum TribeVenueField {
     Venue(TribeVenue),
-    Empty(Vec<()>),
+    Venues(Vec<TribeVenue>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -85,27 +89,29 @@ impl TribeClient {
 }
 
 impl TribeEvent {
-    pub fn venue_name(&self) -> Option<&str> {
+    /// First venue, regardless of whether the API returned a single object or
+    /// an array. `None` for an empty array.
+    fn first_venue(&self) -> Option<&TribeVenue> {
         match &self.venue {
-            TribeVenueField::Venue(v) => Some(&v.venue),
-            TribeVenueField::Empty(_) => None,
+            TribeVenueField::Venue(v) => Some(v),
+            TribeVenueField::Venues(vs) => vs.first(),
         }
     }
 
+    pub fn venue_name(&self) -> Option<&str> {
+        self.first_venue().map(|v| v.venue.as_str())
+    }
+
     pub fn venue_location(&self) -> Option<String> {
-        match &self.venue {
-            TribeVenueField::Venue(v) => {
-                let parts: Vec<&str> = [v.address.as_deref(), v.city.as_deref()]
-                    .into_iter()
-                    .flatten()
-                    .collect();
-                if parts.is_empty() {
-                    None
-                } else {
-                    Some(parts.join(", "))
-                }
-            }
-            TribeVenueField::Empty(_) => None,
+        let v = self.first_venue()?;
+        let parts: Vec<&str> = [v.address.as_deref(), v.city.as_deref()]
+            .into_iter()
+            .flatten()
+            .collect();
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(", "))
         }
     }
 
@@ -198,8 +204,8 @@ mod tests {
         let resp: TribeEventsResponse = serde_json::from_str(TRIBE_FIXTURE).unwrap();
         let ev = &resp.events[1];
         assert_eq!(ev.id, 90211);
-        // "venue": [] deserializes to the Empty variant → no name/location.
-        assert!(matches!(ev.venue, TribeVenueField::Empty(_)));
+        // "venue": [] deserializes to an empty Venues array → no name/location.
+        assert!(matches!(&ev.venue, TribeVenueField::Venues(v) if v.is_empty()));
         assert_eq!(ev.venue_name(), None);
         assert_eq!(ev.venue_location(), None);
 
@@ -212,5 +218,51 @@ mod tests {
         assert!(!summary.contains("**Description**"));
         // single organizer still rendered
         assert!(summary.contains("**Organizer**: Career Success"));
+    }
+
+    #[test]
+    fn event_with_venue_as_nonempty_array() {
+        // Multi-venue events return `venue` as an ARRAY of objects, not a single
+        // object — this previously failed deserialization ("data did not match
+        // any variant of untagged enum TribeVenueField"). venue_name() takes the
+        // first.
+        let json = r#"{
+            "events": [{
+                "id": 1, "title": "Multi-venue", "description": null,
+                "url": "https://e/1", "start_date": "2026-06-12 10:00:00",
+                "end_date": "2026-06-12 12:00:00", "all_day": false, "cost": "",
+                "venue": [
+                    {"venue": "Quarry Amphitheater", "address": "1156 High St", "city": "Santa Cruz"},
+                    {"venue": "Music Center", "address": null, "city": null}
+                ],
+                "organizer": [], "categories": [], "tags": []
+            }],
+            "total": 1, "total_pages": 1
+        }"#;
+        let resp: TribeEventsResponse = serde_json::from_str(json).expect("multi-venue must parse");
+        let ev = &resp.events[0];
+        assert!(matches!(&ev.venue, TribeVenueField::Venues(v) if v.len() == 2));
+        assert_eq!(ev.venue_name(), Some("Quarry Amphitheater"));
+        assert_eq!(
+            ev.venue_location().as_deref(),
+            Some("1156 High St, Santa Cruz")
+        );
+    }
+
+    #[test]
+    fn event_with_single_venue_object() {
+        // The single-object shape still works (the common case).
+        let json = r#"{
+            "events": [{
+                "id": 2, "title": "Single", "description": null, "url": "https://e/2",
+                "start_date": "2026-06-12 10:00:00", "end_date": "2026-06-12 12:00:00",
+                "all_day": false, "cost": null,
+                "venue": {"venue": "McHenry Library", "address": null, "city": "Santa Cruz"},
+                "organizer": [], "categories": [], "tags": []
+            }],
+            "total": 1, "total_pages": 1
+        }"#;
+        let resp: TribeEventsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.events[0].venue_name(), Some("McHenry Library"));
     }
 }

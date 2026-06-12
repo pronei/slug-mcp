@@ -230,6 +230,24 @@ async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
     // from Default and set the fields we care about.
     let mut sse_config = StreamableHttpServerConfig::default();
     sse_config.stateful_mode = true;
+    // rmcp 1.x rejects any inbound `Host` not in `allowed_hosts` (DNS-rebinding
+    // protection), defaulting to loopback only. Behind nginx the Host header is
+    // the public domain, so every /mcp request 403s ("Host header is not
+    // allowed"). Allow the deployment host plus loopback; override the whole
+    // list with SLUG_MCP_ALLOWED_HOSTS (comma-separated host or host:port).
+    sse_config.allowed_hosts = match std::env::var("SLUG_MCP_ALLOWED_HOSTS") {
+        Ok(v) => v
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        Err(_) => vec![
+            "localhost".into(),
+            "127.0.0.1".into(),
+            "::1".into(),
+            "2262-cse115b-02.be.ucsc.edu".into(),
+        ],
+    };
 
     let service = StreamableHttpService::new(
         move || Ok(server::SlugMcpServer::new(ctx.clone())),

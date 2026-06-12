@@ -15,7 +15,12 @@ axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
-reqwest = { version = "0.12", features = ["cookies", "json", "gzip"] }
+# reqwest 0.13 switched `default-tls` to rustls+aws-lc-rs. Pin native-tls
+# explicitly (default-features off) to keep the system-OpenSSL backend the
+# server has always used against the UCSC/gov endpoints — and to avoid adding
+# an aws-lc-rs C build dependency to the public (`--no-default-features`) VM
+# deploy. `charset`/`http2`/`system-proxy` replicate the rest of 0.13's default.
+reqwest = { version = "0.13", default-features = false, features = ["cookies", "json", "gzip", "query", "form", "native-tls", "charset", "http2", "system-proxy"] }
 moka = { version = "0.12", features = ["future"] }
 scraper = "0.27"
 clap = { version = "4", features = ["derive"] }
@@ -32,10 +37,15 @@ chrono-tz = "0.10"
 chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
 base64 = "0.22"
-quick-xml = { version = "0.39", features = ["serialize"] }
+quick-xml = { version = "0.40", features = ["serialize"] }
 gtfs-realtime = "0.2"
 prost = "0.14"
 regex = "1"
+# Transitive pin (via reqwest → cookie_store → cookie 0.18.1): time 0.3.48 adds
+# a blanket impl that conflicts with cookie 0.18.1, breaking the build. Hold
+# time at 0.3.47 until cookie/cookie_store ship a compatible release. Remove
+# this line once `cargo update -p time` past 0.3.47 builds clean again.
+time = "=0.3.47"
 
 [features]
 default = ["auth"]

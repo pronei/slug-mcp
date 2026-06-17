@@ -22,6 +22,9 @@ pub struct SearchClassesRequest {
     pub ge: Option<String>,
     /// Academic career: "UGRD" for undergraduate, "GRAD" for graduate. If omitted, searches all.
     pub career: Option<String>,
+    /// Summer session filter (summer terms only). Accepts "1"/"session 1", "2",
+    /// "10"/"10 week", "8"/"8 week", or a raw PISA code (5S1/5S2/S10/S8W).
+    pub session: Option<String>,
     /// If true, only show open classes. Default: show all.
     pub open_only: Option<bool>,
     /// Page number for pagination (25 results per page). Default: 0.
@@ -65,6 +68,7 @@ impl AcademicsService {
         title: Option<&str>,
         ge: Option<&str>,
         career: Option<&str>,
+        session: Option<&str>,
         open_only: bool,
         page: Option<u32>,
     ) -> Result<String> {
@@ -73,6 +77,11 @@ impl AcademicsService {
             .unwrap_or_else(current_term_code);
 
         let page_start = page.unwrap_or(0) * 25;
+
+        let session_code = session
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(scraper::normalize_session_code);
 
         let params = ClassSearchParams {
             term: term_code.clone(),
@@ -83,13 +92,14 @@ impl AcademicsService {
             ge: ge.map(|s| s.to_string()),
             reg_status: if open_only { "O".to_string() } else { "all".to_string() },
             career: career.map(|s| s.to_uppercase()),
+            session_code: session_code.clone(),
             page_start,
             page_size: 25,
         };
 
         // Build cache key from params
         let cache_key = format!(
-            "academics:classes:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "academics:classes:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             term_code,
             subject.unwrap_or(""),
             catalog_number.unwrap_or(""),
@@ -97,6 +107,7 @@ impl AcademicsService {
             title.unwrap_or(""),
             ge.unwrap_or(""),
             career.unwrap_or(""),
+            session_code.as_deref().unwrap_or(""),
             if open_only { "open" } else { "all" },
             page_start,
         );

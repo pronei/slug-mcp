@@ -1,96 +1,155 @@
 <!--
-  Trimmed-down capture of a PISA class_search results page
-  (https://pisa.ucsc.edu/class_search/index.php, action=results).
-  Three result panels:
-    1. CSE 115A - 01  Introduction to Software Engineering  (Open, In Person, MWF lecture)
-    2. CSE 115A - 01A Lab section of the same course         (Wait List, multi-meeting)
-    3. MATH 19A - 02  Calculus for Science...                (Closed, TuTh, multi-meeting LEC+DIS)
-  The non-class chrome around the panels (search form, pagination) is kept
-  minimal but present so the rowpanel_ filter is exercised.
+  Trimmed REAL capture of a PISA class_search results page
+  (https://pisa.ucsc.edu/class_search/index.php, action=results): Summer 2026
+  (term 2264) panels plus one Spring panel. Long class_data base64 blobs are
+  replaced with the literal BASE64. Exercises the real markup the parser relies
+  on: <i class="sr-only">Label:</i> value rows, incl. the summer-only "Session:".
 -->
 <!DOCTYPE html>
-<html lang="en">
-<head><title>Class Search</title></head>
-<body>
-  <div class="panel panel-default row" id="searchpanel">
-    <div class="panel-body">
-      <form action="index.php" method="post">
-        <input type="hidden" name="action" value="results" />
-      </form>
-    </div>
+<html lang="en"><head><title>Class Search</title></head><body>
+<div class="panel panel-default row" id="searchpanel"><div class="panel-body">search form chrome</div></div>
+<div class="row"><div class="col-xs-6">classes found</div></div>
+<div class="panel panel-default row" style="margin-top: 0px; margin-bottom: 0px;" id="rowpanel_0">
+   <form action="index.php" id="detail_form_0" method="post">
+        <input type="hidden" name="action" value="detail">
+        <input type="hidden" name="class_data[:STRM]" value="2264">
+        <input type="hidden" name="class_data[:CLASS_NBR]" value="70307">
+                <input type="hidden" name="binds[:term]" value="2264">
+                <input type="hidden" name="binds[:reg_status]" value="all">
+                <input type="hidden" name="binds[:subject]" value="">
+                <input type="hidden" name="binds[:session_code]" value="">
+                <input type="hidden" name="rec_start" value="0">
+        <input type="hidden" name="rec_dur" value="10">
+   </form>
+   <div class="panel-heading panel-heading-custom"><H2 style="margin:0px;"><img src="https://pisa.ucsc.edu/cs9/prd/images/PS_CS_STATUS_OPEN_ICN_1.gif" alt="Open" title="Open"  aria-hidden="true"><span class='sr-only'>Open</span> <a id="class_id_70307" href = "index.php?action=detail&amp;class_data=BASE64">AM 10 - 01&nbsp;&nbsp;&nbsp;Lin Algebra for Engrs</a> </H2></div>
+   <div class="panel-body" style="padding-top: 0px;">
+<div class="row ">
+ <div class="col-xs-6 col-sm-3">Class Number: <a id="class_nbr_70307" href = "https://pisa.ucsc.edu/class_search/index.php?action=detail&class_data=BASE64">70307</a> </div>
+ <div class="col-xs-6 col-sm-3"><i class="fa fa-user" aria-hidden="true"></i><i class="sr-only">Instructor:</i> Katznelson,J.R.</div>
+<div class="col-xs-12 col-sm-6">
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-location-arrow" aria-hidden="true"></i><i class="sr-only">Location:</i> LEC: Online</div>
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-clock-o" aria-hidden="true"></i><i class="sr-only">Day and Time:</i> MTuThF 03:00PM-04:45PM  </div>
   </div>
-
-  <div class="row">
-    <div class="col-xs-6">25 classes found</div>
+  <div class="col-xs-6 col-sm-3"><i class="fa fa-calendar" aria-hidden="true"></i><i class="sr-only">Session:</i> Summer Session 1 (5 Weeks)</div>
+  <div class="col-xs-6 col-sm-3"> 87 of 150 Enrolled</div>
+  <div class="col-xs-6 col-sm-3 hide-print"><a href="https://ucsc.textbookx.com/classes/70307-2264" target="_blank"><i class="fa fa-book" aria-hidden="true"></i> Textbooks</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><a href="https://copycenter.ucsc.edu/course-readers/" target="_blank"> <i class="fa fa-book" aria-hidden="true"></i> Course Readers</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><i class="sr-only">Instruction Mode:</i><b>Synchronous Online</b></div>
+ </div>
+ </div>
+</div>
+<div class="panel panel-default row" style="margin-top: 0px; margin-bottom: 0px;" id="rowpanel_1">
+   <form action="index.php" id="detail_form_1" method="post">
+        <input type="hidden" name="action" value="detail">
+        <input type="hidden" name="class_data[:STRM]" value="2264">
+        <input type="hidden" name="class_data[:CLASS_NBR]" value="70306">
+                <input type="hidden" name="binds[:term]" value="2264">
+                <input type="hidden" name="binds[:reg_status]" value="all">
+                <input type="hidden" name="binds[:subject]" value="">
+                <input type="hidden" name="binds[:session_code]" value="">
+                <input type="hidden" name="rec_start" value="0">
+        <input type="hidden" name="rec_dur" value="10">
+   </form>
+   <div class="panel-heading panel-heading-custom"><H2 style="margin:0px;"><img src="https://pisa.ucsc.edu/cs9/prd/images/PS_CS_STATUS_OPEN_ICN_1.gif" alt="Open" title="Open"  aria-hidden="true"><span class='sr-only'>Open</span> <a id="class_id_70306" href = "index.php?action=detail&amp;class_data=BASE64">AM 20 - 01&nbsp;&nbsp;&nbsp;Ord Diff Equations Eng</a> </H2></div>
+   <div class="panel-body" style="padding-top: 0px;">
+<div class="row ">
+ <div class="col-xs-6 col-sm-3">Class Number: <a id="class_nbr_70306" href = "https://pisa.ucsc.edu/class_search/index.php?action=detail&class_data=BASE64">70306</a> </div>
+ <div class="col-xs-6 col-sm-3"><i class="fa fa-user" aria-hidden="true"></i><i class="sr-only">Instructor:</i> Katznelson,J.R.</div>
+<div class="col-xs-12 col-sm-6">
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-location-arrow" aria-hidden="true"></i><i class="sr-only">Location:</i> LEC: Online</div>
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-clock-o" aria-hidden="true"></i><i class="sr-only">Day and Time:</i> MTuThF 03:00PM-04:45PM  </div>
   </div>
-
-  <div class="panel panel-default row" id="rowpanel_1">
-    <div class="panel-heading">
-      <h2 class="panel-title">
-        <a href="index.php?action=detail&amp;class_data=..." id="class_id_22345" name="class_id_22345">CSE 115A - 01  Introduction to Software Engineering</a>
-      </h2>
-    </div>
-    <div class="panel-body">
-      <div class="col-xs-6 col-sm-3">
-        <img src="/images/status_open.gif" alt="Open" title="Open" border="0" />
-      </div>
-      <div class="col-xs-6 col-sm-9">
-        <i class="fa fa-pencil"></i> Class Number: 22345<br />
-        <b>In Person</b><br />
-        <i class="fa fa-clock-o"></i> MWF 10:40AM-11:45AM<br />
-        <i class="fa fa-map-marker"></i> LEC: Engineering 2 180<br />
-        <i class="fa fa-user"></i> Tantalo,P.<br />
-        <i class="fa fa-pie-chart"></i> 92 of 100 Enrolled
-      </div>
-    </div>
+  <div class="col-xs-6 col-sm-3"><i class="fa fa-calendar" aria-hidden="true"></i><i class="sr-only">Session:</i> Summer Session 2 (5 Weeks)</div>
+  <div class="col-xs-6 col-sm-3"> 87 of 170 Enrolled</div>
+  <div class="col-xs-6 col-sm-3 hide-print"><a href="https://ucsc.textbookx.com/classes/70306-2264" target="_blank"><i class="fa fa-book" aria-hidden="true"></i> Textbooks</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><a href="https://copycenter.ucsc.edu/course-readers/" target="_blank"> <i class="fa fa-book" aria-hidden="true"></i> Course Readers</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><i class="sr-only">Instruction Mode:</i><b>Synchronous Online</b></div>
+ </div>
+ </div>
+</div>
+<div class="panel panel-default row" style="margin-top: 0px; margin-bottom: 0px;" id="rowpanel_3">
+   <form action="index.php" id="detail_form_3" method="post">
+        <input type="hidden" name="action" value="detail">
+        <input type="hidden" name="class_data[:STRM]" value="2264">
+        <input type="hidden" name="class_data[:CLASS_NBR]" value="70444">
+                <input type="hidden" name="binds[:term]" value="2264">
+                <input type="hidden" name="binds[:reg_status]" value="all">
+                <input type="hidden" name="binds[:subject]" value="">
+                <input type="hidden" name="binds[:session_code]" value="">
+                <input type="hidden" name="rec_start" value="0">
+        <input type="hidden" name="rec_dur" value="10">
+   </form>
+   <div class="panel-heading panel-heading-custom"><H2 style="margin:0px;"><img src="https://pisa.ucsc.edu/cs9/prd/images/PS_CS_STATUS_OPEN_ICN_1.gif" alt="Open" title="Open"  aria-hidden="true"><span class='sr-only'>Open</span> <a id="class_id_70444" href = "index.php?action=detail&amp;class_data=BASE64">AM 100 - 01&nbsp;&nbsp;&nbsp;Math Methods III</a> </H2></div>
+   <div class="panel-body" style="padding-top: 0px;">
+<div class="row ">
+ <div class="col-xs-6 col-sm-3">Class Number: <a id="class_nbr_70444" href = "https://pisa.ucsc.edu/class_search/index.php?action=detail&class_data=BASE64">70444</a> </div>
+ <div class="col-xs-6 col-sm-3"><i class="fa fa-user" aria-hidden="true"></i><i class="sr-only">Instructor:</i> Chaokeqile,F.</div>
+<div class="col-xs-12 col-sm-6">
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-location-arrow" aria-hidden="true"></i><i class="sr-only">Location:</i> LEC: Online</div>
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-clock-o" aria-hidden="true"></i><i class="sr-only">Day and Time:</i> MWF 10:00AM-11:30AM  </div>
   </div>
-
-  <div class="panel panel-default row" id="rowpanel_2">
-    <div class="panel-heading">
-      <h2 class="panel-title">
-        <a href="index.php?action=detail&amp;class_data=..." id="class_id_22346" name="class_id_22346">CSE 115A - 01A  Introduction to Software Engineering</a>
-      </h2>
-    </div>
-    <div class="panel-body">
-      <div class="col-xs-6 col-sm-3">
-        <img src="/images/status_waitlist.gif" alt="Wait List" title="Wait List" border="0" />
-      </div>
-      <div class="col-xs-6 col-sm-9">
-        <i class="fa fa-pencil"></i> Class Number: 22346<br />
-        <b>In Person</b><br />
-        <i class="fa fa-clock-o"></i> F 12:00PM-01:05PM<br />
-        <i class="fa fa-map-marker"></i> LAB: Baskin Engr 109<br />
-        <i class="fa fa-user"></i> Tantalo,P.<br />
-        <i class="fa fa-pie-chart"></i> 30 of 30 Enrolled
-      </div>
-    </div>
+  <div class="col-xs-6 col-sm-3"><i class="fa fa-calendar" aria-hidden="true"></i><i class="sr-only">Session:</i> Summer Session 8 Weeks</div>
+  <div class="col-xs-6 col-sm-3"> 28 of 50 Enrolled</div>
+  <div class="col-xs-6 col-sm-3 hide-print"><a href="https://ucsc.textbookx.com/classes/70444-2264" target="_blank"><i class="fa fa-book" aria-hidden="true"></i> Textbooks</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><a href="https://copycenter.ucsc.edu/course-readers/" target="_blank"> <i class="fa fa-book" aria-hidden="true"></i> Course Readers</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><i class="sr-only">Instruction Mode:</i><b>Synchronous Online</b></div>
+ </div>
+ </div>
+</div>
+<div class="panel panel-default row" style="margin-top: 0px; margin-bottom: 0px;" id="rowpanel_0">
+   <form action="index.php" id="detail_form_0" method="post">
+        <input type="hidden" name="action" value="detail">
+        <input type="hidden" name="class_data[:STRM]" value="2262">
+        <input type="hidden" name="class_data[:CLASS_NBR]" value="51610">
+                <input type="hidden" name="binds[:term]" value="2262">
+                <input type="hidden" name="binds[:reg_status]" value="all">
+                <input type="hidden" name="binds[:subject]" value="CSE">
+                <input type="hidden" name="binds[:session_code]" value="">
+                <input type="hidden" name="rec_start" value="0">
+        <input type="hidden" name="rec_dur" value="5">
+   </form>
+   <div class="panel-heading panel-heading-custom"><H2 style="margin:0px;"><img src="https://pisa.ucsc.edu/cs9/prd/images/PS_CS_STATUS_CLOSED_ICN_1.gif" alt="Closed" title="Closed"  aria-hidden="true"><span class='sr-only'>Closed</span> <a id="class_id_51610" href = "index.php?action=detail&amp;class_data=BASE64">CSE 3 - 01&nbsp;&nbsp;&nbsp;Comp Tech in Society</a> </H2></div>
+   <div class="panel-body" style="padding-top: 0px;">
+<div class="row ">
+ <div class="col-xs-6 col-sm-3">Class Number: <a id="class_nbr_51610" href = "https://pisa.ucsc.edu/class_search/index.php?action=detail&class_data=BASE64">51610</a> </div>
+ <div class="col-xs-6 col-sm-3"><i class="fa fa-user" aria-hidden="true"></i><i class="sr-only">Instructor:</i> Moulds,G.B.</div>
+<div class="col-xs-12 col-sm-6">
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-location-arrow" aria-hidden="true"></i><i class="sr-only">Location:</i> LEC: R Carson Acad 240</div>
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-clock-o" aria-hidden="true"></i><i class="sr-only">Day and Time:</i> TuTh 03:20PM-04:55PM  </div>
   </div>
-
-  <div class="panel panel-default row" id="rowpanel_3">
-    <div class="panel-heading">
-      <h2 class="panel-title">
-        <a href="index.php?action=detail&amp;class_data=..." id="class_id_30012" name="class_id_30012">MATH 19A - 02  Calculus for Science, Engineering, and Mathematics</a>
-      </h2>
-    </div>
-    <div class="panel-body">
-      <div class="col-xs-6 col-sm-3">
-        <img src="/images/status_closed.gif" alt="Closed" title="Closed" border="0" />
-      </div>
-      <div class="col-xs-6 col-sm-9">
-        <i class="fa fa-pencil"></i> Class Number: 30012<br />
-        <b>Online Synchronous</b><br />
-        <i class="fa fa-clock-o"></i> TuTh 1:30PM-3:05PM<br />
-        <i class="fa fa-map-marker"></i> LEC: Online Online<br />
-        <i class="fa fa-clock-o"></i> M 9:00AM-10:05AM<br />
-        <i class="fa fa-map-marker"></i> DIS: Online Online<br />
-        <i class="fa fa-user"></i> Frigaard,O.<br />
-        <i class="fa fa-pie-chart"></i> 120 of 120 Enrolled
-      </div>
-    </div>
+  <div class="col-xs-6 col-sm-3"> 84 of 84 Enrolled</div>
+  <div class="col-xs-6 col-sm-3 hide-print"><a href="https://ucsc.textbookx.com/classes/51610-2262" target="_blank"><i class="fa fa-book" aria-hidden="true"></i> Textbooks</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><a href="https://copycenter.ucsc.edu/course-readers/" target="_blank"> <i class="fa fa-book" aria-hidden="true"></i> Course Readers</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><i class="sr-only">Instruction Mode:</i><b>In Person</b></div>
+ </div>
+ </div>
+</div>
+<div class="panel panel-default row" style="margin-top: 0px; margin-bottom: 0px;" id="rowpanel_1">
+   <form action="index.php" id="detail_form_1" method="post">
+        <input type="hidden" name="action" value="detail">
+        <input type="hidden" name="class_data[:STRM]" value="2262">
+        <input type="hidden" name="class_data[:CLASS_NBR]" value="50866">
+                <input type="hidden" name="binds[:term]" value="2262">
+                <input type="hidden" name="binds[:reg_status]" value="all">
+                <input type="hidden" name="binds[:subject]" value="CSE">
+                <input type="hidden" name="binds[:session_code]" value="">
+                <input type="hidden" name="rec_start" value="0">
+        <input type="hidden" name="rec_dur" value="5">
+   </form>
+   <div class="panel-heading panel-heading-custom"><H2 style="margin:0px;"><img src="https://pisa.ucsc.edu/cs9/prd/images/PS_CS_STATUS_CLOSED_ICN_1.gif" alt="Closed" title="Closed"  aria-hidden="true"><span class='sr-only'>Closed</span> <a id="class_id_50866" href = "index.php?action=detail&amp;class_data=BASE64">CSE 12 - 01&nbsp;&nbsp;&nbsp;Com Sys/Assmbly Lan</a> </H2></div>
+   <div class="panel-body" style="padding-top: 0px;">
+<div class="row ">
+ <div class="col-xs-6 col-sm-3">Class Number: <a id="class_nbr_50866" href = "https://pisa.ucsc.edu/class_search/index.php?action=detail&class_data=BASE64">50866</a> </div>
+ <div class="col-xs-6 col-sm-3"><i class="fa fa-user" aria-hidden="true"></i><i class="sr-only">Instructor:</i> Nath,S.</div>
+<div class="col-xs-12 col-sm-6">
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-location-arrow" aria-hidden="true"></i><i class="sr-only">Location:</i> LEC: Media Theater M110</div>
+ <div class="col-xs-6 col-sm-6"><i class="fa fa-clock-o" aria-hidden="true"></i><i class="sr-only">Day and Time:</i> TuTh 11:40AM-01:15PM  </div>
   </div>
-
-  <div class="row pagination">
-    <a href="index.php?rec_start=25">Next</a>
-  </div>
-</body>
-</html>
+  <div class="col-xs-6 col-sm-3"> 250 of 250 Enrolled</div>
+  <div class="col-xs-6 col-sm-3 hide-print"><a href="https://ucsc.textbookx.com/classes/50866-2262" target="_blank"><i class="fa fa-book" aria-hidden="true"></i> Textbooks</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><a href="https://copycenter.ucsc.edu/course-readers/" target="_blank"> <i class="fa fa-book" aria-hidden="true"></i> Course Readers</a></div>
+ <div class="col-xs-6 col-sm-3 hide-print"><i class="sr-only">Instruction Mode:</i><b>In Person</b></div>
+ </div>
+ </div>
+</div>
+</body></html>

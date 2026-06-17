@@ -4,16 +4,16 @@ use std::sync::OnceLock;
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use regex::Regex;
-use scraper::Html;
+use scraper::{ElementRef, Html};
 
 use crate::util::selectors;
 
 selectors! {
     SEL_PANEL => "div.panel.panel-default.row",
     SEL_CLASS_LINK => "a[id^='class_id_']",
-    SEL_STATUS_IMG => "img",
-    SEL_PANEL_BODY => "div.panel-body",
-    SEL_BOLD => "b, strong",
+    SEL_CLASS_NBR => "a[id^='class_nbr_']",
+    SEL_STATUS_IMG => "img[alt]",
+    SEL_SR_ONLY => "i.sr-only",
     SEL_DIR_ROW => "tbody tr",
     SEL_DIR_TD => "td",
     SEL_DIR_LINK => "a[href*='cd_detail']",
@@ -46,6 +46,10 @@ pub struct ClassEntry {
     pub instructor: String,
     pub location: Option<String>,
     pub schedule: Option<String>,
+    /// Academic session, e.g. "Summer Session 1 (5 Weeks)", "Summer Session 10
+    /// Weeks". Only present for terms that have sessions (summer); `None` for
+    /// regular fall/winter/spring terms.
+    pub session: Option<String>,
     pub enrolled: Option<String>,
     pub mode: Option<String>,
 }
@@ -77,6 +81,9 @@ impl ClassEntry {
         if let Some(loc) = &self.location {
             let _ = write!(out, "\n- **Location**: {}", loc);
         }
+        if let Some(sess) = &self.session {
+            let _ = write!(out, "\n- **Session**: {}", sess);
+        }
         if let Some(enr) = &self.enrolled {
             let _ = write!(out, "\n- **Enrollment**: {}", enr);
         }
@@ -98,6 +105,9 @@ pub struct ClassSearchParams {
     pub ge: Option<String>,
     pub reg_status: String, // "O" for open only, "all" for all
     pub career: Option<String>,
+    /// PISA `binds[:session_code]` value (e.g. "5S1", "5S2", "S10", "S8W").
+    /// Only meaningful for summer terms.
+    pub session_code: Option<String>,
     pub page_start: u32,
     pub page_size: u32,
 }
@@ -142,6 +152,9 @@ pub async fn scrape_class_search(
     if let Some(ref c) = params.career {
         form.push(("binds[:acad_career]", c.clone()));
     }
+    if let Some(ref sc) = params.session_code {
+        form.push(("binds[:session_code]", sc.clone()));
+    }
 
     let resp = client
         .post(CLASS_SEARCH_URL)
@@ -171,62 +184,68 @@ fn parse_class_results(html: &str) -> Vec<ClassEntry> {
     let mut classes = Vec::new();
 
     for panel in document.select(&SEL_PANEL) {
-        // Check if this is a class panel (has an id starting with rowpanel_)
+        // Only real result panels carry an id like "rowpanel_3"; the search-form
+        // chrome and pagination rows reuse the panel class but not the id.
         let panel_id = panel.value().attr("id").unwrap_or("");
         if !panel_id.starts_with("rowpanel_") {
             continue;
         }
 
-        // Extract course info from the link text
-        let (subject, catalog_number, section, title, class_number) =
-            if let Some(link) = panel.select(&SEL_CLASS_LINK).next() {
-                let text = link.text().collect::<String>();
-                let id = link.value().attr("id").unwrap_or("");
-                let class_num = id.strip_prefix("class_id_").unwrap_or("").to_string();
-                parse_course_header(&text, class_num)
-            } else {
-                continue;
-            };
+        // Course header: "AM 10 - 01\u{a0}\u{a0}\u{a0}Lin Algebra for Engrs".
+        let Some(link) = panel.select(&SEL_CLASS_LINK).next() else {
+            continue;
+        };
+        let header = normalize_ws(&link.text().collect::<String>());
+        let (subject, catalog_number, section, title) = parse_course_header(&header);
 
-        // Extract status from img alt
+        // Class number: the dedicated `class_nbr_` link is the source of truth;
+        // fall back to the `class_id_<n>` element id.
+        let class_number = panel
+            .select(&SEL_CLASS_NBR)
+            .next()
+            .map(|a| a.text().collect::<String>().trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                link.value()
+                    .attr("id")
+                    .and_then(|id| id.strip_prefix("class_id_"))
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
+
+        // Status comes from the seat-status image alt (skip the page logo).
         let status = panel
             .select(&SEL_STATUS_IMG)
             .find_map(|img| {
                 let alt = img.value().attr("alt").unwrap_or("");
-                if alt.contains("Open") || alt.contains("Closed") || alt.contains("Wait") {
-                    Some(alt.to_string())
-                } else {
-                    None
-                }
+                is_status_alt(alt).then(|| normalize_status(alt))
             })
             .unwrap_or_default();
 
-        // Extract details from panel body text
-        let body_text = if let Some(body) = panel.select(&SEL_PANEL_BODY).next() {
-            body.text().collect::<String>()
-        } else {
-            String::new()
-        };
-
-        let instructor = extract_after_icon(&body_text, "instructor");
-        let location = extract_field(&body_text, "location");
-        let schedule = extract_field(&body_text, "schedule");
-        let enrolled = extract_enrollment(&body_text);
-
-        // Extract instruction mode from bold text
-        let mode = panel.select(&SEL_BOLD).find_map(|b| {
-            let text = b.text().collect::<String>().trim().to_string();
-            if text.contains("In Person")
-                || text.contains("Online")
-                || text.contains("Hybrid")
-                || text.contains("Synchronous")
-                || text.contains("Asynchronous")
-            {
-                Some(text)
-            } else {
-                None
+        // The rest of the fields are screen-reader-labeled rows of the form
+        // `<i class="sr-only">Label:</i> value` — a stable semantic contract,
+        // far sturdier than scraping flattened body text.
+        let (mut instructor, mut location, mut schedule, mut session, mut mode) =
+            (String::new(), None, None, None, None);
+        for sr in panel.select(&SEL_SR_ONLY) {
+            let Some((label, value)) = labeled_value(sr) else {
+                continue;
+            };
+            if value.is_empty() {
+                continue;
             }
-        });
+            match label.as_str() {
+                "Instructor" => instructor = value,
+                "Location" => location = Some(value),
+                "Day and Time" => schedule = Some(value),
+                "Session" => session = Some(value),
+                "Instruction Mode" => mode = Some(value),
+                _ => {}
+            }
+        }
+
+        // Enrollment ("87 of 150 Enrolled") sits in its own unlabeled column.
+        let enrolled = extract_enrollment(&normalize_ws(&panel.text().collect::<String>()));
 
         classes.push(ClassEntry {
             class_number,
@@ -238,6 +257,7 @@ fn parse_class_results(html: &str) -> Vec<ClassEntry> {
             instructor,
             location,
             schedule,
+            session,
             enrolled,
             mode,
         });
@@ -246,94 +266,89 @@ fn parse_class_results(html: &str) -> Vec<ClassEntry> {
     classes
 }
 
-fn parse_course_header(text: &str, class_number: String) -> (String, String, String, String, String) {
-    // Format: "SUBJECT NUMBER - SECTION  Title" or "SUBJECT NUMBER - SECTION Title"
-    let text = text.trim();
-    let parts: Vec<&str> = text.splitn(2, " - ").collect();
-    if parts.len() == 2 {
-        let subject_num: Vec<&str> = parts[0].trim().splitn(2, ' ').collect();
-        let subject = subject_num.first().unwrap_or(&"").to_string();
-        let catalog = subject_num.get(1).unwrap_or(&"").trim().to_string();
+/// Collapse `&nbsp;` (U+00A0) and runs of whitespace to single ASCII spaces.
+fn normalize_ws(s: &str) -> String {
+    s.replace('\u{a0}', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
-        // Section and title: "01  Introduction to Software Engineering"
-        let sec_title = parts[1].trim();
-        let sec_parts: Vec<&str> = sec_title.splitn(2, |c: char| c.is_whitespace()).collect();
-        let section = sec_parts.first().unwrap_or(&"").trim().to_string();
-        let title = sec_parts
-            .get(1)
-            .unwrap_or(&"")
-            .trim()
-            .to_string();
+/// "AM 10 - 01 Lin Algebra for Engrs" → ("AM", "10", "01", "Lin Algebra for Engrs").
+/// Expects whitespace already normalized.
+fn parse_course_header(text: &str) -> (String, String, String, String) {
+    let Some((left, right)) = text.split_once(" - ") else {
+        return (text.to_string(), String::new(), String::new(), String::new());
+    };
+    let (subject, catalog) = left
+        .trim()
+        .split_once(' ')
+        .map(|(s, c)| (s.trim().to_string(), c.trim().to_string()))
+        .unwrap_or((left.trim().to_string(), String::new()));
+    let (section, title) = right
+        .trim()
+        .split_once(char::is_whitespace)
+        .map(|(s, t)| (s.trim().to_string(), t.trim().to_string()))
+        .unwrap_or((right.trim().to_string(), String::new()));
+    (subject, catalog, section, title)
+}
 
-        (subject, catalog, section, title, class_number)
+/// Given a `<i class="sr-only">Label:</i>` element, return `(Label, value)` where
+/// the value is the remaining text of the row after the label. The sibling
+/// `<i class="fa">` icon contributes no text, so the row text is just
+/// `"Label: value"`.
+fn labeled_value(sr: ElementRef) -> Option<(String, String)> {
+    let label = sr.text().collect::<String>();
+    let label = label.trim().trim_end_matches(':').trim().to_string();
+    if label.is_empty() {
+        return None;
+    }
+    let parent = ElementRef::wrap(sr.parent()?)?;
+    let full = normalize_ws(&parent.text().collect::<String>());
+    let value = full
+        .strip_prefix(&format!("{label}:"))
+        .unwrap_or(&full)
+        .trim()
+        .to_string();
+    Some((label, value))
+}
+
+/// Is this image-alt a seat-status indicator (vs. the page logo)?
+fn is_status_alt(alt: &str) -> bool {
+    alt.contains("Open") || alt.contains("Closed") || alt.contains("Wait")
+}
+
+/// Normalize PISA status alts ("Open", "Closed", "Closed with Wait List") to a
+/// short label. "… Wait List" wins over "Closed" since a wait list is joinable.
+fn normalize_status(alt: &str) -> String {
+    if alt.contains("Wait") {
+        "Wait List".to_string()
+    } else if alt.contains("Closed") {
+        "Closed".to_string()
+    } else if alt.contains("Open") {
+        "Open".to_string()
     } else {
-        (text.to_string(), String::new(), String::new(), String::new(), class_number)
+        alt.to_string()
     }
 }
 
-fn extract_after_icon(body: &str, _field: &str) -> String {
-    // The body text is flattened — instructor appears after icon text
-    // We parse from the raw text looking for name patterns
-    // Simple approach: extract anything that looks like "LastName,F." pattern
-    let mut instructor = String::new();
-    for word in body.split_whitespace() {
-        if word.contains(',') && word.len() > 2 && word.chars().next().unwrap_or(' ').is_uppercase() {
-            // Looks like "Smith,J." — grab it and the next word
-            instructor = word.trim_end_matches(',').to_string();
-            if let Some(rest) = body.split(word).nth(1) {
-                let next: String = rest
-                    .split_whitespace()
-                    .take(1)
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if !next.is_empty() {
-                    instructor = format!("{},{}", instructor, next.trim_end_matches(','));
-                }
-            }
-            break;
-        }
-    }
-    instructor
-}
-
-fn extract_field(body: &str, field: &str) -> Option<String> {
-    match field {
-        "location" => {
-            // Look for patterns like "LEC: Building Room" or "SEM: Building Room"
-            for prefix in &["LEC:", "SEM:", "LAB:", "DIS:", "STU:", "FLD:", "TUT:"] {
-                if let Some(pos) = body.find(prefix) {
-                    let rest = &body[pos..];
-                    let val: String = rest
-                        .split_whitespace()
-                        .take(4) // "LEC: Building Room Number"
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if !val.is_empty() {
-                        return Some(val);
-                    }
-                }
-            }
-            None
-        }
-        "schedule" => {
-            // Look for day+time patterns like "MWF 10:40AM-11:45AM" or "TR 1:30PM-3:05PM"
-            let days_pattern = ["MWF", "TuTh", "MW", "MF", "WF", "Tu ", "Th ", "Sa ", "Su ", "M ", "W ", "F "];
-            for pat in &days_pattern {
-                if let Some(pos) = body.find(pat) {
-                    let rest = &body[pos..];
-                    let val: String = rest
-                        .split_whitespace()
-                        .take(3)
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if val.contains("AM") || val.contains("PM") {
-                        return Some(val);
-                    }
-                }
-            }
-            None
-        }
-        _ => None,
+/// Map a friendly summer-session string to PISA's `binds[:session_code]` value.
+/// Accepts "1"/"session 1", "2", "10"/"10 week", "8"/"8 week", or a raw code
+/// (e.g. "5S1") which passes through uppercased. The digit(s) are the signal:
+///   1 → 5S1 · 2 → 5S2 · 8 → S8W · 10 → S10
+pub fn normalize_session_code(s: &str) -> String {
+    let lowered = s.to_lowercase();
+    // Drop "summer"/"session" words so a raw "5S1" still yields digits "51"
+    // (no match → raw passthrough) while "session 10" yields "10".
+    let stripped = lowered.replace("summer", "").replace("session", "");
+    let digits: String = stripped.chars().filter(|c| c.is_ascii_digit()).collect();
+    match digits.as_str() {
+        "10" => "S10".to_string(),
+        "1" => "5S1".to_string(),
+        "2" => "5S2".to_string(),
+        "8" => "S8W".to_string(),
+        // Already a raw code (e.g. "5S1", "IND", "ED1") — pass through uppercased.
+        _ => s.trim().to_uppercase(),
     }
 }
 
@@ -641,75 +656,56 @@ mod tests {
     #[test]
     fn parse_class_results_extracts_all_panels() {
         let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
-        // Three rowpanel_ panels; the searchpanel chrome must be skipped.
-        assert_eq!(classes.len(), 3, "got: {:#?}", classes);
+        // 5 rowpanel_ panels (3 summer + 2 spring); search-form chrome is skipped.
+        assert_eq!(classes.len(), 5, "got: {:#?}", classes);
     }
 
     #[test]
-    fn parse_class_results_open_lecture_fields() {
+    fn parse_class_results_summer_session1_all_fields() {
         let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
-        let cse = &classes[0];
-        assert_eq!(cse.subject, "CSE");
-        assert_eq!(cse.catalog_number, "115A");
-        assert_eq!(cse.section, "01");
-        assert_eq!(cse.title, "Introduction to Software Engineering");
-        assert_eq!(cse.class_number, "22345");
-        assert_eq!(cse.status, "Open");
-        // schedule is the day/time; the parser's 3-token window also pulls in the
-        // following "LEC:" prefix from the flattened body, so match the prefix.
-        assert!(
-            cse.schedule
-                .as_deref()
-                .unwrap_or("")
-                .starts_with("MWF 10:40AM-11:45AM"),
-            "schedule: {:?}",
-            cse.schedule
-        );
-        assert_eq!(cse.enrolled.as_deref(), Some("92 of 100 Enrolled"));
+        let am10 = &classes[0];
+        assert_eq!(am10.subject, "AM");
+        assert_eq!(am10.catalog_number, "10");
+        assert_eq!(am10.section, "01");
+        assert_eq!(am10.title, "Lin Algebra for Engrs");
+        assert_eq!(am10.class_number, "70307");
+        assert_eq!(am10.status, "Open");
+        assert_eq!(am10.instructor, "Katznelson,J.R.");
+        assert_eq!(am10.location.as_deref(), Some("LEC: Online"));
+        assert_eq!(am10.schedule.as_deref(), Some("MTuThF 03:00PM-04:45PM"));
+        // The summer-only Session field — the whole point of this work.
+        assert_eq!(am10.session.as_deref(), Some("Summer Session 1 (5 Weeks)"));
+        assert_eq!(am10.enrolled.as_deref(), Some("87 of 150 Enrolled"));
+        assert_eq!(am10.mode.as_deref(), Some("Synchronous Online"));
+    }
+
+    #[test]
+    fn parse_class_results_session_variety() {
+        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
+        let sessions: Vec<Option<&str>> = classes.iter().map(|c| c.session.as_deref()).collect();
+        // Distinct summer sessions parsed verbatim from the Session field.
+        assert!(sessions.contains(&Some("Summer Session 1 (5 Weeks)")));
+        assert!(sessions.contains(&Some("Summer Session 2 (5 Weeks)")));
+        assert!(sessions.contains(&Some("Summer Session 8 Weeks")));
+        // Regular (spring) panels have no session.
+        assert!(sessions.contains(&None));
+    }
+
+    #[test]
+    fn parse_class_results_closed_in_person_regular_term() {
+        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
+        // The two trailing panels are regular-term (Spring) CSE classes.
+        let cse = classes
+            .iter()
+            .find(|c| c.subject == "CSE" && c.catalog_number == "3")
+            .expect("CSE 3 panel");
+        assert_eq!(cse.status, "Closed");
+        assert_eq!(cse.session, None);
         assert_eq!(cse.mode.as_deref(), Some("In Person"));
-        // instructor is parsed from the flattened body's "Last,F." pattern
-        assert!(
-            cse.instructor.starts_with("Tantalo"),
-            "instructor: {:?}",
-            cse.instructor
-        );
-        // location uses the LEC: prefix
-        assert!(
-            cse.location.as_deref().unwrap_or("").starts_with("LEC:"),
-            "location: {:?}",
-            cse.location
-        );
-    }
-
-    #[test]
-    fn parse_class_results_waitlist_status() {
-        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
-        let lab = &classes[1];
-        assert_eq!(lab.section, "01A");
-        assert_eq!(lab.status, "Wait List");
-        // Full lab section: 30 of 30 → effectively closed-by-enrollment.
-        assert_eq!(lab.enrolled.as_deref(), Some("30 of 30 Enrolled"));
-    }
-
-    #[test]
-    fn parse_class_results_closed_multi_meeting() {
-        let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
-        let math = &classes[2];
-        assert_eq!(math.subject, "MATH");
-        assert_eq!(math.catalog_number, "19A");
-        assert_eq!(math.status, "Closed");
-        assert_eq!(math.mode.as_deref(), Some("Online Synchronous"));
-        // Multi-meeting (LEC + DIS): the parser surfaces the first day/time it finds
-        // (the TuTh lecture, not the M discussion), plus the trailing "LEC:" token.
-        assert!(
-            math.schedule
-                .as_deref()
-                .unwrap_or("")
-                .starts_with("TuTh 1:30PM-3:05PM"),
-            "schedule: {:?}",
-            math.schedule
-        );
-        assert_eq!(math.enrolled.as_deref(), Some("120 of 120 Enrolled"));
+        assert_eq!(cse.instructor, "Moulds,G.B.");
+        assert_eq!(cse.location.as_deref(), Some("LEC: R Carson Acad 240"));
+        assert_eq!(cse.schedule.as_deref(), Some("TuTh 03:20PM-04:55PM"));
+        assert_eq!(cse.enrolled.as_deref(), Some("84 of 84 Enrolled"));
     }
 
     #[test]
@@ -717,8 +713,42 @@ mod tests {
         let classes = parse_class_results(CLASS_RESULTS_FIXTURE);
         let statuses: Vec<&str> = classes.iter().map(|c| c.status.as_str()).collect();
         assert!(statuses.contains(&"Open"));
-        assert!(statuses.contains(&"Wait List"));
         assert!(statuses.contains(&"Closed"));
+    }
+
+    #[test]
+    fn normalize_status_maps_waitlist_and_closed() {
+        assert_eq!(normalize_status("Open"), "Open");
+        assert_eq!(normalize_status("Closed"), "Closed");
+        // "Closed with Wait List" is joinable → "Wait List".
+        assert_eq!(normalize_status("Closed with Wait List"), "Wait List");
+        assert!(!is_status_alt("UCSC Logo"));
+    }
+
+    #[test]
+    fn parse_course_header_splits_subject_catalog_section_title() {
+        // &nbsp;-normalized header.
+        assert_eq!(
+            parse_course_header("AM 10 - 01 Lin Algebra for Engrs"),
+            ("AM".into(), "10".into(), "01".into(), "Lin Algebra for Engrs".into())
+        );
+        assert_eq!(
+            parse_course_header("CSE 115A - 01A Intro to Software Eng"),
+            ("CSE".into(), "115A".into(), "01A".into(), "Intro to Software Eng".into())
+        );
+    }
+
+    #[test]
+    fn normalize_session_code_maps_friendly_and_raw() {
+        assert_eq!(normalize_session_code("1"), "5S1");
+        assert_eq!(normalize_session_code("session 1"), "5S1");
+        assert_eq!(normalize_session_code("2"), "5S2");
+        assert_eq!(normalize_session_code("10"), "S10");
+        assert_eq!(normalize_session_code("10 week"), "S10");
+        assert_eq!(normalize_session_code("8"), "S8W");
+        // Raw codes pass through uppercased.
+        assert_eq!(normalize_session_code("5S1"), "5S1");
+        assert_eq!(normalize_session_code("s8w"), "S8W");
     }
 
     #[test]

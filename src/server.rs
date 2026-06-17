@@ -415,7 +415,7 @@ macro_rules! define_tools {
 
             // ─── Academics Tools ───
 
-            #[tool(description = "Search the UCSC class schedule. Filter by subject, course number, instructor, title, or GE requirement. Returns enrollment counts and meeting times.")]
+            #[tool(description = "Search the UCSC class schedule. Filter by subject, course number, instructor, title, GE requirement, academic career, or (for summer terms) session — \"1\"/\"2\" for the two 5-week sessions, \"10\" for the 10-week, \"8\" for the 8-week. Returns enrollment counts, meeting times, instruction mode, and the session for summer classes.")]
             async fn search_classes(
                 &self,
                 Parameters(req): Parameters<SearchClassesRequest>,
@@ -430,6 +430,7 @@ macro_rules! define_tools {
                         req.title.as_deref(),
                         req.ge.as_deref(),
                         req.career.as_deref(),
+                        req.session.as_deref(),
                         req.open_only.unwrap_or(false),
                         req.page,
                     )

@@ -53,6 +53,8 @@ pub fn library_names() -> String {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RoomAvailability {
     pub library_name: String,
+    /// LibCal library id, used to build the booking-grid deep link.
+    pub lid: u32,
     pub date: String,
     pub rooms: Vec<Room>,
 }
@@ -73,12 +75,37 @@ pub struct TimeSlot {
 }
 
 impl RoomAvailability {
+    /// Deep link to the LibCal booking grid for this library + date. Dropping
+    /// the student here lets them pick an open slot and check out in-browser
+    /// (where LibCal's JS-gated SSO works), which a headless HTTP client can't do.
+    pub fn booking_url(&self) -> String {
+        format!("{}/spaces?lid={}&d={}", LIBCAL_BASE, self.lid, self.date)
+    }
+
     pub fn format(&self) -> String {
         let mut out = format!("## {} — {}\n", self.library_name, self.date);
         if self.rooms.is_empty() {
-            out.push_str("No rooms found or availability data unavailable.");
+            let _ = write!(
+                out,
+                "No open rooms parsed for this date (the library may be closed or fully booked). \
+                 Check the live grid: [📅 LibCal booking →]({})",
+                self.booking_url()
+            );
             return out;
         }
+        // Lead with the one-click booking link for the whole day's grid.
+        let _ = writeln!(out, "**[📅 Reserve a room →]({})**", self.booking_url());
+        let open: usize = self
+            .rooms
+            .iter()
+            .filter(|r| !r.available_slots.is_empty())
+            .count();
+        let _ = writeln!(
+            out,
+            "_{} of {} rooms have open slots. Pick a slot below, then book via the link._",
+            open,
+            self.rooms.len()
+        );
         for room in &self.rooms {
             out.push('\n');
             out.push_str(&room.format());
@@ -88,16 +115,22 @@ impl RoomAvailability {
 }
 
 impl Room {
+    /// Deep link to this specific room's LibCal page (`/space/<eid>`).
+    pub fn booking_url(&self) -> Option<String> {
+        self.space_id
+            .map(|eid| format!("{}/space/{}", LIBCAL_BASE, eid))
+    }
+
     pub fn format(&self) -> String {
         let cap_str = self
             .capacity
             .map(|c| format!(" (capacity: {})", c))
             .unwrap_or_default();
-        let id_str = self
-            .space_id
-            .map(|id| format!(" [space_id: {}]", id))
-            .unwrap_or_default();
-        let mut out = format!("### {}{}{}", self.name, cap_str, id_str);
+        // Link the room name to its LibCal page when we have the eid.
+        let mut out = match self.booking_url() {
+            Some(url) => format!("### [{}]({}){}", self.name, url, cap_str),
+            None => format!("### {}{}", self.name, cap_str),
+        };
 
         if !self.available_slots.is_empty() {
             let slots: Vec<String> = self
@@ -105,7 +138,7 @@ impl Room {
                 .iter()
                 .map(|s| format!("{} - {}", s.start, s.end))
                 .collect();
-            let _ = write!(out, "\n- **Available**: {}", slots.join(", "));
+            let _ = write!(out, "\n- **Open**: {}", slots.join(", "));
         }
         if !self.booked_slots.is_empty() {
             let slots: Vec<String> = self
@@ -375,6 +408,7 @@ pub async fn scrape_availability(
 
     Ok(RoomAvailability {
         library_name: library_name.to_string(),
+        lid,
         date: date.to_string(),
         rooms,
     })
@@ -441,8 +475,41 @@ mod tests {
             booked_slots: booked,
         };
         let rendered = room.format();
-        assert!(rendered.contains("**Available**: 09:00 - 09:30"));
+        assert!(rendered.contains("**Open**: 09:00 - 09:30"));
         assert!(rendered.contains("**Booked**: 09:30 - 10:00"));
+        // Room name links to its LibCal deep link.
+        assert!(rendered.contains("[4th Floor Room 4360](https://calendar.library.ucsc.edu/space/139536)"));
+    }
+
+    #[test]
+    fn availability_includes_booking_deep_link() {
+        let avail = RoomAvailability {
+            library_name: "Science & Engineering Library".to_string(),
+            lid: 16578,
+            date: "2026-06-15".to_string(),
+            rooms: vec![Room {
+                name: "Room 3360".to_string(),
+                space_id: Some(139549),
+                capacity: Some(8),
+                available_slots: vec![TimeSlot {
+                    start: "13:00".to_string(),
+                    end: "13:30".to_string(),
+                }],
+                booked_slots: vec![],
+            }],
+        };
+        let out = avail.format();
+        // Library-level grid deep link carries lid + date.
+        assert!(out.contains(
+            "(https://calendar.library.ucsc.edu/spaces?lid=16578&d=2026-06-15)"
+        ));
+        // "Reserve a room" CTA and an open-room count line.
+        assert!(out.contains("Reserve a room"));
+        assert!(out.contains("1 of 1 rooms have open slots"));
+        assert_eq!(
+            avail.booking_url(),
+            "https://calendar.library.ucsc.edu/spaces?lid=16578&d=2026-06-15"
+        );
     }
 
     #[test]

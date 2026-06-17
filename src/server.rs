@@ -399,7 +399,7 @@ macro_rules! define_tools {
 
             // ─── Library Tools ───
 
-            #[tool(description = "Get available study rooms at UCSC libraries (McHenry, Science & Engineering). Shows room availability by time slot.")]
+            #[tool(description = "Find available study rooms at UCSC libraries (McHenry, Science & Engineering) and get a one-click LibCal booking link. Shows each room's open vs. booked time slots for the date, plus a deep link to the LibCal booking grid (pre-set to the library + date) and a per-room link — the student picks a slot and completes the reservation in their browser. In-tool booking isn't possible (LibCal gates checkout behind a JavaScript SSO flow), so this deep-links them straight to the booking page instead.")]
             async fn get_study_room_availability(
                 &self,
                 Parameters(req): Parameters<StudyRoomAvailabilityRequest>,

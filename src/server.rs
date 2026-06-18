@@ -21,6 +21,7 @@ use crate::earthquakes::{EarthquakeRequest, EarthquakeService};
 use crate::nps::{NationalParkRequest, NpsService};
 use crate::outdoors::{OutdoorsRequest, OutdoorsService};
 use crate::space_weather::{SpaceWeatherRequest, SpaceWeatherService};
+use crate::summer::{SummerDeadlinesRequest, SummerService};
 use crate::biodiversity::{
     BiodiversityService, BirdRequest, HistoricBirdRequest, HotspotRequest, NearestBirdRequest,
     SpeciesRequest,
@@ -82,6 +83,7 @@ pub struct ServiceContext {
     pub air_quality: Arc<AirQualityService>,
     pub astronomy: Arc<AstronomyService>,
     pub space_weather: Arc<SpaceWeatherService>,
+    pub summer: Arc<SummerService>,
     pub outdoors: Arc<OutdoorsService>,
     pub climbing: Arc<ClimbingService>,
     pub earthquakes: Arc<EarthquakeService>,
@@ -118,6 +120,7 @@ pub struct SlugMcpServer {
     air_quality: Arc<AirQualityService>,
     astronomy: Arc<AstronomyService>,
     space_weather: Arc<SpaceWeatherService>,
+    summer: Arc<SummerService>,
     outdoors: Arc<OutdoorsService>,
     climbing: Arc<ClimbingService>,
     earthquakes: Arc<EarthquakeService>,
@@ -155,6 +158,7 @@ impl SlugMcpServer {
             air_quality: ctx.air_quality,
             astronomy: ctx.astronomy,
             space_weather: ctx.space_weather,
+            summer: ctx.summer,
             outdoors: ctx.outdoors,
             climbing: ctx.climbing,
             earthquakes: ctx.earthquakes,
@@ -898,6 +902,21 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![Content::text(result)]))
             }
 
+            // ─── Summer Session Tools ───
+
+            #[tool(description = "Get UCSC Summer Session academic deadlines, per session. Summer has four overlapping sessions — Session 1, Session 2, 8-Week, and 10-Week — each with DIFFERENT add/swap, drop, withdraw ('W' grade), grade-option, and grades-due deadlines. Unlike the regular year there is no Add by Petition, so these are hard stops. Returns each session's date range and deadlines, flagging which are still upcoming (with days remaining). Filter to one session with `session` (\"1\", \"2\", \"8-week\", \"10-week\"); set `upcoming_only` to hide passed deadlines. Source: summer.ucsc.edu.")]
+            async fn get_summer_deadlines(
+                &self,
+                Parameters(req): Parameters<SummerDeadlinesRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .summer
+                    .get_deadlines(req.session.as_deref(), req.upcoming_only.unwrap_or(false))
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![Content::text(result)]))
+            }
+
             // ─── Outdoors / OSM Tools ───
 
             #[tool(description = "Search OpenStreetMap for outdoor features near a location. Category must be one of: \"trails\" (hiking paths/footways), \"peaks\" (mountain summits), \"viewpoints\" (scenic overlooks), \"water_restrooms\" (drinking water + toilets), \"parking\" (parking areas). Defaults to Santa Cruz. Uses the Overpass API (community-run, rate-limited to 2 concurrent queries — results may be slow under heavy load). Data from OSM contributors. For National Park Service units (Pinnacles, Yosemite, etc.) prefer `get_national_park_info` — it returns authoritative hours, fees, and ranger contacts that aren't in OSM.")]
@@ -1249,7 +1268,8 @@ impl ServerHandler for SlugMcpServer {
              lookup, classroom search, real-time bus arrival predictions via \
              GTFS-RT, transit service alerts, system-wide SC Metro service \
              alerts, live vehicle positions, and per-route delay stats, \
-             degree requirements lookup, and degree progress tracking. \
+             degree requirements lookup, degree progress tracking, and \
+             session-aware Summer Session academic deadlines. \
              Santa Cruz city/county services: 7-day NOAA NWS weather forecasts \
              and active alerts (coastal CAZ529 + mountains CAZ512), CHP \
              incidents and Caltrans District 5 lane closures for Hwy 1 / 9 / \

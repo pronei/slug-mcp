@@ -34,6 +34,7 @@ mod outdoors;
 mod recreation;
 mod server;
 mod space_weather;
+mod summer;
 mod tides;
 mod traffic;
 mod transit;
@@ -190,6 +191,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         )),
         astronomy: Arc::new(astronomy::AstronomyService::new(http.clone(), cache.clone())),
         space_weather: Arc::new(space_weather::SpaceWeatherService::new(http.clone(), cache.clone())),
+        summer: Arc::new(summer::SummerService::new(http.clone(), cache.clone())),
         outdoors: Arc::new(outdoors::OutdoorsService::new(http.clone(), cache.clone())),
         climbing: Arc::new(climbing::ClimbingService::new(http.clone(), cache.clone())),
         earthquakes: Arc::new(earthquakes::EarthquakeService::new(http.clone(), cache.clone())),

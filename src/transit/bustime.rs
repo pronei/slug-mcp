@@ -74,10 +74,19 @@ pub async fn get_predictions(
         .error_for_status()
         .context("BusTime API returned error status")?;
 
-    let body: BustimeResponse = resp
-        .json()
+    let body = resp
+        .text()
         .await
-        .context("failed to parse BusTime response")?;
+        .context("failed to read BusTime response")?;
+
+    parse_predictions(&body, crate::util::now_pacific().naive_local())
+}
+
+/// Parse a BusTime v2 getpredictions body. `now` anchors the ETA math so
+/// tests stay deterministic.
+fn parse_predictions(body: &str, now: NaiveDateTime) -> Result<Vec<Prediction>> {
+    let body: BustimeResponse =
+        serde_json::from_str(body).context("failed to parse BusTime response")?;
 
     let prd_response = body.bustime_response;
 
@@ -90,8 +99,6 @@ pub async fn get_predictions(
     let Some(predictions) = prd_response.prd else {
         return Ok(Vec::new());
     };
-
-    let now = crate::util::now_pacific().naive_local();
 
     let results = predictions
         .into_iter()
@@ -163,10 +170,18 @@ pub async fn get_service_bulletins(
         .error_for_status()
         .context("BusTime API returned error status")?;
 
-    let body: BustimeBulletinResponse = resp
-        .json()
+    let body = resp
+        .text()
         .await
-        .context("failed to parse BusTime bulletin response")?;
+        .context("failed to read BusTime bulletin response")?;
+
+    parse_bulletins(&body)
+}
+
+/// Parse a BusTime v2 getservicebulletins body.
+fn parse_bulletins(body: &str) -> Result<Vec<ServiceBulletin>> {
+    let body: BustimeBulletinResponse =
+        serde_json::from_str(body).context("failed to parse BusTime bulletin response")?;
 
     let inner = body.bustime_response;
 
@@ -275,4 +290,151 @@ struct BustimeBulletin {
 #[derive(Debug, Deserialize)]
 struct BulletinService {
     rt: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn now() -> NaiveDateTime {
+        NaiveDateTime::parse_from_str("20260707 06:00", "%Y%m%d %H:%M").unwrap()
+    }
+
+    #[test]
+    fn parse_predictions_full_v2_row() {
+        let body = r#"{"bustime-response":{"prd":[{
+            "rt":"19","rtdir":"OUTBOUND","des":"UCSC via West Gate","prdtm":"20260707 06:37",
+            "prdctdn":"37","dly":false,"dyn":0,"psgld":"HALF_EMPTY","nbus":"29","vid":"11027"
+        }]}}"#;
+        let preds = parse_predictions(body, now()).unwrap();
+        assert_eq!(preds.len(), 1);
+        let p = &preds[0];
+        assert_eq!(p.route, "19");
+        assert_eq!(p.direction, "OUTBOUND");
+        assert_eq!(p.destination, "UCSC via West Gate");
+        assert_eq!(p.eta_minutes, 37);
+        assert_eq!(p.countdown, "37");
+        assert!(!p.is_delayed);
+        assert_eq!(p.trip_status, TripStatus::Normal);
+        assert_eq!(p.passenger_load.as_deref(), Some("HALF_EMPTY"));
+        assert_eq!(p.next_bus_minutes.as_deref(), Some("29"));
+        assert_eq!(p.vehicle_id, "11027");
+    }
+
+    // SC Metro's v2 API ships the psgld field but never populates it (empty
+    // string in practice — verified live 2026-07-07). Empty must map to None
+    // so the formatter doesn't render an empty load marker.
+    #[test]
+    fn parse_predictions_empty_psgld_and_nbus_are_none() {
+        let body = r#"{"bustime-response":{"prd":[{
+            "rt":"19","rtdir":"OUTBOUND","des":"","prdtm":"20260707 06:37",
+            "prdctdn":"37","dly":false,"dyn":0,"psgld":"","nbus":"","vid":""
+        }]}}"#;
+        let preds = parse_predictions(body, now()).unwrap();
+        assert_eq!(preds[0].passenger_load, None);
+        assert_eq!(preds[0].next_bus_minutes, None);
+    }
+
+    #[test]
+    fn parse_predictions_missing_optional_fields_default() {
+        // Only the three required fields — everything else #[serde(default)].
+        let body = r#"{"bustime-response":{"prd":[{
+            "rt":"11","rtdir":"INBOUND","prdtm":"20260707 06:10"
+        }]}}"#;
+        let preds = parse_predictions(body, now()).unwrap();
+        let p = &preds[0];
+        assert_eq!(p.eta_minutes, 10);
+        assert_eq!(p.trip_status, TripStatus::Normal);
+        assert_eq!(p.passenger_load, None);
+        assert!(!p.is_delayed);
+    }
+
+    #[test]
+    fn parse_predictions_error_envelope_bails_with_message() {
+        let body = r#"{"bustime-response":{"error":[{"msg":"No data found for parameter"}]}}"#;
+        let err = parse_predictions(body, now()).unwrap_err();
+        assert!(err.to_string().contains("No data found for parameter"));
+    }
+
+    #[test]
+    fn parse_predictions_absent_prd_is_empty() {
+        let body = r#"{"bustime-response":{}}"#;
+        assert!(parse_predictions(body, now()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_predictions_unparseable_time_row_is_dropped() {
+        let body = r#"{"bustime-response":{"prd":[
+            {"rt":"19","rtdir":"OUTBOUND","prdtm":"not a time"},
+            {"rt":"11","rtdir":"INBOUND","prdtm":"20260707 06:20"}
+        ]}}"#;
+        let preds = parse_predictions(body, now()).unwrap();
+        assert_eq!(preds.len(), 1);
+        assert_eq!(preds[0].route, "11");
+    }
+
+    #[test]
+    fn parse_predictions_truncated_body_errors() {
+        let body = r#"{"bustime-response":{"prd":[{"rt":"19","#;
+        assert!(parse_predictions(body, now()).is_err());
+    }
+
+    #[test]
+    fn parse_predictions_past_time_clamps_eta_to_zero() {
+        let body = r#"{"bustime-response":{"prd":[{
+            "rt":"19","rtdir":"OUTBOUND","prdtm":"20260707 05:50"
+        }]}}"#;
+        let preds = parse_predictions(body, now()).unwrap();
+        assert_eq!(preds[0].eta_minutes, 0);
+    }
+
+    #[test]
+    fn parse_predictions_dyn_flag_variants() {
+        let body = r#"{"bustime-response":{"prd":[
+            {"rt":"1","rtdir":"A","prdtm":"20260707 06:10","dyn":1},
+            {"rt":"2","rtdir":"B","prdtm":"20260707 06:10","dyn":2},
+            {"rt":"3","rtdir":"C","prdtm":"20260707 06:10","dyn":7}
+        ]}}"#;
+        let preds = parse_predictions(body, now()).unwrap();
+        assert_eq!(preds[0].trip_status, TripStatus::Canceled);
+        assert_eq!(preds[1].trip_status, TripStatus::Expressed);
+        assert_eq!(preds[2].trip_status, TripStatus::Normal);
+    }
+
+    #[test]
+    fn parse_bulletins_extracts_routes_and_defaults() {
+        let body = r#"{"bustime-response":{"sb":[
+            {"sbj":"Route 18 detour","dtl":"Detour via Bay St.","brf":"Detour",
+             "prty":"Medium","srvc":[{"rt":"18"},{"rt":null},{"rt":"19"}]},
+            {"sbj":"Bare minimum"}
+        ]}}"#;
+        let bulletins = parse_bulletins(body).unwrap();
+        assert_eq!(bulletins.len(), 2);
+        assert_eq!(bulletins[0].subject, "Route 18 detour");
+        assert_eq!(bulletins[0].affected_routes, vec!["18", "19"]);
+        assert_eq!(bulletins[1].subject, "Bare minimum");
+        assert!(bulletins[1].affected_routes.is_empty());
+        assert!(bulletins[1].priority.is_empty());
+    }
+
+    #[test]
+    fn parse_bulletins_absent_sb_is_empty() {
+        assert!(
+            parse_bulletins(r#"{"bustime-response":{}}"#)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn parse_bulletins_error_envelope_bails() {
+        let body = r#"{"bustime-response":{"error":[{"msg":"Invalid API access key supplied"}]}}"#;
+        let err = parse_bulletins(body).unwrap_err();
+        assert!(err.to_string().contains("Invalid API access key"));
+    }
+
+    #[test]
+    fn parse_bulletins_truncated_body_errors() {
+        assert!(parse_bulletins(r#"{"bustime-response":{"sb":[{"sb"#).is_err());
+    }
 }

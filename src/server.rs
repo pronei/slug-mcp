@@ -497,7 +497,7 @@ macro_rules! define_tools {
 
             // ─── Transit Tools ───
 
-            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name; optionally filter by route. Primary source is GTFS-RT (no per-call API key, rich vehicle positions and occupancy). Automatically falls back to BusTime when GTFS-RT has no absolute-time data for the matched stop — BusTime adds destination headsigns, DUE/DLY countdown labels, and canceled/express trip flags. Output footer shows which backend answered. Both sources report passenger load and delays. For system-wide queries (no specific stop) prefer `get_system_service_alerts`, `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
+            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name; optionally filter by route. Primary source is GTFS-RT (no per-call API key, rich vehicle positions and occupancy). Automatically falls back to BusTime when GTFS-RT has no absolute-time data for the matched stop — BusTime adds destination headsigns, DUE/DLY countdown labels, and canceled/express trip flags. Output footer shows which backend answered. Occupancy comes from the GTFS-RT vehicles feed (SC Metro leaves BusTime's passenger-load field unpopulated). For system-wide queries (no specific stop) prefer `get_system_service_alerts`, `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
             async fn get_bus_predictions(
                 &self,
                 Parameters(req): Parameters<BusPredictionRequest>,

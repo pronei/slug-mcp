@@ -197,7 +197,12 @@ struct BustimeStop {
 /// Search stops by name using case-insensitive substring matching.
 /// Returns up to `limit` matches, sorted by relevance (exact > prefix > contains > words).
 pub fn search_stops<'a>(stops: &'a [Stop], query: &str, limit: usize) -> Vec<&'a Stop> {
-    let query_lower = query.to_lowercase();
+    let query_lower = query.trim().to_lowercase();
+    // An empty query would prefix-match every stop and return `limit`
+    // arbitrary ones; treat it as "no match" so the tool prompts for a name.
+    if query_lower.is_empty() {
+        return Vec::new();
+    }
 
     let mut matches: Vec<(usize, &Stop)> = stops
         .iter()
@@ -229,4 +234,96 @@ pub fn search_stops<'a>(stops: &'a [Stop], query: &str, limit: usize) -> Vec<&'a
         .take(limit)
         .map(|(_, stop)| stop)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stop(id: &str, name: &str) -> Stop {
+        Stop {
+            stop_id: id.to_string(),
+            stop_name: name.to_string(),
+            stop_lat: 36.97,
+            stop_lon: -122.03,
+        }
+    }
+
+    fn catalog() -> Vec<Stop> {
+        vec![
+            stop("1", "Science Hill"),
+            stop("2", "Science Hill North"),
+            stop("3", "McLaughlin Dr (UCSC - Science Hill)"),
+            stop("4", "Metro Center"),
+            stop("5", "Bay & High"),
+        ]
+    }
+
+    #[test]
+    fn search_ranks_exact_before_prefix_before_substring() {
+        let stops = catalog();
+        let results = search_stops(&stops, "Science Hill", 5);
+        let names: Vec<&str> = results.iter().map(|s| s.stop_name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "Science Hill",
+                "Science Hill North",
+                "McLaughlin Dr (UCSC - Science Hill)"
+            ]
+        );
+    }
+
+    #[test]
+    fn search_matches_all_words_regardless_of_order() {
+        let stops = catalog();
+        let results = search_stops(&stops, "hill science", 5);
+        assert!(!results.is_empty());
+        assert!(results.iter().all(|s| {
+            let n = s.stop_name.to_lowercase();
+            n.contains("science") && n.contains("hill")
+        }));
+    }
+
+    #[test]
+    fn search_is_case_insensitive_and_respects_limit() {
+        let stops = catalog();
+        let results = search_stops(&stops, "SCIENCE", 1);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].stop_name, "Science Hill");
+    }
+
+    #[test]
+    fn search_no_match_returns_empty() {
+        let stops = catalog();
+        assert!(search_stops(&stops, "airport", 5).is_empty());
+    }
+
+    #[test]
+    fn search_empty_or_whitespace_query_matches_nothing() {
+        let stops = catalog();
+        assert!(search_stops(&stops, "", 5).is_empty());
+        assert!(search_stops(&stops, "   ", 5).is_empty());
+    }
+
+    #[test]
+    fn stops_response_deserializes_bustime_shape() {
+        let body = r#"{"bustime-response":{"stops":[
+            {"stpid":"2674","stpnm":"McLaughlin Dr (UCSC - Science Hill)","lat":36.9997,"lon":-122.0603}
+        ]}}"#;
+        let parsed: StopsResponse = serde_json::from_str(body).unwrap();
+        let stops = parsed.bustime_response.stops.unwrap();
+        assert_eq!(stops[0].stpid, "2674");
+        assert_eq!(stops[0].stpnm, "McLaughlin Dr (UCSC - Science Hill)");
+        assert!((stops[0].lat - 36.9997).abs() < 1e-9);
+    }
+
+    #[test]
+    fn routes_response_error_envelope_deserializes() {
+        let body = r#"{"bustime-response":{"error":[{"msg":"Invalid API access key supplied"}]}}"#;
+        let parsed: RoutesResponse = serde_json::from_str(body).unwrap();
+        let errors = parsed.bustime_response.error.unwrap();
+        assert_eq!(errors[0].msg, "Invalid API access key supplied");
+        assert!(parsed.bustime_response.routes.is_none());
+    }
 }

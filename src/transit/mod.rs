@@ -401,3 +401,127 @@ fn format_service_bulletins(bulletins: &[bustime::ServiceBulletin]) -> String {
 
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stop(id: &str, name: &str) -> stops::Stop {
+        stops::Stop {
+            stop_id: id.to_string(),
+            stop_name: name.to_string(),
+            stop_lat: 36.97,
+            stop_lon: -122.03,
+        }
+    }
+
+    fn pred(route: &str, countdown: &str, eta: i64) -> bustime::Prediction {
+        bustime::Prediction {
+            route: route.to_string(),
+            direction: "OUTBOUND".to_string(),
+            destination: "UCSC via West Gate".to_string(),
+            predicted_time: "6:37 AM".to_string(),
+            eta_minutes: eta,
+            countdown: countdown.to_string(),
+            is_delayed: false,
+            trip_status: bustime::TripStatus::Normal,
+            passenger_load: None,
+            next_bus_minutes: None,
+            vehicle_id: String::new(),
+        }
+    }
+
+    #[test]
+    fn friendly_load_maps_bustime_enum() {
+        assert_eq!(friendly_load("EMPTY"), "empty");
+        assert_eq!(friendly_load("HALF_EMPTY"), "half-empty");
+        assert_eq!(friendly_load("FULL"), "full");
+        assert_eq!(friendly_load("STANDING_ROOM_ONLY"), "standing room");
+        assert_eq!(friendly_load("NOT_ACCEPTING_PASSENGERS"), "not accepting");
+        assert_eq!(friendly_load("SOMETHING_NEW"), "SOMETHING_NEW");
+    }
+
+    #[test]
+    fn format_bustime_empty_predictions_explains_no_service() {
+        let s = stop("2674", "Science Hill");
+        let out = format_bustime_predictions(&s, &[], &[], "GTFS-RT returned no data");
+        assert!(out.contains("No upcoming buses from either GTFS-RT or BusTime"));
+        assert!(out.contains("GTFS-RT returned no data"));
+        assert!(out.contains("source: BusTime (fallback)"));
+    }
+
+    #[test]
+    fn format_bustime_renders_markers_and_grouping() {
+        let s = stop("2674", "Science Hill");
+        let mut due = pred("19", "DUE", 0);
+        due.passenger_load = Some("FULL".to_string());
+        due.vehicle_id = "11027".to_string();
+        let mut delayed = pred("19", "DLY", 4);
+        delayed.is_delayed = true;
+        let mut canceled = pred("11", "12", 12);
+        canceled.trip_status = bustime::TripStatus::Canceled;
+        canceled.next_bus_minutes = Some("30".to_string());
+
+        let preds = vec![due, delayed, canceled];
+        let other = stop("1615", "Science Hill (inbound)");
+        let out = format_bustime_predictions(&s, &preds, &[&other], "fallback test");
+
+        // Route grouping with destination arrow.
+        assert!(out.contains("Route 19 (OUTBOUND → UCSC via West Gate):"));
+        // DUE and DLY countdown labels.
+        assert!(out.contains("DUE (6:37 AM)"));
+        assert!(out.contains("delayed (6:37 AM)"));
+        // Passenger-load marker uses the friendly label, vehicle id appended.
+        assert!(out.contains("load: full"));
+        assert!(out.contains("(bus #11027)"));
+        // Canceled marker and next-bus gap.
+        assert!(out.contains("CANCELED"));
+        assert!(out.contains("next in 30 min"));
+        // Alternate stops listed.
+        assert!(out.contains("Other matching stops:"));
+        assert!(out.contains("Science Hill (inbound) (Stop #1615)"));
+    }
+
+    #[test]
+    fn format_bustime_eta_wording() {
+        let s = stop("1", "Metro Center");
+        let arriving = pred("18", "1", 1);
+        let later = pred("18", "9", 9);
+        let out = format_bustime_predictions(&s, &[arriving, later], &[], "r");
+        assert!(out.contains("arriving (6:37 AM)"));
+        assert!(out.contains("9 min (6:37 AM)"));
+    }
+
+    #[test]
+    fn format_bulletins_empty_and_populated() {
+        assert_eq!(format_service_bulletins(&[]), "No active service alerts.");
+
+        let bulletins = vec![bustime::ServiceBulletin {
+            subject: "Route 18 detour".to_string(),
+            detail: "Detour via Bay St until further notice.".to_string(),
+            brief: "Detour".to_string(),
+            priority: "Medium".to_string(),
+            affected_routes: vec!["18".to_string(), "19".to_string()],
+        }];
+        let out = format_service_bulletins(&bulletins);
+        assert!(out.contains("# Service Alerts (1)"));
+        assert!(out.contains("**[Medium]** Route 18 detour"));
+        assert!(out.contains("Detour via Bay St"));
+        assert!(out.contains("Affects routes: 18, 19"));
+    }
+
+    #[test]
+    fn format_bulletins_skips_detail_equal_to_brief() {
+        let bulletins = vec![bustime::ServiceBulletin {
+            subject: "Elevator outage".to_string(),
+            detail: "Same text".to_string(),
+            brief: "Same text".to_string(),
+            priority: String::new(),
+            affected_routes: vec![],
+        }];
+        let out = format_service_bulletins(&bulletins);
+        assert_eq!(out.matches("Same text").count(), 1);
+        // No priority bracket when priority is empty.
+        assert!(out.contains("**Elevator outage**"));
+    }
+}

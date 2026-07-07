@@ -159,10 +159,11 @@ fn parse_spec(body: &str) -> Result<SpectralObservation> {
 
     let idx = |name: &str| cols.iter().position(|c| c.eq_ignore_ascii_case(name));
     let i_yy = idx("YY").or_else(|| idx("YYYY"));
-    let i_mm = idx("MM");
+    // Month "MM" vs minute "mm" differ only by case — must match exactly here.
+    let i_mm = cols.iter().position(|c| *c == "MM");
     let i_dd = idx("DD");
     let i_hh = idx("hh");
-    let i_mn = idx("mm");
+    let i_mn = cols.iter().position(|c| *c == "mm");
     let i_wvht = idx("WVHT");
     let i_swh = idx("SwH");
     let i_swp = idx("SwP");
@@ -191,7 +192,8 @@ fn parse_spec(body: &str) -> Result<SpectralObservation> {
         };
         let parse_str = |i: Option<usize>| {
             let s = get(i);
-            if s.is_empty() || s == "MM" {
+            // NDBC marks missing text fields "MM", except steepness uses "N/A".
+            if s.is_empty() || s == "MM" || s.eq_ignore_ascii_case("N/A") {
                 None
             } else {
                 Some(s.to_string())
@@ -309,16 +311,72 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_spec_sample() {
-        let body = "#YY  MM DD hh mm WVHT  SwH  SwP  WWH  WWP SwD WWD  STEEPNESS  APD MWD\n\
-                    #yr  mo dy hr mn    m    m  sec    m  sec  -   -          -  sec degT\n\
-                    2026 04 17 15 50  1.6  1.2 11.1  0.8  5.4 WNW W    AVERAGE   6.5 295\n";
-        let obs = parse_spec(body).unwrap();
-        assert!((obs.significant_height_m.unwrap() - 1.6).abs() < 0.001);
-        assert!((obs.swell_height_m.unwrap() - 1.2).abs() < 0.001);
-        assert_eq!(obs.swell_direction.as_deref(), Some("WNW"));
+    fn parse_spec_fixture() {
+        // Live capture 2026-07-07, station 46236 (46114 was offline that day).
+        let obs = parse_spec(include_str!("fixtures/46236.spec")).unwrap();
+        assert_eq!(obs.timestamp_utc, "2026-07-07 13:26 UTC");
+        assert!((obs.significant_height_m.unwrap() - 1.2).abs() < 0.001);
+        assert!((obs.swell_height_m.unwrap() - 0.7).abs() < 0.001);
+        assert!((obs.swell_period_s.unwrap() - 12.5).abs() < 0.001);
+        assert_eq!(obs.swell_direction.as_deref(), Some("W"));
+        assert!((obs.wind_wave_height_m.unwrap() - 1.0).abs() < 0.001);
+        assert!((obs.wind_wave_period_s.unwrap() - 7.1).abs() < 0.001);
+        assert_eq!(obs.wind_wave_direction.as_deref(), Some("WNW"));
         assert_eq!(obs.steepness.as_deref(), Some("AVERAGE"));
-        assert_eq!(obs.mean_wave_direction_deg, Some(295.0));
+        assert!((obs.average_period_s.unwrap() - 6.5).abs() < 0.001);
+        assert_eq!(obs.mean_wave_direction_deg, Some(262.0));
+    }
+
+    #[test]
+    fn parse_spec_na_steepness_missing() {
+        // Live 46042.spec emits "N/A" (not "MM") for unavailable steepness.
+        let body = "#YY  MM DD hh mm WVHT  SwH  SwP  WWH  WWP SwD WWD  STEEPNESS  APD MWD\n\
+                    #yr  mo dy hr mn    m    m  sec    m  sec  -  degT     -      sec degT\n\
+                    2026 07 07 13 10  1.7   MM   MM   MM   MM  MM  MM        N/A  6.6 307\n";
+        let obs = parse_spec(body).unwrap();
+        assert_eq!(obs.steepness, None);
+        assert!((obs.significant_height_m.unwrap() - 1.7).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_spec_empty_body_errs() {
+        assert!(parse_spec("").is_err());
+    }
+
+    #[test]
+    fn parse_spec_header_only_errs() {
+        let body = "#YY  MM DD hh mm WVHT  SwH  SwP  WWH  WWP SwD WWD  STEEPNESS  APD MWD\n\
+                    #yr  mo dy hr mn    m    m  sec    m  sec  -  degT     -      sec degT\n";
+        let err = parse_spec(body).unwrap_err();
+        assert!(err.to_string().contains("no observations"));
+    }
+
+    #[test]
+    fn parse_spec_html_page_errs() {
+        let err = parse_spec("<html><body>maintenance</body></html>").unwrap_err();
+        assert!(err.to_string().contains("unexpected .spec header"));
+    }
+
+    #[test]
+    fn parse_spec_short_row_no_panic() {
+        let body = "#YY  MM DD hh mm WVHT  SwH  SwP  WWH  WWP SwD WWD  STEEPNESS  APD MWD\n\
+                    #yr  mo dy hr mn    m    m  sec    m  sec  -  degT     -      sec degT\n\
+                    2026 07 07\n";
+        let obs = parse_spec(body).unwrap();
+        assert!(obs.significant_height_m.is_none());
+        assert!(obs.steepness.is_none());
+    }
+
+    #[test]
+    fn format_results_renders_unavailable_for_err() {
+        // The per-station degradation path (e.g. 46114's .spec feed 404s).
+        let out = format_results(&[(
+            "46114".to_string(),
+            "Pt. Sur Offshore (CDIP 158)".to_string(),
+            Err(anyhow::anyhow!("no .spec feed for station '46114'")),
+        )]);
+        assert!(out.contains("unavailable"));
+        assert!(out.contains("46114"));
     }
 
     #[test]

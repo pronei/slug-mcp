@@ -341,6 +341,83 @@ mod tests {
         assert_eq!(mag_label(9.5), "great");
     }
 
+    // Live capture 2026-07-07 (limit param set, so metadata omits `count`).
+    const FIXTURE: &str = include_str!("fixtures/query.json");
+
+    #[test]
+    fn parse_query_fixture() {
+        let resp: UsgsResponse = serde_json::from_str(FIXTURE).unwrap();
+        assert_eq!(resp.metadata.count, None);
+        assert_eq!(resp.metadata.title.as_deref(), Some("USGS Earthquakes"));
+        assert_eq!(resp.features.len(), 5);
+
+        let first = &resp.features[0];
+        assert_eq!(first.properties.mag, Some(2.04));
+        assert_eq!(
+            first.properties.place.as_deref(),
+            Some("15 km N of Morgan Hill, CA")
+        );
+        assert_eq!(first.properties.time, Some(1783365347130));
+        assert_eq!(first.properties.felt, Some(1));
+        assert!((first.geometry.coordinates[2] - 4.63).abs() < 0.01);
+
+        let second = &resp.features[1];
+        assert_eq!(second.properties.mag, Some(3.18));
+        assert_eq!(second.properties.felt, Some(73));
+    }
+
+    #[test]
+    fn format_output_fixture_counts_features_without_metadata_count() {
+        let resp: UsgsResponse = serde_json::from_str(FIXTURE).unwrap();
+        let out = format_output(&resp, DEFAULT_LAT, DEFAULT_LON, 50.0, 1.0, 7);
+        // count falls back to features.len() when metadata omits it
+        assert!(out.contains("5 events above M1"));
+        assert!(out.contains("**M3.2** (light)"));
+        assert!(out.contains("15 km N of Morgan Hill, CA"));
+    }
+
+    #[test]
+    fn parse_empty_features_ok() {
+        let resp: UsgsResponse =
+            serde_json::from_str(r#"{"metadata": {}, "features": []}"#).unwrap();
+        assert_eq!(resp.metadata.count, None);
+        assert!(resp.features.is_empty());
+    }
+
+    #[test]
+    fn parse_missing_metadata_errs() {
+        // Service catches the Err and returns the friendly unreachable message.
+        assert!(serde_json::from_str::<UsgsResponse>(r#"{"features": []}"#).is_err());
+    }
+
+    #[test]
+    fn parse_truncated_body_errs() {
+        let cut = &FIXTURE[..FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<UsgsResponse>(cut).is_err());
+    }
+
+    #[test]
+    fn parse_mag_as_string_errs() {
+        let json = r#"{"metadata": {}, "features": [{
+            "properties": {"mag": "2.7"},
+            "geometry": {"coordinates": [-121.7, 37.2, 6.7]}
+        }]}"#;
+        assert!(serde_json::from_str::<UsgsResponse>(json).is_err());
+    }
+
+    #[test]
+    fn format_output_handles_null_properties_and_short_coordinates() {
+        let json = r#"{"metadata": {}, "features": [{
+            "properties": {},
+            "geometry": {"coordinates": []}
+        }]}"#;
+        let resp: UsgsResponse = serde_json::from_str(json).unwrap();
+        let out = format_output(&resp, DEFAULT_LAT, DEFAULT_LON, 50.0, 1.0, 7);
+        assert!(out.contains("M0.0 (micro)"));
+        assert!(out.contains("Unknown location"));
+        assert!(out.contains("0.0 km"));
+    }
+
     #[test]
     fn parse_usgs_response() {
         let json = r#"{

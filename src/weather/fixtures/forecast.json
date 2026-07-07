@@ -1,0 +1,91 @@
+{
+ "@context": [
+  "https://geojson.org/geojson-ld/geojson-context.jsonld",
+  {
+   "@version": "1.1",
+   "wx": "https://api.weather.gov/ontology#",
+   "geo": "http://www.opengis.net/ont/geosparql#",
+   "unit": "http://codes.wmo.int/common/unit/",
+   "@vocab": "https://api.weather.gov/ontology#"
+  }
+ ],
+ "type": "Feature",
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [
+     -122.0158,
+     36.9605
+    ],
+    [
+     -122.0214,
+     36.9824
+    ],
+    [
+     -122.0488,
+     36.978
+    ],
+    [
+     -122.0432,
+     36.9561
+    ],
+    [
+     -122.0158,
+     36.9605
+    ]
+   ]
+  ]
+ },
+ "properties": {
+  "units": "us",
+  "forecastGenerator": "BaselineForecastGenerator",
+  "generatedAt": "2026-07-07T13:00:37+00:00",
+  "updateTime": "2026-07-07T09:31:37+00:00",
+  "validTimes": "2026-07-07T03:00:00+00:00/P7DT22H",
+  "elevation": {
+   "unitCode": "wmoUnit:m",
+   "value": 21.0312
+  },
+  "periods": [
+   {
+    "number": 1,
+    "name": "Today",
+    "startTime": "2026-07-07T06:00:00-07:00",
+    "endTime": "2026-07-07T18:00:00-07:00",
+    "isDaytime": true,
+    "temperature": 74,
+    "temperatureUnit": "F",
+    "temperatureTrend": null,
+    "probabilityOfPrecipitation": {
+     "unitCode": "wmoUnit:percent",
+     "value": 0
+    },
+    "windSpeed": "2 to 12 mph",
+    "windDirection": "WNW",
+    "icon": "https://api.weather.gov/icons/land/day/sct?size=medium",
+    "shortForecast": "Mostly Sunny",
+    "detailedForecast": "Mostly sunny, with a high near 74. West northwest wind 2 to 12 mph, with gusts as high as 20 mph."
+   },
+   {
+    "number": 2,
+    "name": "Tonight",
+    "startTime": "2026-07-07T18:00:00-07:00",
+    "endTime": "2026-07-08T06:00:00-07:00",
+    "isDaytime": false,
+    "temperature": 55,
+    "temperatureUnit": "F",
+    "temperatureTrend": null,
+    "probabilityOfPrecipitation": {
+     "unitCode": "wmoUnit:percent",
+     "value": 0
+    },
+    "windSpeed": "2 to 9 mph",
+    "windDirection": "NW",
+    "icon": "https://api.weather.gov/icons/land/night/sct?size=medium",
+    "shortForecast": "Partly Cloudy",
+    "detailedForecast": "Partly cloudy, with a low around 55. Northwest wind 2 to 9 mph, with gusts as high as 18 mph."
+   }
+  ]
+ }
+}

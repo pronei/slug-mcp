@@ -122,10 +122,10 @@ pub type ScalesResponse = HashMap<String, ScalePeriod>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolarWindResponse {
-    #[serde(rename = "WindSpeed")]
+    #[serde(rename = "WindSpeed", alias = "proton_speed")]
     #[serde(deserialize_with = "deserialize_f64_from_any")]
     pub wind_speed: f64,
-    #[serde(rename = "TimeStamp")]
+    #[serde(rename = "TimeStamp", alias = "time_tag")]
     pub time_stamp: Option<String>,
 }
 
@@ -245,8 +245,25 @@ async fn fetch_solar_wind(http: &reqwest::Client) -> Result<SolarWindResponse> {
     if !resp.status().is_success() {
         anyhow::bail!("SWPC solar wind returned HTTP {}", resp.status());
     }
-    let wind: SolarWindResponse = resp.json().await.context("parsing SWPC solar wind JSON")?;
-    Ok(wind)
+    let body = resp.text().await.context("reading SWPC solar wind body")?;
+    parse_solar_wind(&body)
+}
+
+fn parse_solar_wind(body: &str) -> Result<SolarWindResponse> {
+    // SWPC drifted this product from a single {"WindSpeed","TimeStamp"} object
+    // to a one-element [{"proton_speed","time_tag"}] array; accept both.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Payload {
+        Many(Vec<SolarWindResponse>),
+        One(SolarWindResponse),
+    }
+    match serde_json::from_str::<Payload>(body).context("parsing SWPC solar wind JSON")? {
+        Payload::Many(mut entries) => entries
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("SWPC solar wind returned no entries")),
+        Payload::One(wind) => Ok(wind),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -458,17 +475,102 @@ mod tests {
         assert_eq!(kp_level(10.0), "Extreme storm (G5)");
     }
 
+    // Live captures 2026-07-07.
+    const KP_FIXTURE: &str = include_str!("fixtures/kp.json");
+    const SCALES_FIXTURE: &str = include_str!("fixtures/scales.json");
+    const WIND_FIXTURE: &str = include_str!("fixtures/solar_wind.json");
+
     #[test]
-    fn parse_kp_index() {
-        let json = r#"[
-            {"time_tag": "2026-04-27T12:00:00", "Kp": 1.67, "a_running": 6, "station_count": 8},
-            {"time_tag": "2026-04-27T15:00:00", "Kp": 2.33, "a_running": 9, "station_count": 7}
-        ]"#;
-        let entries: Vec<KpEntry> = serde_json::from_str(json).unwrap();
-        assert_eq!(entries.len(), 2);
+    fn parse_kp_fixture() {
+        let entries: Vec<KpEntry> = serde_json::from_str(KP_FIXTURE).unwrap();
+        assert_eq!(entries.len(), 10);
+        assert_eq!(entries[0].time_tag, "2026-07-06T06:00:00");
         assert!((entries[0].kp - 1.67).abs() < 0.001);
-        assert_eq!(entries[0].station_count, Some(8));
-        assert_eq!(entries[1].time_tag, "2026-04-27T15:00:00");
+        assert_eq!(entries[0].a_running, Some(6));
+        let last = entries.last().unwrap();
+        assert_eq!(last.time_tag, "2026-07-07T09:00:00");
+        assert!((last.kp - 0.67).abs() < 0.001);
+        assert_eq!(last.station_count, Some(7));
+    }
+
+    #[test]
+    fn parse_scales_fixture() {
+        let scales: ScalesResponse = serde_json::from_str(SCALES_FIXTURE).unwrap();
+        // Live shape carries previous (-1), current (0), and forecast (1..3) periods.
+        for key in ["-1", "0", "1", "2", "3"] {
+            assert!(scales.contains_key(key), "missing period {}", key);
+        }
+        let current = scales.get("0").unwrap();
+        assert_eq!(current.date_stamp.as_deref(), Some("2026-07-07"));
+        let g = current.g.as_ref().unwrap();
+        assert_eq!(g.scale.as_deref(), Some("0"));
+        assert_eq!(g.text.as_deref(), Some("none"));
+        let next = scales.get("1").unwrap();
+        assert_eq!(next.r.as_ref().unwrap().minor_prob.as_deref(), Some("55"));
+    }
+
+    #[test]
+    fn parse_solar_wind_live_shape() {
+        // Live shape is a one-element array keyed proton_speed/time_tag.
+        let wind = parse_solar_wind(WIND_FIXTURE).unwrap();
+        assert!((wind.wind_speed - 427.0).abs() < 0.001);
+        assert_eq!(wind.time_stamp.as_deref(), Some("2026-07-07T13:40:00Z"));
+    }
+
+    #[test]
+    fn parse_solar_wind_legacy_object() {
+        // Pre-2026 shape: single object, values as strings.
+        let wind = parse_solar_wind(r#"{"WindSpeed": "418", "TimeStamp": "2026-04-27T20:59:00"}"#)
+            .unwrap();
+        assert!((wind.wind_speed - 418.0).abs() < 0.001);
+        assert_eq!(wind.time_stamp.as_deref(), Some("2026-04-27T20:59:00"));
+    }
+
+    #[test]
+    fn parse_solar_wind_empty_array_errs() {
+        assert!(parse_solar_wind("[]").is_err());
+    }
+
+    #[test]
+    fn parse_solar_wind_truncated_errs() {
+        assert!(parse_solar_wind(r#"[{"proton_speed": 42"#).is_err());
+    }
+
+    #[test]
+    fn parse_kp_truncated_errs() {
+        let cut = &KP_FIXTURE[..KP_FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<Vec<KpEntry>>(cut).is_err());
+    }
+
+    #[test]
+    fn parse_kp_missing_kp_field_errs() {
+        let json = r#"[{"time_tag": "2026-07-07T09:00:00", "station_count": 7}]"#;
+        assert!(serde_json::from_str::<Vec<KpEntry>>(json).is_err());
+    }
+
+    #[test]
+    fn kp_empty_array_formats_no_data() {
+        let entries: Vec<KpEntry> = serde_json::from_str("[]").unwrap();
+        let data = SpaceWeatherData {
+            kp_entries: Some(entries),
+            scales: None,
+            solar_wind: None,
+        };
+        let out = format_output(&data);
+        assert!(out.contains("**Kp index**: no data"));
+        assert!(out.contains("Kp data unavailable"));
+    }
+
+    #[test]
+    fn scales_without_current_period_formats_notice() {
+        let scales: ScalesResponse =
+            serde_json::from_str(r#"{"1": {"DateStamp": "2026-07-08"}}"#).unwrap();
+        let data = SpaceWeatherData {
+            kp_entries: None,
+            scales: Some(scales),
+            solar_wind: None,
+        };
+        assert!(format_output(&data).contains("no current-period data"));
     }
 
     #[test]

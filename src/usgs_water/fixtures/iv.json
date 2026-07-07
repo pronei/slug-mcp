@@ -1,0 +1,278 @@
+{
+ "name": "ns1:timeSeriesResponseType",
+ "declaredType": "org.cuahsi.waterml.TimeSeriesResponseType",
+ "scope": "javax.xml.bind.JAXBElement$GlobalScope",
+ "value": {
+  "queryInfo": {
+   "queryURL": "http://waterservices.usgs.gov/nwis/iv/sites=11160500&parameterCd=00060,00065,00010&format=json",
+   "criteria": {
+    "locationParam": "[ALL:11160500]",
+    "variableParam": "[00060, 00065, 00010]",
+    "parameter": []
+   },
+   "note": [
+    {
+     "value": "[ALL:11160500]",
+     "title": "filter:sites"
+    },
+    {
+     "value": "[mode=LATEST, modifiedSince=null]",
+     "title": "filter:timeRange"
+    },
+    {
+     "value": "methodIds=[ALL]",
+     "title": "filter:methodId"
+    },
+    {
+     "value": "2026-07-07T13:45:42.089Z",
+     "title": "requestDT"
+    },
+    {
+     "value": "2565b480-7a0a-11f1-9904-005056beda50",
+     "title": "requestId"
+    },
+    {
+     "value": "Provisional data are subject to revision. Go to http://waterdata.usgs.gov/nwis/help/?provisional for more information.",
+     "title": "disclaimer"
+    },
+    {
+     "value": "caas01",
+     "title": "server"
+    }
+   ]
+  },
+  "timeSeries": [
+   {
+    "sourceInfo": {
+     "siteName": "SAN LORENZO R A BIG TREES CA",
+     "siteCode": [
+      {
+       "value": "11160500",
+       "network": "NWIS",
+       "agencyCode": "USGS"
+      }
+     ],
+     "timeZoneInfo": {
+      "defaultTimeZone": {
+       "zoneOffset": "-08:00",
+       "zoneAbbreviation": "PST"
+      },
+      "daylightSavingsTimeZone": {
+       "zoneOffset": "-07:00",
+       "zoneAbbreviation": "PDT"
+      },
+      "siteUsesDaylightSavingsTime": true
+     },
+     "geoLocation": {
+      "geogLocation": {
+       "srs": "EPSG:4326",
+       "latitude": 37.0443931,
+       "longitude": -122.072464
+      },
+      "localSiteXY": []
+     },
+     "note": [],
+     "siteType": [],
+     "siteProperty": [
+      {
+       "value": "ST",
+       "name": "siteTypeCd"
+      },
+      {
+       "value": "18060015",
+       "name": "hucCd"
+      },
+      {
+       "value": "06",
+       "name": "stateCd"
+      },
+      {
+       "value": "06087",
+       "name": "countyCd"
+      }
+     ]
+    },
+    "variable": {
+     "variableCode": [
+      {
+       "value": "00060",
+       "network": "NWIS",
+       "vocabulary": "NWIS:UnitValues",
+       "variableID": 45807197,
+       "default": true
+      }
+     ],
+     "variableName": "Streamflow, ft&#179;/s",
+     "variableDescription": "Discharge, cubic feet per second",
+     "valueType": "Derived Value",
+     "unit": {
+      "unitCode": "ft3/s"
+     },
+     "options": {
+      "option": [
+       {
+        "name": "Statistic",
+        "optionCode": "00000"
+       }
+      ]
+     },
+     "note": [],
+     "noDataValue": -999999.0,
+     "variableProperty": [],
+     "oid": "45807197"
+    },
+    "values": [
+     {
+      "value": [
+       {
+        "value": "26.1",
+        "qualifiers": [
+         "P"
+        ],
+        "dateTime": "2026-07-07T06:30:00.000-07:00"
+       }
+      ],
+      "qualifier": [
+       {
+        "qualifierCode": "P",
+        "qualifierDescription": "Provisional data subject to revision.",
+        "qualifierID": 0,
+        "network": "NWIS",
+        "vocabulary": "uv_rmk_cd"
+       }
+      ],
+      "qualityControlLevel": [],
+      "method": [
+       {
+        "methodDescription": "",
+        "methodID": 14696
+       }
+      ],
+      "source": [],
+      "offset": [],
+      "sample": [],
+      "censorCode": []
+     }
+    ],
+    "name": "USGS:11160500:00060:00000"
+   },
+   {
+    "sourceInfo": {
+     "siteName": "SAN LORENZO R A BIG TREES CA",
+     "siteCode": [
+      {
+       "value": "11160500",
+       "network": "NWIS",
+       "agencyCode": "USGS"
+      }
+     ],
+     "timeZoneInfo": {
+      "defaultTimeZone": {
+       "zoneOffset": "-08:00",
+       "zoneAbbreviation": "PST"
+      },
+      "daylightSavingsTimeZone": {
+       "zoneOffset": "-07:00",
+       "zoneAbbreviation": "PDT"
+      },
+      "siteUsesDaylightSavingsTime": true
+     },
+     "geoLocation": {
+      "geogLocation": {
+       "srs": "EPSG:4326",
+       "latitude": 37.0443931,
+       "longitude": -122.072464
+      },
+      "localSiteXY": []
+     },
+     "note": [],
+     "siteType": [],
+     "siteProperty": [
+      {
+       "value": "ST",
+       "name": "siteTypeCd"
+      },
+      {
+       "value": "18060015",
+       "name": "hucCd"
+      },
+      {
+       "value": "06",
+       "name": "stateCd"
+      },
+      {
+       "value": "06087",
+       "name": "countyCd"
+      }
+     ]
+    },
+    "variable": {
+     "variableCode": [
+      {
+       "value": "00065",
+       "network": "NWIS",
+       "vocabulary": "NWIS:UnitValues",
+       "variableID": 45807202,
+       "default": true
+      }
+     ],
+     "variableName": "Gage height, ft",
+     "variableDescription": "Gage height, feet",
+     "valueType": "Derived Value",
+     "unit": {
+      "unitCode": "ft"
+     },
+     "options": {
+      "option": [
+       {
+        "name": "Statistic",
+        "optionCode": "00000"
+       }
+      ]
+     },
+     "note": [],
+     "noDataValue": -999999.0,
+     "variableProperty": [],
+     "oid": "45807202"
+    },
+    "values": [
+     {
+      "value": [
+       {
+        "value": "3.36",
+        "qualifiers": [
+         "P"
+        ],
+        "dateTime": "2026-07-07T06:30:00.000-07:00"
+       }
+      ],
+      "qualifier": [
+       {
+        "qualifierCode": "P",
+        "qualifierDescription": "Provisional data subject to revision.",
+        "qualifierID": 0,
+        "network": "NWIS",
+        "vocabulary": "uv_rmk_cd"
+       }
+      ],
+      "qualityControlLevel": [],
+      "method": [
+       {
+        "methodDescription": "[PUBLISHED]",
+        "methodID": 14697
+       }
+      ],
+      "source": [],
+      "offset": [],
+      "sample": [],
+      "censorCode": []
+     }
+    ],
+    "name": "USGS:11160500:00065:00000"
+   }
+  ]
+ },
+ "nil": false,
+ "globalScope": true,
+ "typeSubstituted": false
+}

@@ -132,10 +132,11 @@ fn parse_realtime2(body: &str) -> Result<Vec<BuoyObservation>> {
 
     let idx = |name: &str| cols.iter().position(|c| c.eq_ignore_ascii_case(name));
     let i_yy = idx("YY").or_else(|| idx("YYYY"));
-    let i_mm = idx("MM");
+    // Month "MM" vs minute "mm" differ only by case — must match exactly here.
+    let i_mm = cols.iter().position(|c| *c == "MM");
     let i_dd = idx("DD");
     let i_hh = idx("hh");
-    let i_mn = idx("mm");
+    let i_mn = cols.iter().position(|c| *c == "mm");
     let i_wdir = idx("WDIR");
     let i_wspd = idx("WSPD");
     let i_gst = idx("GST");
@@ -225,24 +226,32 @@ fn format_observations(name: &str, obs: &[BuoyObservation]) -> String {
         out.push_str(&format!("- **Wind**: {:.0} mph{}{}\n", mph, gust, dir));
     }
 
-    // Waves
-    if let Some(wh) = latest.wave_height_m {
+    // Wave sensors report ~2/hour vs 10-min met rows, so the newest row often
+    // has MM waves — use the newest row within the last hour that has them.
+    if let Some(row) = obs.iter().take(6).find(|o| o.wave_height_m.is_some())
+        && let Some(wh) = row.wave_height_m
+    {
         let ft = m_to_ft(wh);
-        let dpd = latest
+        let dpd = row
             .dominant_period_s
             .map(|p| format!(" · dominant period {:.1} s", p))
             .unwrap_or_default();
-        let apd = latest
+        let apd = row
             .mean_wave_period_s
             .map(|p| format!(" · mean period {:.1} s", p))
             .unwrap_or_default();
-        let mwd = latest
+        let mwd = row
             .mean_wave_dir_deg
             .map(|d| format!(" · {}° ({})", d as i32, degrees_to_compass(d)))
             .unwrap_or_default();
+        let when = if row.timestamp_utc != latest.timestamp_utc {
+            format!(" (at {})", row.timestamp_utc)
+        } else {
+            String::new()
+        };
         out.push_str(&format!(
-            "- **Significant wave height**: {:.1} ft ({:.1} m){}{}{}\n",
-            ft, wh, dpd, apd, mwd
+            "- **Significant wave height**: {:.1} ft ({:.1} m){}{}{}{}\n",
+            ft, wh, dpd, apd, mwd, when
         ));
     }
 
@@ -302,18 +311,102 @@ fn format_observations(name: &str, obs: &[BuoyObservation]) -> String {
 mod tests {
     use super::*;
 
+    // Live capture 2026-07-07, station 46042.
+    const FIXTURE: &str = include_str!("fixtures/46042.txt");
+
     #[test]
-    fn parse_realtime2_sample() {
+    fn parse_realtime2_fixture() {
+        let parsed = parse_realtime2(FIXTURE).unwrap();
+        assert_eq!(parsed.len(), 10);
+        let latest = &parsed[0];
+        assert_eq!(latest.timestamp_utc, "2026-07-07 13:30 UTC");
+        assert_eq!(latest.wind_dir_deg, Some(330.0));
+        assert_eq!(latest.wind_speed_ms, Some(7.0));
+        assert_eq!(latest.wind_gust_ms, Some(9.0));
+        // Wave sensors report ~2/hour, so the newest 10-min met row has MM waves.
+        assert!(latest.wave_height_m.is_none());
+        assert_eq!(latest.pressure_hpa, Some(1016.6));
+        assert_eq!(latest.air_temp_c, Some(13.9));
+        assert_eq!(latest.water_temp_c, Some(15.6));
+        assert_eq!(latest.dew_point_c, Some(12.5));
+        // 13:20 row carries the wave sample.
+        assert!((parsed[1].wave_height_m.unwrap() - 1.7).abs() < 0.001);
+        assert_eq!(parsed[1].dominant_period_s, Some(12.0));
+        assert_eq!(parsed[1].mean_wave_dir_deg, Some(307.0));
+        // "+0.0" pressure tendency parses despite the sign prefix.
+        assert_eq!(parsed[3].pressure_tendency_hpa, Some(0.0));
+    }
+
+    #[test]
+    fn parse_realtime2_empty_body_errs() {
+        // format_observations indexes obs[0]; the parser refusing empty input is
+        // the invariant that keeps that path panic-free.
+        let err = parse_realtime2("").unwrap_err();
+        assert!(err.to_string().contains("empty NDBC body"));
+    }
+
+    #[test]
+    fn parse_realtime2_header_only_errs() {
+        let body = "#YY  MM DD hh mm WDIR WSPD GST  WVHT   DPD   APD MWD   PRES  ATMP  WTMP  DEWP  VIS PTDY  TIDE\n";
+        let err = parse_realtime2(body).unwrap_err();
+        assert!(err.to_string().contains("no observation rows"));
+    }
+
+    #[test]
+    fn parse_realtime2_header_and_units_only_errs() {
+        let body = "#YY  MM DD hh mm WDIR WSPD GST  WVHT   DPD   APD MWD   PRES  ATMP  WTMP  DEWP  VIS PTDY  TIDE\n\
+                    #yr  mo dy hr mn degT m/s  m/s     m   sec   sec degT   hPa  degC  degC  degC  nmi  hPa    ft\n";
+        let err = parse_realtime2(body).unwrap_err();
+        assert!(err.to_string().contains("no observation rows"));
+    }
+
+    #[test]
+    fn parse_realtime2_html_page_errs() {
+        let err = parse_realtime2("<html><body>404</body></html>").unwrap_err();
+        assert!(err.to_string().contains("unexpected NDBC header"));
+    }
+
+    #[test]
+    fn parse_realtime2_short_row_no_panic() {
         let body = "#YY  MM DD hh mm WDIR WSPD GST  WVHT   DPD   APD MWD   PRES  ATMP  WTMP  DEWP  VIS PTDY  TIDE\n\
                     #yr  mo dy hr mn degT m/s  m/s     m   sec   sec degT   hPa  degC  degC  degC  nmi  hPa    ft\n\
-                    2026 04 17 15 50 290  5.2  6.4   1.6   9.1   6.5 295  1018.2  14.1  13.5   9.2   MM  +0.2    MM\n\
-                    2026 04 17 15 40 280  5.0  6.0   1.5   9.0   6.4 294  1018.1  14.0  13.4   9.1   MM   MM    MM\n";
+                    2026 07\n";
         let parsed = parse_realtime2(body).unwrap();
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].wind_dir_deg, Some(290.0));
-        assert!((parsed[0].wave_height_m.unwrap() - 1.6).abs() < 0.001);
-        assert_eq!(parsed[0].dew_point_c, Some(9.2));
-        assert_eq!(parsed[0].pressure_tendency_hpa, Some(0.2));
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].timestamp_utc, "unknown");
+        assert!(parsed[0].wind_speed_ms.is_none());
+        // Formatting a degenerate row must not panic either.
+        let out = format_observations("test", &parsed);
+        assert!(out.contains("unknown"));
+    }
+
+    #[test]
+    fn parse_realtime2_truncated_download_no_panic() {
+        // Simulate a download cut mid-row (rows are newest-first, so only the
+        // oldest row is degenerate).
+        let cut = &FIXTURE[..FIXTURE.len() - 40];
+        let parsed = parse_realtime2(cut).unwrap();
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed[0].timestamp_utc, "2026-07-07 13:30 UTC");
+    }
+
+    #[test]
+    fn format_observations_falls_back_to_newest_wave_row() {
+        // Newest row has MM waves (live cadence); wave line must come from the
+        // newest row that has them, labeled with its own timestamp.
+        let obs = parse_realtime2(FIXTURE).unwrap();
+        let out = format_observations("Monterey Bay (46042)", &obs);
+        assert!(
+            out.contains("Significant wave height"),
+            "wave line missing:\n{}",
+            out
+        );
+        assert!(out.contains("(1.7 m)"), "wave height missing:\n{}", out);
+        assert!(
+            out.contains("13:20"),
+            "wave-row timestamp missing:\n{}",
+            out
+        );
     }
 
     #[test]

@@ -119,26 +119,32 @@ async fn fetch_predictions(
         anyhow::bail!("CO-OPS returned HTTP {}", resp.status());
     }
 
-    #[derive(Deserialize)]
-    struct CoopsResponse {
-        #[serde(default)]
-        predictions: Vec<CoopsPrediction>,
-        #[serde(default)]
-        error: Option<CoopsError>,
-    }
-    #[derive(Deserialize)]
-    struct CoopsPrediction {
-        t: String,
-        v: String,
-        #[serde(rename = "type")]
-        ty: String,
-    }
-    #[derive(Deserialize)]
-    struct CoopsError {
-        message: String,
-    }
+    let body = resp.text().await.context("reading CO-OPS body")?;
+    parse_predictions(&body)
+}
 
-    let body: CoopsResponse = resp.json().await.context("parsing CO-OPS JSON")?;
+#[derive(Deserialize)]
+struct CoopsResponse {
+    #[serde(default)]
+    predictions: Vec<CoopsPrediction>,
+    #[serde(default)]
+    error: Option<CoopsError>,
+}
+#[derive(Deserialize)]
+struct CoopsPrediction {
+    t: String,
+    v: String,
+    #[serde(rename = "type")]
+    ty: String,
+}
+#[derive(Deserialize)]
+struct CoopsError {
+    message: String,
+}
+
+fn parse_predictions(body: &str) -> Result<Vec<TidePrediction>> {
+    // CO-OPS signals errors as HTTP 200 + {"error":{"message":...}}.
+    let body: CoopsResponse = serde_json::from_str(body).context("parsing CO-OPS JSON")?;
     if let Some(err) = body.error {
         anyhow::bail!("CO-OPS error: {}", err.message);
     }
@@ -212,6 +218,75 @@ fn format_tides(bundle: &TideBundle, days: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Live capture 2026-07-07, station 9413450.
+    const FIXTURE: &str = include_str!("fixtures/predictions.json");
+
+    #[test]
+    fn parse_predictions_fixture() {
+        let preds = parse_predictions(FIXTURE).unwrap();
+        assert_eq!(preds.len(), 11);
+        assert_eq!(preds[0].time, "2026-07-07 03:57");
+        assert!((preds[0].height_ft - 3.373).abs() < 0.001);
+        assert_eq!(preds[0].kind, "H");
+        assert_eq!(preds[10].time, "2026-07-09 18:26");
+        assert!((preds[10].height_ft - 5.936).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_error_envelope_errs() {
+        // Live capture: CO-OPS answers HTTP 200 for unknown stations.
+        let err = parse_predictions(include_str!("fixtures/error.json")).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("CO-OPS error"), "got: {}", msg);
+        assert!(
+            msg.contains("No Predictions data was found"),
+            "got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn parse_empty_predictions_ok_and_formats_notice() {
+        let preds = parse_predictions(r#"{"predictions": []}"#).unwrap();
+        assert!(preds.is_empty());
+        let bundle = TideBundle {
+            station: "9413450".to_string(),
+            station_name: "Monterey, CA".to_string(),
+            predictions: preds,
+        };
+        assert!(format_tides(&bundle, 3).contains("No predictions returned"));
+    }
+
+    #[test]
+    fn parse_bare_object_ok_empty() {
+        assert!(parse_predictions("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_truncated_body_errs() {
+        let cut = &FIXTURE[..FIXTURE.len() / 2];
+        let err = parse_predictions(cut).unwrap_err();
+        assert!(err.to_string().contains("parsing CO-OPS JSON"));
+    }
+
+    #[test]
+    fn parse_missing_required_field_errs() {
+        // "type" absent from a prediction row
+        let body = r#"{"predictions": [{"t": "2026-07-07 03:57", "v": "3.373"}]}"#;
+        assert!(parse_predictions(body).is_err());
+    }
+
+    #[test]
+    fn parse_unparseable_height_skips_row() {
+        let body = r#"{"predictions": [
+            {"t": "2026-07-07 03:57", "v": "junk", "type": "H"},
+            {"t": "2026-07-07 09:58", "v": "1.275", "type": "L"}
+        ]}"#;
+        let preds = parse_predictions(body).unwrap();
+        assert_eq!(preds.len(), 1);
+        assert_eq!(preds[0].kind, "L");
+    }
 
     #[test]
     fn format_tides_groups_by_date() {

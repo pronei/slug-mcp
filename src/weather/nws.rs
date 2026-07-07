@@ -170,21 +170,140 @@ pub async fn get_alerts_for_zone(http: &reqwest::Client, zone: &str) -> Result<A
 mod tests {
     use super::*;
 
+    // Live captures 2026-07-07 for 36.9741,-122.0308.
+    const POINTS_FIXTURE: &str = include_str!("fixtures/points.json");
+    const FORECAST_FIXTURE: &str = include_str!("fixtures/forecast.json");
+    const ALERTS_FIXTURE: &str = include_str!("fixtures/alerts.json");
+
     #[test]
-    fn parse_point_response() {
-        let json = r#"{
-            "properties": {
-                "forecast": "https://api.weather.gov/gridpoints/MTR/90,99/forecast",
-                "forecastHourly": "https://api.weather.gov/gridpoints/MTR/90,99/forecast/hourly",
-                "gridId": "MTR",
-                "gridX": 90,
-                "gridY": 99
-            }
-        }"#;
-        let parsed: PointResponse = serde_json::from_str(json).unwrap();
+    fn parse_points_fixture() {
+        let parsed: PointResponse = serde_json::from_str(POINTS_FIXTURE).unwrap();
         assert_eq!(parsed.properties.grid_id, "MTR");
-        assert_eq!(parsed.properties.grid_x, 90);
-        assert!(parsed.properties.forecast.contains("/gridpoints/"));
+        assert_eq!(parsed.properties.grid_x, 91);
+        assert_eq!(parsed.properties.grid_y, 67);
+        assert_eq!(
+            parsed.properties.forecast,
+            "https://api.weather.gov/gridpoints/MTR/91,67/forecast"
+        );
+        assert!(
+            parsed
+                .properties
+                .forecast_hourly
+                .as_deref()
+                .unwrap()
+                .ends_with("/hourly")
+        );
+    }
+
+    #[test]
+    fn parse_forecast_fixture() {
+        let parsed: ForecastResponse = serde_json::from_str(FORECAST_FIXTURE).unwrap();
+        let periods = &parsed.properties.periods;
+        assert_eq!(periods.len(), 2);
+        assert_eq!(periods[0].name, "Today");
+        assert_eq!(periods[0].temperature, 74);
+        assert_eq!(periods[0].temperature_unit, "F");
+        assert_eq!(periods[0].wind_speed, "2 to 12 mph");
+        assert_eq!(periods[0].wind_direction, "WNW");
+        assert_eq!(periods[0].short_forecast, "Mostly Sunny");
+        assert!(periods[0].is_daytime);
+        assert_eq!(
+            periods[0]
+                .probability_of_precipitation
+                .as_ref()
+                .unwrap()
+                .value,
+            Some(0)
+        );
+        assert_eq!(periods[1].name, "Tonight");
+        assert_eq!(periods[1].temperature, 55);
+        assert!(!periods[1].is_daytime);
+    }
+
+    #[test]
+    fn parse_alerts_fixture() {
+        let parsed: AlertsResponse = serde_json::from_str(ALERTS_FIXTURE).unwrap();
+        assert_eq!(parsed.features.len(), 1);
+        let props = &parsed.features[0].properties;
+        assert_eq!(props.event, "Beach Hazards Statement");
+        assert_eq!(props.severity, "Moderate");
+        assert_eq!(props.urgency, "Expected");
+        assert!(props.headline.contains("Beach Hazards Statement"));
+        assert!(props.instruction.is_some());
+        assert!(!props.expires.is_empty());
+    }
+
+    #[test]
+    fn parse_problem_json_as_forecast_errs() {
+        // NWS error bodies are RFC 7807 problem+json; the parse must fail
+        // cleanly so the service can degrade to its friendly message.
+        let body = r#"{
+            "correlationId": "abc123",
+            "title": "Unexpected Problem",
+            "type": "https://api.weather.gov/problems/UnexpectedProblem",
+            "status": 500,
+            "detail": "An unexpected problem has occurred."
+        }"#;
+        assert!(serde_json::from_str::<ForecastResponse>(body).is_err());
+        assert!(serde_json::from_str::<PointResponse>(body).is_err());
+    }
+
+    #[test]
+    fn parse_forecast_truncated_errs() {
+        let cut = &FORECAST_FIXTURE[..FORECAST_FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<ForecastResponse>(cut).is_err());
+    }
+
+    #[test]
+    fn parse_forecast_missing_periods_errs() {
+        assert!(serde_json::from_str::<ForecastResponse>(r#"{"properties": {}}"#).is_err());
+    }
+
+    #[test]
+    fn parse_forecast_temperature_as_string_errs() {
+        // NWS documents temperature as an integer; drift to string should fail
+        // parse (service degrades) rather than render garbage.
+        let json = r#"{"properties": {"periods": [{
+            "name": "Today",
+            "startTime": "2026-07-07T06:00:00-07:00",
+            "endTime": "2026-07-07T18:00:00-07:00",
+            "isDaytime": true,
+            "temperature": "74",
+            "temperatureUnit": "F"
+        }]}}"#;
+        assert!(serde_json::from_str::<ForecastResponse>(json).is_err());
+    }
+
+    #[test]
+    fn parse_forecast_empty_periods_ok() {
+        let parsed: ForecastResponse =
+            serde_json::from_str(r#"{"properties": {"periods": []}}"#).unwrap();
+        assert!(parsed.properties.periods.is_empty());
+    }
+
+    #[test]
+    fn parse_forecast_null_pop_value_ok() {
+        let json = r#"{
+            "name": "Tonight",
+            "startTime": "2026-07-07T18:00:00-07:00",
+            "endTime": "2026-07-08T06:00:00-07:00",
+            "isDaytime": false,
+            "temperature": 55,
+            "temperatureUnit": "F",
+            "probabilityOfPrecipitation": {"unitCode": "wmoUnit:percent", "value": null}
+        }"#;
+        let parsed: ForecastPeriod = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.probability_of_precipitation.unwrap().value, None);
+    }
+
+    #[test]
+    fn parse_alert_minimal_properties_defaults() {
+        let json = r#"{"features": [{"properties": {"event": "Test Alert"}}]}"#;
+        let parsed: AlertsResponse = serde_json::from_str(json).unwrap();
+        let props = &parsed.features[0].properties;
+        assert_eq!(props.event, "Test Alert");
+        assert!(props.severity.is_empty());
+        assert!(props.instruction.is_none());
     }
 
     #[test]

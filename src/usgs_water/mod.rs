@@ -237,6 +237,128 @@ fn simplify_param_name(raw: &str) -> String {
 mod tests {
     use super::*;
 
+    // Live capture 2026-07-07, site 11160500. Water temp (00010) was requested
+    // but absent from the response — the gauge wasn't reporting it that day.
+    const FIXTURE: &str = include_str!("fixtures/iv.json");
+
+    #[test]
+    fn parse_iv_fixture() {
+        let body: IvResponse = serde_json::from_str(FIXTURE).unwrap();
+        let readings = parse_iv(&body).unwrap();
+        assert_eq!(readings.len(), 2);
+
+        assert_eq!(readings[0].parameter_code, "00060");
+        assert!((readings[0].value - 26.1).abs() < 0.001);
+        assert_eq!(readings[0].unit, "ft3/s");
+        assert_eq!(readings[0].site_name, "SAN LORENZO R A BIG TREES CA");
+        assert_eq!(readings[0].site_id, "11160500");
+        assert_eq!(readings[0].timestamp, "2026-07-07T06:30:00.000-07:00");
+
+        assert_eq!(readings[1].parameter_code, "00065");
+        assert!((readings[1].value - 3.36).abs() < 0.001);
+        assert_eq!(readings[1].unit, "ft");
+    }
+
+    #[test]
+    fn parse_iv_empty_timeseries_errs() {
+        let body: IvResponse = serde_json::from_str(r#"{"value": {"timeSeries": []}}"#).unwrap();
+        let err = parse_iv(&body).unwrap_err();
+        assert!(err.to_string().contains("no usable readings"));
+    }
+
+    #[test]
+    fn parse_iv_missing_value_key_errs() {
+        assert!(serde_json::from_str::<IvResponse>("{}").is_err());
+    }
+
+    #[test]
+    fn parse_iv_truncated_body_errs() {
+        let cut = &FIXTURE[..FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<IvResponse>(cut).is_err());
+    }
+
+    #[test]
+    fn parse_iv_numeric_json_value_errs() {
+        // NWIS emits reading values as strings; a bare number is schema drift
+        // and must fail parse cleanly.
+        let json = r#"
+        {
+          "value": {
+            "timeSeries": [
+              {
+                "sourceInfo": {"siteName": "X", "siteCode": [{"value": "1"}]},
+                "variable": {
+                  "variableCode": [{"value": "00060"}],
+                  "variableName": "Streamflow",
+                  "unit": {"unitCode": "ft3/s"}
+                },
+                "values": [{"value": [{"value": 26.1, "dateTime": "2026-07-07T06:30:00-07:00"}]}]
+              }
+            ]
+          }
+        }
+        "#;
+        assert!(serde_json::from_str::<IvResponse>(json).is_err());
+    }
+
+    #[test]
+    fn parse_iv_nonnumeric_reading_skipped() {
+        // NWIS uses text sentinels like "Ice" / "Ssn" for suspended readings.
+        let json = r#"
+        {
+          "value": {
+            "timeSeries": [
+              {
+                "sourceInfo": {"siteName": "X", "siteCode": [{"value": "1"}]},
+                "variable": {
+                  "variableCode": [{"value": "00010"}],
+                  "variableName": "Temperature",
+                  "unit": {"unitCode": "deg C"}
+                },
+                "values": [{"value": [{"value": "Ice", "dateTime": "2026-07-07T06:30:00-07:00"}]}]
+              },
+              {
+                "sourceInfo": {"siteName": "X", "siteCode": [{"value": "1"}]},
+                "variable": {
+                  "variableCode": [{"value": "00060"}],
+                  "variableName": "Streamflow",
+                  "unit": {"unitCode": "ft3/s"}
+                },
+                "values": [{"value": [{"value": "26.1", "dateTime": "2026-07-07T06:30:00-07:00"}]}]
+              }
+            ]
+          }
+        }
+        "#;
+        let body: IvResponse = serde_json::from_str(json).unwrap();
+        let readings = parse_iv(&body).unwrap();
+        assert_eq!(readings.len(), 1);
+        assert_eq!(readings[0].parameter_code, "00060");
+    }
+
+    #[test]
+    fn parse_iv_empty_value_block_errs() {
+        let json = r#"
+        {
+          "value": {
+            "timeSeries": [
+              {
+                "sourceInfo": {"siteName": "X", "siteCode": [{"value": "1"}]},
+                "variable": {
+                  "variableCode": [{"value": "00060"}],
+                  "variableName": "Streamflow",
+                  "unit": {"unitCode": "ft3/s"}
+                },
+                "values": [{"value": []}]
+              }
+            ]
+          }
+        }
+        "#;
+        let body: IvResponse = serde_json::from_str(json).unwrap();
+        assert!(parse_iv(&body).is_err());
+    }
+
     #[test]
     fn parse_iv_sample() {
         let json = r#"

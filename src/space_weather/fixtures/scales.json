@@ -1,0 +1,97 @@
+{
+ "0": {
+  "DateStamp": "2026-07-07",
+  "TimeStamp": "13:44:00",
+  "R": {
+   "Scale": "0",
+   "Text": "none",
+   "MinorProb": null,
+   "MajorProb": null
+  },
+  "S": {
+   "Scale": "0",
+   "Text": "none",
+   "Prob": null
+  },
+  "G": {
+   "Scale": "0",
+   "Text": "none"
+  }
+ },
+ "1": {
+  "DateStamp": "2026-07-07",
+  "TimeStamp": "13:44:00",
+  "R": {
+   "Scale": null,
+   "Text": null,
+   "MinorProb": "55",
+   "MajorProb": "10"
+  },
+  "S": {
+   "Scale": null,
+   "Text": null,
+   "Prob": "5"
+  },
+  "G": {
+   "Scale": "0",
+   "Text": "none"
+  }
+ },
+ "2": {
+  "DateStamp": "2026-07-08",
+  "TimeStamp": "00:00:00",
+  "R": {
+   "Scale": null,
+   "Text": null,
+   "MinorProb": "20",
+   "MajorProb": "5"
+  },
+  "S": {
+   "Scale": null,
+   "Text": null,
+   "Prob": "5"
+  },
+  "G": {
+   "Scale": "0",
+   "Text": "none"
+  }
+ },
+ "3": {
+  "DateStamp": "2026-07-09",
+  "TimeStamp": "00:00:00",
+  "R": {
+   "Scale": null,
+   "Text": null,
+   "MinorProb": "20",
+   "MajorProb": "5"
+  },
+  "S": {
+   "Scale": null,
+   "Text": null,
+   "Prob": "5"
+  },
+  "G": {
+   "Scale": "0",
+   "Text": "none"
+  }
+ },
+ "-1": {
+  "DateStamp": "2026-07-06",
+  "TimeStamp": "13:44:00",
+  "R": {
+   "Scale": "0",
+   "Text": "none",
+   "MinorProb": null,
+   "MajorProb": null
+  },
+  "S": {
+   "Scale": "0",
+   "Text": "none",
+   "Prob": null
+  },
+  "G": {
+   "Scale": "0",
+   "Text": "none"
+  }
+ }
+}

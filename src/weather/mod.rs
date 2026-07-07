@@ -216,3 +216,66 @@ fn write_alert(out: &mut String, a: &nws::AlertProperties) {
     }
     out.push('\n');
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_forecast_renders_fixture() {
+        let forecast: ForecastResponse =
+            serde_json::from_str(include_str!("fixtures/forecast.json")).unwrap();
+        let out = format_forecast(&forecast, 7);
+        assert!(out.contains("**Today** — 74°F · WNW 2 to 12 mph · 0% precip"));
+        assert!(out.contains("Mostly Sunny"));
+        assert!(out.contains("**Tonight** — 55°F"));
+        assert!(out.contains("Source: NOAA NWS"));
+    }
+
+    #[test]
+    fn format_forecast_respects_period_cap() {
+        let forecast: ForecastResponse =
+            serde_json::from_str(include_str!("fixtures/forecast.json")).unwrap();
+        let out = format_forecast(&forecast, 1);
+        assert!(out.contains("**Today**"));
+        assert!(!out.contains("**Tonight**"));
+    }
+
+    #[test]
+    fn format_forecast_empty_periods_notice() {
+        let forecast: ForecastResponse =
+            serde_json::from_str(r#"{"properties": {"periods": []}}"#).unwrap();
+        let out = format_forecast(&forecast, 7);
+        assert!(out.contains("No forecast periods returned by NWS."));
+    }
+
+    #[test]
+    fn format_alerts_renders_fixture() {
+        let coastal: AlertsResponse =
+            serde_json::from_str(include_str!("fixtures/alerts.json")).unwrap();
+        let mountains = AlertsResponse { features: vec![] };
+        let out = format_alerts(&coastal, &mountains);
+        assert!(out.contains("(1 total)"));
+        assert!(out.contains("## Coastal (CAZ529)"));
+        assert!(out.contains("**Beach Hazards Statement** [Moderate]"));
+        assert!(out.contains("_Instructions:_"));
+        assert!(!out.contains("## Mountains"));
+    }
+
+    #[test]
+    fn format_alerts_none_notice() {
+        let empty = AlertsResponse { features: vec![] };
+        let out = format_alerts(&empty, &AlertsResponse { features: vec![] });
+        assert!(out.contains("(0 total)"));
+        assert!(out.contains("No active weather alerts"));
+    }
+
+    #[test]
+    fn format_alerts_minimal_alert_no_panic() {
+        // An alert with every field defaulted must still render.
+        let coastal: AlertsResponse =
+            serde_json::from_str(r#"{"features": [{"properties": {}}]}"#).unwrap();
+        let out = format_alerts(&coastal, &AlertsResponse { features: vec![] });
+        assert!(out.contains("(1 total)"));
+    }
+}

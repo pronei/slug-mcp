@@ -1,0 +1,222 @@
+{
+ "type": "FeatureCollection",
+ "metadata": {
+  "generated": 1783431941000,
+  "url": "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=36.9741&longitude=-122.0308&maxradiuskm=50&minmagnitude=1&starttime=2026-06-30T00:00:00&limit=20&orderby=time",
+  "title": "USGS Earthquakes",
+  "status": 200,
+  "api": "2.7.0",
+  "limit": 20,
+  "offset": 1
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 2.04,
+    "place": "15 km N of Morgan Hill, CA",
+    "time": 1783365347130,
+    "updated": 1783376246811,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/nc75390856",
+    "detail": "https://earthquake.usgs.gov/fdsnws/event/1/query?eventid=nc75390856&format=geojson",
+    "felt": 1,
+    "cdi": 1,
+    "mmi": null,
+    "alert": null,
+    "status": "automatic",
+    "tsunami": 0,
+    "sig": 64,
+    "net": "nc",
+    "code": "75390856",
+    "ids": ",nc75390856,",
+    "sources": ",nc,",
+    "types": ",dyfi,focal-mechanism,nearby-cities,origin,phase-data,scitech-link,",
+    "nst": 43,
+    "dmin": 0.07867,
+    "rms": 0.05,
+    "gap": 42,
+    "magType": "md",
+    "type": "earthquake",
+    "title": "M 2.0 - 15 km N of Morgan Hill, CA"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.641670227051,
+     37.2628326416016,
+     4.63000011444092
+    ]
+   },
+   "id": "nc75390856"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 3.18,
+    "place": "2 km SE of Aromas, CA",
+    "time": 1783262706680,
+    "updated": 1783330772350,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/nc75390041",
+    "detail": "https://earthquake.usgs.gov/fdsnws/event/1/query?eventid=nc75390041&format=geojson",
+    "felt": 73,
+    "cdi": 3.1,
+    "mmi": null,
+    "alert": null,
+    "status": "automatic",
+    "tsunami": 0,
+    "sig": 178,
+    "net": "nc",
+    "code": "75390041",
+    "ids": ",nc75390041,us6000ta9p,",
+    "sources": ",nc,us,",
+    "types": ",dyfi,focal-mechanism,nearby-cities,origin,phase-data,scitech-link,",
+    "nst": 82,
+    "dmin": 0.02626,
+    "rms": 0.19,
+    "gap": 32,
+    "magType": "ml",
+    "type": "earthquake",
+    "title": "M 3.2 - 2 km SE of Aromas, CA"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.623664855957,
+     36.8778343200684,
+     7.09999990463257
+    ]
+   },
+   "id": "nc75390041"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 1.17,
+    "place": "10 km NE of San Martin, CA",
+    "time": 1783250792640,
+    "updated": 1783254147880,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/nc75389956",
+    "detail": "https://earthquake.usgs.gov/fdsnws/event/1/query?eventid=nc75389956&format=geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "automatic",
+    "tsunami": 0,
+    "sig": 21,
+    "net": "nc",
+    "code": "75389956",
+    "ids": ",nc75389956,",
+    "sources": ",nc,",
+    "types": ",nearby-cities,origin,phase-data,scitech-link,",
+    "nst": 10,
+    "dmin": 0.07417,
+    "rms": 0.11,
+    "gap": 80,
+    "magType": "md",
+    "type": "earthquake",
+    "title": "M 1.2 - 10 km NE of San Martin, CA"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.524833679199,
+     37.1391677856445,
+     8.94999980926514
+    ]
+   },
+   "id": "nc75389956"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 1.52,
+    "place": "7 km WSW of Gilroy, CA",
+    "time": 1783081608610,
+    "updated": 1783094842896,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/nc75388571",
+    "detail": "https://earthquake.usgs.gov/fdsnws/event/1/query?eventid=nc75388571&format=geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "automatic",
+    "tsunami": 0,
+    "sig": 36,
+    "net": "nc",
+    "code": "75388571",
+    "ids": ",nc75388571,",
+    "sources": ",nc,",
+    "types": ",nearby-cities,origin,phase-data,scitech-link,",
+    "nst": 16,
+    "dmin": 0.05019,
+    "rms": 0.12,
+    "gap": 69,
+    "magType": "md",
+    "type": "earthquake",
+    "title": "M 1.5 - 7 km WSW of Gilroy, CA"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.635665893555,
+     36.9813346862793,
+     3.85999989509583
+    ]
+   },
+   "id": "nc75388571"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 1.11,
+    "place": "10 km NE of San Martin, CA",
+    "time": 1783076917420,
+    "updated": 1783090046353,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/nc75388531",
+    "detail": "https://earthquake.usgs.gov/fdsnws/event/1/query?eventid=nc75388531&format=geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "automatic",
+    "tsunami": 0,
+    "sig": 19,
+    "net": "nc",
+    "code": "75388531",
+    "ids": ",nc75388531,",
+    "sources": ",nc,",
+    "types": ",nearby-cities,origin,phase-data,scitech-link,",
+    "nst": 7,
+    "dmin": 0.06996,
+    "rms": 0.07,
+    "gap": 128,
+    "magType": "md",
+    "type": "earthquake",
+    "title": "M 1.1 - 10 km NE of San Martin, CA"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.516334533691,
+     37.140998840332,
+     10.039999961853
+    ]
+   },
+   "id": "nc75388531"
+  }
+ ],
+ "bbox": [
+  -121.68133544922,
+  36.877834320068,
+  2.7699999809265,
+  -121.51633453369,
+  37.262832641602,
+  12.220000267029
+ ]
+}

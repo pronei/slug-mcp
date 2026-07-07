@@ -69,7 +69,10 @@ impl BeachWaterService {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct CkanResponse {
     success: bool,
-    result: CkanResult,
+    // Absent on error envelopes (success=false + `error` object instead).
+    result: Option<CkanResult>,
+    #[serde(default)]
+    error: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -87,16 +90,46 @@ struct CkanRecord {
     sample_date: Option<String>,
     #[serde(rename = "Analyte")]
     analyte: String,
-    #[serde(rename = "Result")]
+    #[serde(rename = "Result", default, deserialize_with = "de_number_as_string")]
     result: Option<String>,
     #[serde(rename = "Unit")]
     unit: Option<String>,
-    #[serde(rename = "30DayGeoMean", default)]
+    #[serde(
+        rename = "30DayGeoMean",
+        default,
+        deserialize_with = "de_number_as_string"
+    )]
     geo_mean_30d: Option<String>,
-    #[serde(rename = "TargetLatitude", default)]
+    #[serde(
+        rename = "TargetLatitude",
+        default,
+        deserialize_with = "de_number_as_string"
+    )]
     latitude: Option<String>,
-    #[serde(rename = "TargetLongitude", default)]
+    #[serde(
+        rename = "TargetLongitude",
+        default,
+        deserialize_with = "de_number_as_string"
+    )]
     longitude: Option<String>,
+}
+
+/// The datastore schema declares these columns `numeric`; datastore_search_sql
+/// stringifies them today but CKAN's plain datastore_search returns JSON
+/// numbers — accept both so an upstream serialization flip can't break parsing.
+fn de_number_as_string<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) => Ok(Some(s)),
+        serde_json::Value::Number(n) => Ok(Some(n.to_string())),
+        other => Err(serde::de::Error::custom(format!(
+            "expected string or number, got {}",
+            other
+        ))),
+    }
 }
 
 // ─── AB411 thresholds ───
@@ -116,22 +149,26 @@ impl Ab411Thresholds {
 
 /// Check a single-sample result against the AB411 threshold for the given analyte.
 /// Returns `(threshold_description, exceeds_threshold)`.
+///
+/// data.ca.gov names analytes "Coliform, Total" / "Coliform, Fecal" while the
+/// AB411 text says "Total Coliform" — match on word presence, fecal before
+/// total so a fecal-coliform row can never hit the total-coliform branch.
 fn check_threshold(analyte: &str, value: f64) -> (&'static str, bool) {
     let lower = analyte.to_lowercase();
-    if lower.contains("total coliform") {
-        (
-            "<10,000 single",
-            value > Ab411Thresholds::TOTAL_COLIFORM_SINGLE,
-        )
-    } else if lower.contains("fecal coliform") {
+    let has = |w: &str| lower.contains(w);
+    if has("coliform") && has("fecal") {
         (
             "<400 single",
             value > Ab411Thresholds::FECAL_COLIFORM_SINGLE,
         )
-    } else if lower.contains("enterococcus") {
+    } else if has("coliform") && has("total") {
+        (
+            "<10,000 single",
+            value > Ab411Thresholds::TOTAL_COLIFORM_SINGLE,
+        )
+    } else if has("enterococcus") {
         ("<104 single", value > Ab411Thresholds::ENTEROCOCCUS_SINGLE)
-    } else if lower.contains("e. coli") || lower.contains("e.coli") || lower.contains("escherichia")
-    {
+    } else if has("e. coli") || has("e.coli") || has("escherichia") {
         ("<235 single", value > Ab411Thresholds::E_COLI_SINGLE)
     } else {
         ("—", false)
@@ -142,14 +179,14 @@ fn check_threshold(analyte: &str, value: f64) -> (&'static str, bool) {
 /// Returns `(threshold_description, exceeds_threshold)`.
 fn check_geo_threshold(analyte: &str, value: f64) -> (&'static str, bool) {
     let lower = analyte.to_lowercase();
-    if lower.contains("total coliform") {
-        ("<1,000", value > Ab411Thresholds::TOTAL_COLIFORM_GEO)
-    } else if lower.contains("fecal coliform") {
+    let has = |w: &str| lower.contains(w);
+    if has("coliform") && has("fecal") {
         ("<200", value > Ab411Thresholds::FECAL_COLIFORM_GEO)
-    } else if lower.contains("enterococcus") {
+    } else if has("coliform") && has("total") {
+        ("<1,000", value > Ab411Thresholds::TOTAL_COLIFORM_GEO)
+    } else if has("enterococcus") {
         ("<35", value > Ab411Thresholds::ENTEROCOCCUS_GEO)
-    } else if lower.contains("e. coli") || lower.contains("e.coli") || lower.contains("escherichia")
-    {
+    } else if has("e. coli") || has("e.coli") || has("escherichia") {
         ("<126", value > Ab411Thresholds::E_COLI_GEO)
     } else {
         ("—", false)
@@ -218,13 +255,25 @@ async fn fetch_records(
     }
 
     let body = resp.text().await.context("reading CKAN response body")?;
-    let ckan: CkanResponse = serde_json::from_str(&body).context("parsing CKAN JSON response")?;
+    parse_ckan_body(&body)
+}
+
+fn parse_ckan_body(body: &str) -> Result<Vec<CkanRecord>> {
+    let ckan: CkanResponse = serde_json::from_str(body).context("parsing CKAN JSON response")?;
 
     if !ckan.success {
-        anyhow::bail!("CKAN API returned success=false");
+        let detail = match &ckan.error {
+            Some(e) => e
+                .get("message")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| e.to_string()),
+            None => "no error detail provided".to_string(),
+        };
+        anyhow::bail!("CKAN API error: {}", detail);
     }
 
-    Ok(ckan.result.records)
+    Ok(ckan.result.map(|r| r.records).unwrap_or_default())
 }
 
 // ─── Formatting ───
@@ -322,23 +371,32 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
             let result_str = rec.result.as_deref().unwrap_or("—");
             let unit = rec.unit.as_deref().unwrap_or("");
 
-            // Single-sample result row
-            if let Ok(value) = result_str.parse::<f64>() {
-                let (threshold, exceeds) = check_threshold(&rec.analyte, value);
-                let status = if exceeds { "Exceeds" } else { "Pass" };
-                let icon = if exceeds {
-                    "\u{26a0}\u{fe0f}"
-                } else {
-                    "\u{2705}"
-                };
-                writeln!(
-                    out,
-                    "| {} | {} {} | {} | {} {} |",
-                    rec.analyte, result_str, unit, threshold, icon, status
-                )
-                .unwrap();
-            } else {
-                writeln!(out, "| {} | {} {} | — | — |", rec.analyte, result_str, unit).unwrap();
+            // Single-sample result row. Analytes with no AB411 threshold get
+            // "—" rather than a misleading "Pass".
+            match result_str.parse::<f64>() {
+                Ok(value) => {
+                    let (threshold, exceeds) = check_threshold(&rec.analyte, value);
+                    if threshold == "—" {
+                        writeln!(out, "| {} | {} {} | — | — |", rec.analyte, result_str, unit)
+                            .unwrap();
+                    } else {
+                        let status = if exceeds { "Exceeds" } else { "Pass" };
+                        let icon = if exceeds {
+                            "\u{26a0}\u{fe0f}"
+                        } else {
+                            "\u{2705}"
+                        };
+                        writeln!(
+                            out,
+                            "| {} | {} {} | {} | {} {} |",
+                            rec.analyte, result_str, unit, threshold, icon, status
+                        )
+                        .unwrap();
+                    }
+                }
+                Err(_) => {
+                    writeln!(out, "| {} | {} {} | — | — |", rec.analyte, result_str, unit).unwrap();
+                }
             }
 
             // 30-day geo mean row (if present and parseable)
@@ -346,18 +404,27 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
                 && let Ok(geo_val) = geo_str.parse::<f64>()
             {
                 let (threshold, exceeds) = check_geo_threshold(&rec.analyte, geo_val);
-                let status = if exceeds { "Exceeds" } else { "Pass" };
-                let icon = if exceeds {
-                    "\u{26a0}\u{fe0f}"
+                if threshold == "—" {
+                    writeln!(
+                        out,
+                        "| 30-day geo mean ({}) | {} | — | — |",
+                        rec.analyte, geo_str
+                    )
+                    .unwrap();
                 } else {
-                    "\u{2705}"
-                };
-                writeln!(
-                    out,
-                    "| 30-day geo mean ({}) | {} | {} | {} {} |",
-                    rec.analyte, geo_str, threshold, icon, status
-                )
-                .unwrap();
+                    let status = if exceeds { "Exceeds" } else { "Pass" };
+                    let icon = if exceeds {
+                        "\u{26a0}\u{fe0f}"
+                    } else {
+                        "\u{2705}"
+                    };
+                    writeln!(
+                        out,
+                        "| 30-day geo mean ({}) | {} | {} | {} {} |",
+                        rec.analyte, geo_str, threshold, icon, status
+                    )
+                    .unwrap();
+                }
             }
         }
 
@@ -497,9 +564,10 @@ mod tests {
 
         let parsed: CkanResponse = serde_json::from_str(json).unwrap();
         assert!(parsed.success);
-        assert_eq!(parsed.result.records.len(), 2);
+        let records = parsed.result.unwrap().records;
+        assert_eq!(records.len(), 2);
 
-        let rec = &parsed.result.records[0];
+        let rec = &records[0];
         assert_eq!(rec.station_name, "O490-Cowell Beach, Santa Cruz");
         assert_eq!(rec.station_code, "O490");
         assert_eq!(rec.sample_date.as_deref(), Some("2022-05-16T00:00:00"));
@@ -511,7 +579,7 @@ mod tests {
         assert_eq!(rec.longitude.as_deref(), Some("-122.023"));
 
         // Null geo mean
-        let rec2 = &parsed.result.records[1];
+        let rec2 = &records[1];
         assert!(rec2.geo_mean_30d.is_none());
     }
 
@@ -595,5 +663,147 @@ mod tests {
         assert_eq!(format_sample_date("2023-12-01"), "December 1, 2023");
         // Unparseable falls back to raw
         assert_eq!(format_sample_date("garbage"), "garbage");
+    }
+
+    const CKAN_FIXTURE: &str = include_str!("fixtures/ckan_beach_water.json");
+
+    #[test]
+    fn live_analyte_names_match_thresholds() {
+        // data.ca.gov names analytes "Coliform, Total" / "Coliform, Fecal"
+        // (word order flipped vs the AB411 names) — matching must be
+        // order-insensitive or the threshold check silently never fires.
+        let (desc, exceeds) = check_threshold("Coliform, Total", 15_000.0);
+        assert_eq!(desc, "<10,000 single");
+        assert!(exceeds);
+
+        let (desc, exceeds) = check_threshold("Coliform, Fecal", 500.0);
+        assert_eq!(desc, "<400 single");
+        assert!(exceeds);
+
+        let (desc, exceeds) = check_geo_threshold("Coliform, Total", 1_500.0);
+        assert_eq!(desc, "<1,000");
+        assert!(exceeds);
+
+        let (desc, exceeds) = check_geo_threshold("Coliform, Fecal", 250.0);
+        assert_eq!(desc, "<200");
+        assert!(exceeds);
+
+        // Under-limit live names still pass.
+        let (_, exceeds) = check_threshold("Coliform, Total", 650.0);
+        assert!(!exceeds);
+    }
+
+    #[test]
+    fn unknown_analyte_renders_no_status() {
+        let records = vec![CkanRecord {
+            station_name: "O490-Cowell Beach, Santa Cruz".to_string(),
+            station_code: "O490".to_string(),
+            sample_date: Some("2026-06-29T00:00:00".to_string()),
+            analyte: "Mystery Bacteria".to_string(),
+            result: Some("99999".to_string()),
+            unit: Some("MPN/100 mL".to_string()),
+            geo_mean_30d: Some("88888".to_string()),
+            latitude: None,
+            longitude: None,
+        }];
+        let out = format_output(&records, false);
+        // An analyte with no AB411 threshold must not claim "Pass" no matter
+        // how large the value is.
+        assert!(!out.contains("Pass"), "unexpected Pass status:\n{}", out);
+        assert!(!out.contains("Exceeds"));
+        assert!(out.contains("| Mystery Bacteria | 99999 MPN/100 mL | — | — |"));
+        assert!(out.contains("| 30-day geo mean (Mystery Bacteria) | 88888 | — | — |"));
+    }
+
+    #[test]
+    fn parse_live_fixture() {
+        let records = parse_ckan_body(CKAN_FIXTURE).unwrap();
+        assert_eq!(records.len(), 5);
+        assert_eq!(records[0].analyte, "Coliform, Total");
+        assert_eq!(records[0].result.as_deref(), Some("10.0"));
+        assert_eq!(records[0].unit.as_deref(), Some("MPN/100 mL"));
+        // Null-heavy record: all optional fields None.
+        let nullish = &records[4];
+        assert_eq!(nullish.station_code, "O490");
+        assert!(nullish.result.is_none());
+        assert!(nullish.unit.is_none());
+        assert!(nullish.geo_mean_30d.is_none());
+        assert!(nullish.latitude.is_none());
+        assert!(nullish.longitude.is_none());
+
+        // The live-shape records render with real threshold checks.
+        let out = format_output(&records, false);
+        assert!(out.contains("## Rio del Mar Beach (O110)"));
+        assert!(out.contains("Pass"));
+        // Null result renders the em-dash placeholder, not a status.
+        assert!(out.contains("| Enterococcus | —  | — | — |"));
+    }
+
+    #[test]
+    fn ckan_error_envelope_surfaces_error() {
+        // Real CKAN failures return success=false with an `error` object and
+        // NO `result` key — the parser must surface the CKAN error, not a
+        // confusing serde "missing field" message.
+        let body = r#"{
+            "help": "https://data.ca.gov/api/3/action/help_show?name=datastore_search_sql",
+            "success": false,
+            "error": {
+                "__type": "Validation Error",
+                "info": { "orig": ["syntax error at or near \"FROM\""] }
+            }
+        }"#;
+        let err = parse_ckan_body(body).unwrap_err().to_string();
+        assert!(err.contains("CKAN"), "got: {err}");
+        assert!(err.contains("Validation Error"), "got: {err}");
+    }
+
+    #[test]
+    fn numeric_fields_accept_json_numbers() {
+        // The datastore schema declares Result/30DayGeoMean/TargetLatitude/
+        // TargetLongitude as `numeric`; datastore_search_sql stringifies them
+        // today but the plain datastore_search endpoint returns JSON numbers —
+        // tolerate both.
+        let body = r#"{
+            "success": true,
+            "result": {
+                "records": [{
+                    "StationName": "O110-Rio del Mar Beach, Santa Cruz",
+                    "StationCode": "O110",
+                    "SampleDate": "2026-06-22T00:00:00",
+                    "Analyte": "Coliform, Total",
+                    "Result": 650.0,
+                    "Unit": "MPN/100 mL",
+                    "30DayGeoMean": 58.626,
+                    "TargetLatitude": 36.9688,
+                    "TargetLongitude": -121.906
+                }]
+            }
+        }"#;
+        let records = parse_ckan_body(body).unwrap();
+        assert_eq!(records.len(), 1);
+        let rec = &records[0];
+        assert_eq!(
+            rec.result.as_deref().unwrap().parse::<f64>().unwrap(),
+            650.0
+        );
+        assert_eq!(rec.geo_mean_30d.as_deref(), Some("58.626"));
+        assert_eq!(
+            rec.latitude.as_deref().unwrap().parse::<f64>().unwrap(),
+            36.9688
+        );
+    }
+
+    #[test]
+    fn empty_records_parse_ok() {
+        let body = r#"{"success": true, "result": {"records": []}}"#;
+        let records = parse_ckan_body(body).unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn truncated_json_errors_gracefully() {
+        let cut = &CKAN_FIXTURE[..CKAN_FIXTURE.len() / 2];
+        let err = parse_ckan_body(cut).unwrap_err().to_string();
+        assert!(err.contains("parsing CKAN JSON response"));
     }
 }

@@ -1,0 +1,46 @@
+[
+  {
+    "speciesCode": "brnpel",
+    "comName": "Brown Pelican",
+    "sciName": "Pelecanus occidentalis",
+    "locId": "L163165",
+    "locName": "Natural Bridges SB",
+    "obsDt": "2026-07-06 18:12",
+    "howMany": 14,
+    "lat": 36.9495,
+    "lng": -122.0577,
+    "obsValid": true,
+    "obsReviewed": false,
+    "locationPrivate": false,
+    "subId": "S251442870"
+  },
+  {
+    "speciesCode": "wesgul",
+    "comName": "Western Gull",
+    "sciName": "Larus occidentalis",
+    "locId": "L300695",
+    "locName": "Santa Cruz Wharf",
+    "obsDt": "2026-07-06 17:45",
+    "lat": 36.9581,
+    "lng": -122.0177,
+    "obsValid": true,
+    "obsReviewed": false,
+    "locationPrivate": false,
+    "subId": "S251441002"
+  },
+  {
+    "speciesCode": "chwwid1",
+    "comName": "Chuck-will's-widow",
+    "sciName": "Antrostomus carolinensis",
+    "locId": "L1244704",
+    "locName": "Younger Lagoon",
+    "obsDt": "2026-07-05 21:03",
+    "howMany": 1,
+    "lat": 36.9508,
+    "lng": -122.0654,
+    "obsValid": false,
+    "obsReviewed": true,
+    "locationPrivate": true,
+    "subId": "S251399183"
+  }
+]

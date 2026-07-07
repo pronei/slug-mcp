@@ -156,15 +156,19 @@ async fn fetch_detections(
         anyhow::bail!("FIRMS returned HTTP {}", resp.status());
     }
     let body = resp.text().await.context("reading FIRMS CSV body")?;
+    check_firms_error(&body)?;
+    parse_csv(&body)
+}
 
-    // FIRMS returns an error message starting with "Invalid" in the body
-    // rather than an HTTP error for quota/key problems — detect those first.
+/// FIRMS reports quota/key problems as a plain-text body starting with
+/// "Invalid" or "Error" (with HTTP 200) rather than an HTTP error — detect
+/// those before attempting to parse CSV.
+fn check_firms_error(body: &str) -> Result<()> {
     let trimmed = body.trim_start();
     if trimmed.starts_with("Invalid") || trimmed.starts_with("Error") {
         anyhow::bail!("FIRMS error: {}", trimmed.lines().next().unwrap_or(""));
     }
-
-    parse_csv(&body)
+    Ok(())
 }
 
 /// Parse the FIRMS VIIRS CSV response.
@@ -323,17 +327,97 @@ fn format_detections(detections: &[Detection], days: u32) -> String {
 mod tests {
     use super::*;
 
+    const FIRMS_FIXTURE: &str = include_str!("fixtures/firms_viirs.csv");
+
     #[test]
-    fn parse_csv_sample() {
-        let csv = "latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_ti5,frp,daynight\n\
-                   37.1234,-122.0567,320.5,0.45,0.42,2026-04-09,1234,N,VIIRS,h,2.0NRT,290.3,12.5,D\n\
-                   36.9456,-122.1234,305.1,0.50,0.48,2026-04-09,1240,N,VIIRS,n,2.0NRT,285.2,5.8,N\n";
-        let parsed = parse_csv(csv).unwrap();
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].confidence, Confidence::High);
-        assert_eq!(parsed[1].confidence, Confidence::Nominal);
-        assert!((parsed[0].frp - 12.5).abs() < 0.001);
+    fn parse_csv_fixture() {
+        let parsed = parse_csv(FIRMS_FIXTURE).unwrap();
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].confidence, Confidence::Nominal);
+        assert_eq!(parsed[1].confidence, Confidence::High);
+        assert_eq!(parsed[2].confidence, Confidence::Low);
+        assert!((parsed[1].frp - 18.62).abs() < 0.001);
+        assert!((parsed[1].bright_ti4 - 352.87).abs() < 0.001);
+        assert_eq!(parsed[0].acq_date, "2026-07-06");
+        assert_eq!(parsed[0].acq_time, "0942");
         assert_eq!(parsed[0].daynight, "D");
+        assert_eq!(parsed[2].daynight, "N");
+        assert_eq!(parsed[0].satellite, "N");
+    }
+
+    #[test]
+    fn format_detections_renders_fixture() {
+        let parsed = parse_csv(FIRMS_FIXTURE).unwrap();
+        let out = format_detections(&parsed, 1);
+        assert!(out.contains("3 total"));
+        // Sorted by FRP descending — the high-confidence 18.62 MW detection first.
+        let hi = out.find("36.9901, -121.9854").unwrap();
+        let lo = out.find("37.1121, -121.9077").unwrap();
+        assert!(hi < lo, "not FRP-sorted:\n{out}");
+        assert!(out.contains("FRP 18.6 MW"));
+        assert!(out.contains("confidence: high"));
+        assert!(out.contains("NASA FIRMS"));
+    }
+
+    #[test]
+    fn format_detections_empty_message() {
+        let out = format_detections(&[], 2);
+        assert!(out.contains("No VIIRS_SNPP fire detections in the last 2 days"));
+    }
+
+    #[test]
+    fn invalid_map_key_body_is_detected() {
+        // FIRMS quota/key failures are 200s with a plain-text body.
+        let err = check_firms_error("Invalid MAP_KEY.")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Invalid MAP_KEY"), "got: {err}");
+
+        let err = check_firms_error("Error in query parameters.")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Error in query parameters"), "got: {err}");
+
+        // Normal CSV bodies pass through.
+        assert!(check_firms_error(FIRMS_FIXTURE).is_ok());
+        // Header-only (zero detections) is not an error either.
+        assert!(check_firms_error("latitude,longitude\n").is_ok());
+    }
+
+    #[test]
+    fn parse_csv_shuffled_columns_by_header_lookup() {
+        // FIRMS shuffles column order between products — lookup is by name.
+        let csv = "acq_date,latitude,longitude,frp,confidence,daynight,acq_time,satellite,bright_ti4\n\
+                   2026-07-06,37.0542,-122.1019,4.31,n,D,0942,N,331.42\n";
+        let parsed = parse_csv(csv).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert!((parsed[0].latitude - 37.0542).abs() < 0.0001);
+        assert!((parsed[0].frp - 4.31).abs() < 0.001);
+        assert_eq!(parsed[0].confidence, Confidence::Nominal);
+    }
+
+    #[test]
+    fn parse_csv_short_row_skipped_others_kept() {
+        // A row with fewer columns than the header (no parseable lat/lon in
+        // position) is dropped without failing the batch.
+        let csv = "latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_ti5,frp,daynight\n\
+                   garbage\n\
+                   37.0542,-122.1019,331.42,0.39,0.36,2026-07-06,0942,N,VIIRS,n,2.0NRT,291.71,4.31,D\n";
+        let parsed = parse_csv(csv).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].acq_date, "2026-07-06");
+    }
+
+    #[test]
+    fn parse_csv_truncated_last_row_never_panics() {
+        // Download cut mid-row: coordinates parse, trailing fields default.
+        let cut = "latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_ti5,frp,daynight\n\
+                   37.0542,-122.1019";
+        let parsed = parse_csv(cut).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].acq_date, "");
+        assert_eq!(parsed[0].confidence, Confidence::Unknown);
+        assert_eq!(parsed[0].frp, 0.0);
     }
 
     #[test]

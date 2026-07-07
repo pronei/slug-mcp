@@ -1,0 +1,33 @@
+[
+  {
+    "locId": "L163165",
+    "locName": "Natural Bridges SB",
+    "countryCode": "US",
+    "subnational1Code": "US-CA",
+    "subnational2Code": "US-CA-087",
+    "lat": 36.9495168,
+    "lng": -122.0576859,
+    "latestObsDt": "2026-07-06 18:12",
+    "numSpeciesAllTime": 285
+  },
+  {
+    "locId": "L300695",
+    "locName": "Santa Cruz Wharf",
+    "countryCode": "US",
+    "subnational1Code": "US-CA",
+    "subnational2Code": "US-CA-087",
+    "lat": 36.9580977,
+    "lng": -122.0177348,
+    "latestObsDt": "2026-07-06 17:45",
+    "numSpeciesAllTime": 194
+  },
+  {
+    "locId": "L9999991",
+    "locName": "Brand-new Pond (no checklists yet)",
+    "countryCode": "US",
+    "subnational1Code": "US-CA",
+    "subnational2Code": "US-CA-087",
+    "lat": 37.0011,
+    "lng": -122.0333
+  }
+]

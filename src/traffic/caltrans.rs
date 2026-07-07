@@ -254,4 +254,56 @@ mod tests {
         // Fixture is SR-1 only, so SR-17 should yield nothing
         assert!(sr17.is_empty());
     }
+
+    #[test]
+    fn empty_data_array_is_ok() {
+        let closures = parse_sc_closures(r#"{"data": []}"#).unwrap();
+        assert!(closures.is_empty());
+    }
+
+    #[test]
+    fn missing_data_key_is_ok() {
+        // `data` is defaulted — an empty envelope degrades to no closures.
+        let closures = parse_sc_closures("{}").unwrap();
+        assert!(closures.is_empty());
+    }
+
+    #[test]
+    fn truncated_json_errors_gracefully() {
+        let cut = &FIXTURE[..FIXTURE.len() / 2];
+        let err = parse_sc_closures(cut).unwrap_err().to_string();
+        assert!(err.contains("parsing Caltrans LCS JSON"), "got: {err}");
+    }
+
+    #[test]
+    fn entry_with_missing_subobjects_defaults_and_filters_out() {
+        // location/closure are defaulted per-field; a skeletal entry parses
+        // but has county "" so the SC filter drops it.
+        let closures = parse_sc_closures(r#"{"data": [{"lcs": {"index": "X-1"}}]}"#).unwrap();
+        assert!(closures.is_empty());
+    }
+
+    #[test]
+    fn entry_missing_lcs_key_errors() {
+        // `lcs` is the one required wrapper — its absence is malformed data.
+        // {:#} renders the full anyhow chain incl. the serde root cause.
+        let err = format!("{:#}", parse_sc_closures(r#"{"data": [{}]}"#).unwrap_err());
+        assert!(err.contains("lcs"), "got: {err}");
+    }
+
+    #[test]
+    fn non_sc_counties_are_filtered() {
+        // The D5 feed spans five counties; only Santa Cruz survives.
+        let body = r#"{"data": [
+            {"lcs": {"index": "A", "location": {"travelFlowDirection": "N",
+                "begin": {"beginCounty": "Santa Barbara", "beginRoute": "SR-1"},
+                "end": {}}, "closure": {}}},
+            {"lcs": {"index": "B", "location": {"travelFlowDirection": "S",
+                "begin": {"beginCounty": "Santa Cruz", "beginRoute": "SR-17"},
+                "end": {}}, "closure": {}}}
+        ]}"#;
+        let closures = parse_sc_closures(body).unwrap();
+        assert_eq!(closures.len(), 1);
+        assert_eq!(closures[0].route, "SR-17");
+    }
 }

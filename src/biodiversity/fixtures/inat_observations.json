@@ -1,0 +1,72 @@
+{
+  "total_results": 10430,
+  "page": 1,
+  "per_page": 3,
+  "results": [
+    {
+      "id": 378981231,
+      "uri": "https://www.inaturalist.org/observations/378981231",
+      "observed_on": "2026-07-06",
+      "place_guess": "Portola Dr & 18th Ave, Twin Lakes, CA 95062, USA",
+      "quality_grade": "needs_id",
+      "user": {
+        "id": 520073,
+        "login": "marusya12"
+      },
+      "taxon": {
+        "id": 49052,
+        "name": "Anthopleura",
+        "preferred_common_name": null,
+        "iconic_taxon_name": "Animalia",
+        "rank": "genus"
+      },
+      "photos": [
+        {
+          "id": 693188790,
+          "url": "https://static.inaturalist.org/photos/693188790/square.jpg"
+        }
+      ]
+    },
+    {
+      "id": 378945659,
+      "uri": "https://www.inaturalist.org/observations/378945659",
+      "observed_on": "2026-07-06",
+      "quality_grade": "research",
+      "user": {
+        "id": 10276358,
+        "login": "toekneearmor"
+      },
+      "taxon": {
+        "id": 71154,
+        "name": "Aphis nerii",
+        "preferred_common_name": "Oleander Aphid",
+        "iconic_taxon_name": "Insecta",
+        "rank": "species"
+      }
+    },
+    {
+      "id": 378968354,
+      "uri": "https://www.inaturalist.org/observations/378968354",
+      "observed_on": "2026-07-06",
+      "place_guess": "Red Hill Rd, Santa Cruz, CA, US",
+      "quality_grade": "research",
+      "user": {
+        "id": 9967037,
+        "login": "sbatory"
+      },
+      "taxon": {
+        "id": 18209,
+        "name": "Melanerpes formicivorus",
+        "preferred_common_name": "Acorn Woodpecker",
+        "iconic_taxon_name": "Aves",
+        "rank": "species"
+      },
+      "photos": [
+        {
+          "id": 693163370,
+          "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/693163370/square.jpg"
+        }
+      ]
+    }
+  ]
+}

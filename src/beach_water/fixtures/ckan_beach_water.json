@@ -1,0 +1,75 @@
+{
+  "help": "https://data.ca.gov/api/3/action/help_show?name=datastore_search_sql",
+  "success": true,
+  "result": {
+    "sql": "SELECT \"StationName\", \"StationCode\", \"SampleDate\", \"Analyte\", \"Result\", \"Unit\", \"30DayGeoMean\", \"TargetLatitude\", \"TargetLongitude\" FROM \"15a63495-8d9f-4a49-b43a-3092ef3106b9\" WHERE \"StationCode\" LIKE 'O%' AND \"SampleDate\" >= '2026-06-07' ORDER BY \"StationName\", \"SampleDate\" DESC, \"Analyte\" LIMIT 5",
+    "records": [
+      {
+        "StationName": "O110-Rio del Mar Beach, Santa Cruz",
+        "StationCode": "O110",
+        "SampleDate": "2026-06-29T00:00:00",
+        "Analyte": "Coliform, Total",
+        "Result": "10.0",
+        "Unit": "MPN/100 mL",
+        "30DayGeoMean": "37.676",
+        "TargetLatitude": "36.9688",
+        "TargetLongitude": "-121.906"
+      },
+      {
+        "StationName": "O110-Rio del Mar Beach, Santa Cruz",
+        "StationCode": "O110",
+        "SampleDate": "2026-06-29T00:00:00",
+        "Analyte": "E. coli",
+        "Result": "10.0",
+        "Unit": "MPN/100 mL",
+        "30DayGeoMean": "13.269",
+        "TargetLatitude": "36.9688",
+        "TargetLongitude": "-121.906"
+      },
+      {
+        "StationName": "O110-Rio del Mar Beach, Santa Cruz",
+        "StationCode": "O110",
+        "SampleDate": "2026-06-29T00:00:00",
+        "Analyte": "Enterococcus",
+        "Result": "10.0",
+        "Unit": "MPN/100 mL",
+        "30DayGeoMean": "18.765",
+        "TargetLatitude": "36.9688",
+        "TargetLongitude": "-121.906"
+      },
+      {
+        "StationName": "O110-Rio del Mar Beach, Santa Cruz",
+        "StationCode": "O110",
+        "SampleDate": "2026-06-22T00:00:00",
+        "Analyte": "Coliform, Total",
+        "Result": "650.0",
+        "Unit": "MPN/100 mL",
+        "30DayGeoMean": "58.626",
+        "TargetLatitude": "36.9688",
+        "TargetLongitude": "-121.906"
+      },
+      {
+        "StationName": "O490-Cowell Beach, Santa Cruz",
+        "StationCode": "O490",
+        "SampleDate": "2026-06-22T00:00:00",
+        "Analyte": "Enterococcus",
+        "Result": null,
+        "Unit": null,
+        "30DayGeoMean": null,
+        "TargetLatitude": null,
+        "TargetLongitude": null
+      }
+    ],
+    "fields": [
+      { "id": "StationName", "type": "text" },
+      { "id": "StationCode", "type": "text" },
+      { "id": "SampleDate", "type": "timestamp" },
+      { "id": "Analyte", "type": "text" },
+      { "id": "Result", "type": "numeric" },
+      { "id": "Unit", "type": "text" },
+      { "id": "30DayGeoMean", "type": "numeric" },
+      { "id": "TargetLatitude", "type": "numeric" },
+      { "id": "TargetLongitude", "type": "numeric" }
+    ]
+  }
+}

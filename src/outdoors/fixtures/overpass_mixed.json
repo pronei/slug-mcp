@@ -1,0 +1,51 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.7 375dc00a",
+  "osm3s": {
+    "timestamp_osm_base": "2026-07-07T13:45:12Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 358761319,
+      "lat": 37.0011,
+      "lon": -122.0555,
+      "tags": {
+        "ele": "395",
+        "name": "Bald Mountain",
+        "natural": "peak"
+      }
+    },
+    {
+      "type": "way",
+      "id": 40041312,
+      "center": {
+        "lat": 36.9822,
+        "lon": -122.0411
+      },
+      "tags": {
+        "highway": "footway",
+        "name": "West Cliff Path",
+        "surface": "paved"
+      }
+    },
+    {
+      "type": "node",
+      "id": 5566778899,
+      "lat": 36.9902,
+      "lon": -122.0333,
+      "tags": {
+        "natural": "peak"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1122334455,
+      "tags": {
+        "highway": "path",
+        "name": "Orphan Segment"
+      }
+    }
+  ]
+}

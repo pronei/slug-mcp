@@ -42,17 +42,7 @@ impl ClimbingService {
 
         let (cache_key, query) = if let Some(area) = &req.area {
             let key = format!("climbing:area:{}", area.to_lowercase());
-            // Build the string literal via serde_json so all escaping (quotes,
-            // backslashes, control chars) is handled correctly — a raw replace
-            // of only `"` lets an `area` ending in `\` break out of the literal.
-            // serde_json::to_string yields a quoted, fully-escaped JSON string,
-            // which is also a valid GraphQL string literal.
-            let area_literal = serde_json::to_string(area).unwrap_or_else(|_| "\"\"".to_string());
-            let q = format!(
-                r#"{{ areas(filter: {{area_name: {{match: {}}}}}) {{ area_name totalClimbs metadata {{ lat lng }} pathTokens children {{ area_name totalClimbs }} climbs {{ name grades {{ yds }} type {{ sport trad bouldering tr }} fa length }} }} }}"#,
-                area_literal
-            );
-            (key, q)
+            (key, build_area_query(area))
         } else {
             let key = "climbing:default:santa-cruz".to_string();
             let q = r#"{ areas(filter: {path_tokens: {tokens: ["California", "Central Coast", "Santa Cruz"]}}) { area_name totalClimbs metadata { lat lng } children { area_name totalClimbs } climbs { name grades { yds } type { sport trad bouldering tr } } } }"#.to_string();
@@ -82,128 +72,157 @@ impl ClimbingService {
             })
             .await?;
 
-        // Handle GraphQL-level errors
-        if let Some(errors) = &response.errors
-            && !errors.is_empty()
-        {
-            let mut out = String::from("# Climbing Search Error\n\n");
-            for e in errors {
-                let _ = writeln!(out, "- {}", e.message);
-            }
-            return Ok(out);
-        }
-
-        let areas = match &response.data {
-            Some(d) => &d.areas,
-            None => return Ok(no_results_message(req.area.as_deref())),
-        };
-
-        if areas.is_empty() {
-            return Ok(no_results_message(req.area.as_deref()));
-        }
-
-        let route_filter = req.route.as_deref().map(|r| r.to_lowercase());
-
-        let mut out = String::new();
-        for area in areas {
-            let _ = writeln!(out, "# Climbing \u{2014} {}", area.area_name);
-            out.push('\n');
-
-            // Metadata line
-            let mut meta_parts = Vec::new();
-            if let Some(tc) = area.total_climbs {
-                meta_parts.push(format!("{} routes", tc));
-            }
-            if let Some(md) = &area.metadata
-                && let (Some(lat), Some(lng)) = (md.lat, md.lng)
-            {
-                meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
-            }
-            if !meta_parts.is_empty() {
-                let _ = writeln!(out, "_{}_", meta_parts.join(" \u{00b7} "));
-                out.push('\n');
-            }
-
-            // Sub-areas
-            if let Some(children) = &area.children
-                && !children.is_empty()
-            {
-                let _ = writeln!(out, "## Sub-areas");
-                for child in children {
-                    let count = child
-                        .total_climbs
-                        .map(|c| format!(" \u{2014} {} routes", c))
-                        .unwrap_or_default();
-                    let _ = writeln!(out, "- **{}**{}", child.area_name, count);
-                }
-                out.push('\n');
-            }
-
-            // Routes
-            if let Some(climbs) = &area.climbs {
-                let filtered: Vec<&GqlClimb> = if let Some(ref rf) = route_filter {
-                    climbs
-                        .iter()
-                        .filter(|c| c.name.to_lowercase().contains(rf))
-                        .collect()
-                } else {
-                    climbs.iter().collect()
-                };
-
-                if !filtered.is_empty() {
-                    let showing = filtered.len().min(limit);
-                    if filtered.len() > limit {
-                        let _ = writeln!(out, "## Routes (showing first {})", showing);
-                    } else {
-                        let _ = writeln!(out, "## Routes");
-                    }
-                    for (i, climb) in filtered.iter().take(limit).enumerate() {
-                        let grade = climb
-                            .grades
-                            .as_ref()
-                            .and_then(|g| g.yds.as_deref())
-                            .unwrap_or("?");
-
-                        let ctype = climb
-                            .climb_type
-                            .as_ref()
-                            .map(climb_type_label)
-                            .unwrap_or_default();
-
-                        let mut parts = vec![format!("**{}**", climb.name), grade.to_string()];
-                        if !ctype.is_empty() {
-                            parts.push(ctype);
-                        }
-                        if let Some(fa) = &climb.fa
-                            && !fa.is_empty()
-                        {
-                            parts.push(format!("FA: {}", fa));
-                        }
-                        if let Some(len) = climb.length
-                            && len > 0
-                        {
-                            parts.push(format!("{} ft", len));
-                        }
-
-                        let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
-                    }
-                    out.push('\n');
-                }
-            }
-        }
-
-        let now = crate::util::now_pacific();
-        let _ = writeln!(
-            out,
-            "_Source: OpenBeta (community climbing database). \
-             Coverage varies \u{2014} Pinnacles NP has excellent data; \
-             Castle Rock SP is not yet in the database. \
-             Last updated: {}_",
-            now.format("%-I:%M %p")
-        );
-
-        Ok(out)
+        Ok(render_response(
+            &response,
+            req.area.as_deref(),
+            req.route.as_deref(),
+            limit,
+        ))
     }
+}
+
+/// Build the area-search GraphQL query. The string literal is built via
+/// serde_json so all escaping (quotes, backslashes, control chars) is handled
+/// correctly — a raw replace of only `"` lets an `area` ending in `\` break
+/// out of the literal. serde_json::to_string yields a quoted, fully-escaped
+/// JSON string, which is also a valid GraphQL string literal.
+fn build_area_query(area: &str) -> String {
+    let area_literal = serde_json::to_string(area).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"{{ areas(filter: {{area_name: {{match: {}}}}}) {{ area_name totalClimbs metadata {{ lat lng }} pathTokens children {{ area_name totalClimbs }} climbs {{ name grades {{ yds }} type {{ sport trad bouldering tr }} fa length }} }} }}"#,
+        area_literal
+    )
+}
+
+/// Render a parsed OpenBeta response to markdown — GraphQL error envelopes
+/// become a friendly error block, missing/empty data becomes the no-results
+/// message.
+fn render_response(
+    response: &GqlResponse,
+    area: Option<&str>,
+    route: Option<&str>,
+    limit: usize,
+) -> String {
+    if let Some(errors) = &response.errors
+        && !errors.is_empty()
+    {
+        let mut out = String::from("# Climbing Search Error\n\n");
+        for e in errors {
+            let _ = writeln!(out, "- {}", e.message);
+        }
+        return out;
+    }
+
+    let areas = match &response.data {
+        Some(d) => &d.areas,
+        None => return no_results_message(area),
+    };
+
+    if areas.is_empty() {
+        return no_results_message(area);
+    }
+
+    let route_filter = route.map(|r| r.to_lowercase());
+
+    let mut out = String::new();
+    for area in areas {
+        let _ = writeln!(out, "# Climbing \u{2014} {}", area.area_name);
+        out.push('\n');
+
+        // Metadata line
+        let mut meta_parts = Vec::new();
+        if let Some(tc) = area.total_climbs {
+            meta_parts.push(format!("{} routes", tc));
+        }
+        if let Some(md) = &area.metadata
+            && let (Some(lat), Some(lng)) = (md.lat, md.lng)
+        {
+            meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
+        }
+        if !meta_parts.is_empty() {
+            let _ = writeln!(out, "_{}_", meta_parts.join(" \u{00b7} "));
+            out.push('\n');
+        }
+
+        // Sub-areas
+        if let Some(children) = &area.children
+            && !children.is_empty()
+        {
+            let _ = writeln!(out, "## Sub-areas");
+            for child in children {
+                let count = child
+                    .total_climbs
+                    .map(|c| format!(" \u{2014} {} routes", c))
+                    .unwrap_or_default();
+                let _ = writeln!(out, "- **{}**{}", child.area_name, count);
+            }
+            out.push('\n');
+        }
+
+        // Routes
+        if let Some(climbs) = &area.climbs {
+            let filtered: Vec<&GqlClimb> = if let Some(ref rf) = route_filter {
+                climbs
+                    .iter()
+                    .filter(|c| c.name.to_lowercase().contains(rf))
+                    .collect()
+            } else {
+                climbs.iter().collect()
+            };
+
+            if !filtered.is_empty() {
+                let showing = filtered.len().min(limit);
+                if filtered.len() > limit {
+                    let _ = writeln!(out, "## Routes (showing first {})", showing);
+                } else {
+                    let _ = writeln!(out, "## Routes");
+                }
+                for (i, climb) in filtered.iter().take(limit).enumerate() {
+                    let grade = climb
+                        .grades
+                        .as_ref()
+                        .and_then(|g| g.yds.as_deref())
+                        .unwrap_or("?");
+
+                    let ctype = climb
+                        .climb_type
+                        .as_ref()
+                        .map(climb_type_label)
+                        .unwrap_or_default();
+
+                    let mut parts = vec![format!("**{}**", climb.name), grade.to_string()];
+                    if !ctype.is_empty() {
+                        parts.push(ctype);
+                    }
+                    if let Some(fa) = &climb.fa
+                        && !fa.is_empty()
+                    {
+                        parts.push(format!("FA: {}", fa));
+                    }
+                    if let Some(len) = climb.length
+                        && len > 0
+                    {
+                        parts.push(format!("{} ft", len));
+                    }
+
+                    let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
+                }
+                out.push('\n');
+            }
+        }
+    }
+
+    let now = crate::util::now_pacific();
+    let _ = writeln!(
+        out,
+        "_Source: OpenBeta (community climbing database). \
+         Coverage varies \u{2014} Pinnacles NP has excellent data; \
+         Castle Rock SP is not yet in the database. \
+         Last updated: {}_",
+        now.format("%-I:%M %p")
+    );
+
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -467,72 +486,7 @@ mod tests {
             errors: None,
         };
 
-        // Build the output the same way the service does (minus the async bits)
-        let areas = &response.data.as_ref().unwrap().areas;
-        let mut out = String::new();
-        for a in areas {
-            let _ = writeln!(out, "# Climbing \u{2014} {}", a.area_name);
-            out.push('\n');
-
-            let mut meta_parts = Vec::new();
-            if let Some(tc) = a.total_climbs {
-                meta_parts.push(format!("{} routes", tc));
-            }
-            if let Some(md) = &a.metadata
-                && let (Some(lat), Some(lng)) = (md.lat, md.lng)
-            {
-                meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
-            }
-            if !meta_parts.is_empty() {
-                let _ = writeln!(out, "_{}_", meta_parts.join(" \u{00b7} "));
-                out.push('\n');
-            }
-
-            if let Some(children) = &a.children
-                && !children.is_empty()
-            {
-                let _ = writeln!(out, "## Sub-areas");
-                for child in children {
-                    let count = child
-                        .total_climbs
-                        .map(|c| format!(" \u{2014} {} routes", c))
-                        .unwrap_or_default();
-                    let _ = writeln!(out, "- **{}**{}", child.area_name, count);
-                }
-                out.push('\n');
-            }
-
-            if let Some(climbs) = &a.climbs {
-                let _ = writeln!(out, "## Routes");
-                for (i, climb) in climbs.iter().enumerate() {
-                    let grade = climb
-                        .grades
-                        .as_ref()
-                        .and_then(|g| g.yds.as_deref())
-                        .unwrap_or("?");
-                    let ctype = climb
-                        .climb_type
-                        .as_ref()
-                        .map(climb_type_label)
-                        .unwrap_or_default();
-                    let mut parts = vec![format!("**{}**", climb.name), grade.to_string()];
-                    if !ctype.is_empty() {
-                        parts.push(ctype);
-                    }
-                    if let Some(fa) = &climb.fa
-                        && !fa.is_empty()
-                    {
-                        parts.push(format!("FA: {}", fa));
-                    }
-                    if let Some(len) = climb.length
-                        && len > 0
-                    {
-                        parts.push(format!("{} ft", len));
-                    }
-                    let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
-                }
-            }
-        }
+        let out = render_response(&response, Some("Pinnacles"), None, 20);
 
         assert!(out.contains("# Climbing \u{2014} Pinnacles National Park"));
         assert!(out.contains("319 routes"));
@@ -601,41 +555,8 @@ mod tests {
     #[test]
     fn format_mixed_area_renders_all_climb_types() {
         let resp: GqlResponse = serde_json::from_str(OPENBETA_MIXED_FIXTURE).unwrap();
-        let area = &resp.data.as_ref().unwrap().areas[0];
 
-        // Render routes the same way search_routes() does (sans async/cache).
-        let mut out = String::new();
-        let _ = writeln!(out, "# Climbing \u{2014} {}", area.area_name);
-        if let Some(children) = &area.children {
-            let _ = writeln!(out, "## Sub-areas");
-            for child in children {
-                let count = child
-                    .total_climbs
-                    .map(|c| format!(" \u{2014} {} routes", c))
-                    .unwrap_or_default();
-                let _ = writeln!(out, "- **{}**{}", child.area_name, count);
-            }
-        }
-        if let Some(climbs) = &area.climbs {
-            let _ = writeln!(out, "## Routes");
-            for (i, climb) in climbs.iter().enumerate() {
-                let grade = climb
-                    .grades
-                    .as_ref()
-                    .and_then(|g| g.yds.as_deref())
-                    .unwrap_or("?");
-                let ctype = climb
-                    .climb_type
-                    .as_ref()
-                    .map(climb_type_label)
-                    .unwrap_or_default();
-                let mut parts = vec![format!("**{}**", climb.name), grade.to_string()];
-                if !ctype.is_empty() {
-                    parts.push(ctype);
-                }
-                let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
-            }
-        }
+        let out = render_response(&resp, Some("Pinnacles"), None, 20);
 
         assert!(out.contains("## Sub-areas"));
         assert!(out.contains("**Boulder Garden** \u{2014} 2 routes"));
@@ -644,6 +565,71 @@ mod tests {
         // gradeless boulder shows "?" placeholder
         assert!(out.contains("**Sad Boulder Problem** \u{00b7} ? \u{00b7} Boulder"));
         assert!(out.contains("**Toprope Slab** \u{00b7} 5.4 \u{00b7} TR"));
+    }
+
+    const OPENBETA_ERRORS_FIXTURE: &str = include_str!("fixtures/openbeta_errors.json");
+    const OPENBETA_LIVE_FIXTURE: &str = include_str!("fixtures/openbeta_live.json");
+
+    #[test]
+    fn graphql_errors_render_error_block() {
+        // GraphQL failures come back HTTP 200 with an `errors` array and no
+        // `data` — locked: rendered as a friendly error block, not an Err.
+        let resp: GqlResponse = serde_json::from_str(OPENBETA_ERRORS_FIXTURE).unwrap();
+        let out = render_response(&resp, Some("Pinnacles"), None, 20);
+        assert!(out.contains("# Climbing Search Error"));
+        assert!(out.contains("Syntax Error: Expected Name, found <EOF>."));
+    }
+
+    #[test]
+    fn data_null_without_errors_renders_no_results() {
+        let resp: GqlResponse = serde_json::from_str(r#"{"data": null}"#).unwrap();
+        let out = render_response(&resp, Some("Atlantis"), None, 20);
+        assert!(out.contains("No Results"));
+        assert!(out.contains("Atlantis"));
+    }
+
+    #[test]
+    fn parse_live_shape_fixture_with_null_type_flags() {
+        // Live OpenBeta sends null (not false) for unset type flags, -1 for
+        // unknown length, and [] for areas without direct climbs.
+        let resp: GqlResponse = serde_json::from_str(OPENBETA_LIVE_FIXTURE).unwrap();
+        let areas = &resp.data.as_ref().unwrap().areas;
+        assert_eq!(areas.len(), 2);
+        assert!(areas[0].climbs.as_ref().unwrap().is_empty());
+
+        let sw_climbs = areas[1].climbs.as_ref().unwrap();
+        assert_eq!(sw_climbs.len(), 3);
+        let ball = &sw_climbs[0];
+        assert_eq!(ball.climb_type.as_ref().unwrap().sport, Some(true));
+        assert_eq!(ball.climb_type.as_ref().unwrap().trad, None);
+        assert_eq!(ball.length, Some(-1));
+
+        let out = render_response(&resp, Some("Castle Rock"), None, 20);
+        assert!(out.contains("# Climbing \u{2014} Castle Rock Area"));
+        // null-flag climbs still get their set type label; -1 length hidden
+        assert!(out.contains("**Ball and Chain** \u{00b7} 5.9+ \u{00b7} Sport"));
+        assert!(!out.contains("-1 ft"));
+        // Area with climbs: [] renders without a Routes section of its own
+        assert!(out.contains("**Castle Rock Slab** \u{2014} 8 routes"));
+    }
+
+    #[test]
+    fn area_query_escapes_graphql_injection() {
+        // Quotes can't terminate the literal early…
+        let q = build_area_query(r#"evil" ) { climbs }"#);
+        assert!(q.contains(r#"{match: "evil\" ) { climbs }"}"#), "got: {q}");
+        // …and a trailing backslash can't escape the closing quote.
+        let q2 = build_area_query("trailing\\");
+        assert!(q2.contains(r#"match: "trailing\\""#), "got: {q2}");
+        // Control characters are escaped, keeping the query single-line.
+        let q3 = build_area_query("multi\nline");
+        assert!(q3.contains(r#"match: "multi\nline""#), "got: {q3}");
+    }
+
+    #[test]
+    fn truncated_response_errors_gracefully() {
+        let cut = &OPENBETA_LIVE_FIXTURE[..OPENBETA_LIVE_FIXTURE.len() / 3];
+        assert!(serde_json::from_str::<GqlResponse>(cut).is_err());
     }
 
     #[test]

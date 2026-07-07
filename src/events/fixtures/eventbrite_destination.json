@@ -1,0 +1,178 @@
+{
+  "events": [
+    {
+      "id": "1989905245155",
+      "name": "True Love Christian Festival",
+      "summary": "Come vibe with us at True Love Christian Festival\u2014faith, fun, and fellowship all in one place!",
+      "url": "https://www.eventbrite.com/e/true-love-christian-festival-tickets-1989905245155",
+      "start_date": "2026-07-18",
+      "start_time": "10:00",
+      "end_date": "2026-07-18",
+      "end_time": "16:30",
+      "timezone": "America/Los_Angeles",
+      "is_online_event": false,
+      "status": "live",
+      "is_cancelled": null,
+      "tags": [
+        {
+          "prefix": "EventbriteSubCategory",
+          "tag": "EventbriteSubCategory/14001",
+          "display_name": "Christianity"
+        },
+        {
+          "prefix": "EventbriteCategory",
+          "tag": "EventbriteCategory/114",
+          "display_name": "Religion & Spirituality",
+          "localized": {
+            "display_name": "Religion & Spirituality"
+          }
+        }
+      ],
+      "_type": "destination_event",
+      "tickets_by": "Eventbrite",
+      "tickets_url": "https://www.eventbrite.com/checkout-external?eid=1989905245155",
+      "hide_end_date": false,
+      "language": "en-us",
+      "published": "2026-05-19T13:41:07Z",
+      "series_id": null,
+      "primary_venue": {
+        "_type": "destination_venue",
+        "id": "297812494",
+        "name": "Aptos Village County Park",
+        "address": {
+          "address_1": "100 Aptos Creek Road",
+          "address_2": "",
+          "city": "Aptos",
+          "region": "CA",
+          "postal_code": "95003",
+          "country": "US",
+          "latitude": "36.9775556",
+          "longitude": "-121.903566",
+          "localized_address_display": "100 Aptos Creek Road, Aptos, CA 95003",
+          "localized_area_display": "Aptos, CA"
+        }
+      },
+      "primary_organizer": {
+        "_type": "destination_profile",
+        "id": "87292680153",
+        "name": "True Love Christian Festival",
+        "profile_type": "organizer",
+        "num_upcoming_events": null
+      },
+      "ticket_availability": {
+        "maximum_ticket_price": {
+          "currency": "USD",
+          "major_value": "0.00",
+          "value": 0,
+          "display": "0.00 USD"
+        },
+        "minimum_ticket_price": {
+          "currency": "USD",
+          "major_value": "0.00",
+          "value": 0,
+          "display": "0.00 USD"
+        },
+        "is_free": true,
+        "has_bogo_tickets": false,
+        "has_available_tickets": true,
+        "is_sold_out": false
+      },
+      "image": {
+        "id": "1184933121",
+        "url": "https://img.evbuc.com/https%3A%2F%2Fcdn.evbuc.com%2Fimages%2F1184933121%2F1599790870253%2F1%2Foriginal.20260519-120312?crop=focalpoint&fit=crop&auto=format%2Ccompress&q=75&sharp=10&fp-x=0.5&fp-y=0.5&s=2d759a650b7dab55c78b75c975cc01c8",
+        "aspect_ratio": "1.775"
+      }
+    },
+    {
+      "id": "1989882981564",
+      "name": "Dr. Paul Koudounaris: A History of Railroad Dogs",
+      "summary": "Join Dr. Paul Koudounaris for a wild ride through the untold stories of railroad dogs and their legendary adventures.",
+      "url": "https://www.eventbrite.com/e/dr-paul-koudounaris-a-history-of-railroad-dogs-tickets-1989882981564",
+      "start_date": "2026-07-07",
+      "start_time": "17:30",
+      "end_date": "2026-07-07",
+      "end_time": "19:00",
+      "timezone": "America/Los_Angeles",
+      "is_online_event": false,
+      "status": "live",
+      "is_cancelled": null,
+      "tags": [
+        {
+          "prefix": "EventbriteSubCategory",
+          "tag": "EventbriteSubCategory/13010",
+          "display_name": "Historic"
+        },
+        {
+          "prefix": "EventbriteCategory",
+          "tag": "EventbriteCategory/113",
+          "display_name": "Community & Culture",
+          "localized": {
+            "display_name": "Community & Culture"
+          }
+        }
+      ],
+      "_type": "destination_event",
+      "tickets_by": "Eventbrite",
+      "tickets_url": "https://www.eventbrite.com/checkout-external?eid=1989882981564",
+      "hide_end_date": false,
+      "language": "en-us",
+      "published": "2026-05-19T02:34:59Z",
+      "series_id": null,
+      "primary_venue": {
+        "_type": "destination_venue",
+        "id": "297807012",
+        "name": "Santa Cruz Museum of Art & History",
+        "address": {
+          "address_1": "705 Front Street",
+          "address_2": "",
+          "city": "Santa Cruz",
+          "region": "CA",
+          "postal_code": "95060",
+          "country": "US",
+          "latitude": "36.97456749999999",
+          "longitude": "-122.0253376",
+          "localized_address_display": "705 Front Street, Santa Cruz, CA 95060",
+          "localized_area_display": "Santa Cruz, CA"
+        }
+      },
+      "primary_organizer": {
+        "_type": "destination_profile",
+        "id": "13583504567",
+        "name": "MAH",
+        "profile_type": "organizer",
+        "num_upcoming_events": null
+      },
+      "ticket_availability": {
+        "maximum_ticket_price": {
+          "currency": "USD",
+          "major_value": "0.00",
+          "value": 0,
+          "display": "0.00 USD"
+        },
+        "minimum_ticket_price": {
+          "currency": "USD",
+          "major_value": "0.00",
+          "value": 0,
+          "display": "0.00 USD"
+        },
+        "is_free": true,
+        "has_bogo_tickets": false,
+        "has_available_tickets": true,
+        "is_sold_out": false
+      },
+      "image": {
+        "id": "1184907102",
+        "url": "https://img.evbuc.com/https%3A%2F%2Fcdn.evbuc.com%2Fimages%2F1184907102%2F18014584513%2F1%2Foriginal.20260519-023324?crop=focalpoint&fit=crop&auto=format%2Ccompress&q=75&sharp=10&fp-x=0.336&fp-y=1.0&s=909ab7543bee97ab2b9d095e4941ccd3",
+        "aspect_ratio": "1.125"
+      }
+    }
+  ],
+  "pagination": {
+    "object_count": 2,
+    "continuation": null,
+    "page_count": 1,
+    "page_size": 2,
+    "has_more_items": false,
+    "page_number": 1
+  }
+}

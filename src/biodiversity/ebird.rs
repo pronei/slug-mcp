@@ -453,6 +453,98 @@ mod tests {
         assert!(out.contains("nearest first"));
     }
 
+    const EBIRD_OBS_FIXTURE: &str = include_str!("fixtures/ebird_recent_obs.json");
+    const EBIRD_HOTSPOTS_FIXTURE: &str = include_str!("fixtures/ebird_hotspots.json");
+
+    #[test]
+    fn parse_obs_fixture_and_map() {
+        // eBird omits howMany when the checklist reported "X" (present, count
+        // unknown) — the second record exercises that.
+        let raw: Vec<EBirdObs> = serde_json::from_str(EBIRD_OBS_FIXTURE).unwrap();
+        assert_eq!(raw.len(), 3);
+        let obs: Vec<Observation> = raw.into_iter().map(to_observation).collect();
+
+        assert_eq!(obs[0].common_name.as_deref(), Some("Brown Pelican"));
+        assert_eq!(obs[0].count, Some(14));
+        assert_eq!(
+            obs[0].url.as_deref(),
+            Some("https://ebird.org/species/brnpel")
+        );
+        assert_eq!(obs[0].iconic_taxon.as_deref(), Some("Aves"));
+
+        // Missing howMany → count None → no "individual(s)" segment.
+        assert_eq!(obs[1].common_name.as_deref(), Some("Western Gull"));
+        assert!(obs[1].count.is_none());
+        let out = format_recent(&obs, "test", "in test");
+        assert!(out.contains("**Western Gull**"));
+        assert!(!out.contains("**Western Gull** (_Larus occidentalis_) \u{00b7} 0 individual"));
+    }
+
+    #[test]
+    fn parse_hotspots_fixture_missing_optional_fields() {
+        // Hotspots that have never been birded omit latestObsDt and
+        // numSpeciesAllTime.
+        let raw: Vec<EBirdHotspot> = serde_json::from_str(EBIRD_HOTSPOTS_FIXTURE).unwrap();
+        assert_eq!(raw.len(), 3);
+        let new_pond = &raw[2];
+        assert!(new_pond.latest_obs_dt.is_none());
+        assert!(new_pond.num_species_all_time.is_none());
+
+        let spots: Vec<Hotspot> = raw
+            .into_iter()
+            .map(|h| Hotspot {
+                loc_id: h.loc_id,
+                name: h.loc_name,
+                lat: h.lat,
+                lon: h.lng,
+                country_code: h.country_code,
+                subnational1_code: h.subnational1_code,
+                subnational2_code: h.subnational2_code,
+                latest_obs_dt: h.latest_obs_dt,
+                num_species_all_time: h.num_species_all_time,
+            })
+            .collect();
+        let out = format_hotspots(&spots, "Santa Cruz County", "in Santa Cruz County");
+        assert!(out.contains("Natural Bridges SB"));
+        assert!(out.contains("285 species all-time"));
+        // The never-birded hotspot renders without the species/last-obs segments.
+        assert!(
+            out.contains("**Brand-new Pond (no checklists yet)** \u{00b7} `L9999991` \u{00b7} (")
+        );
+    }
+
+    #[test]
+    fn empty_array_is_ok_but_error_json_is_not() {
+        // eBird returns 200 with [] for no data…
+        let empty: Vec<EBirdObs> = serde_json::from_str("[]").unwrap();
+        assert!(empty.is_empty());
+
+        // …but error envelopes are an object with an `errors` array — that
+        // must fail the Vec parse (surfaced as a contextual Err), never be
+        // silently treated as zero observations.
+        let error_body =
+            r#"{"errors":[{"code":"error.bad_request","title":"Invalid parameter value"}]}"#;
+        assert!(serde_json::from_str::<Vec<EBirdObs>>(error_body).is_err());
+    }
+
+    #[test]
+    fn truncated_obs_json_errors_gracefully() {
+        let cut = &EBIRD_OBS_FIXTURE[..EBIRD_OBS_FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<Vec<EBirdObs>>(cut).is_err());
+    }
+
+    #[test]
+    fn obs_missing_required_field_errors() {
+        // A record without comName is malformed — clear serde error.
+        let body = r#"[{"speciesCode": "brnpel", "sciName": "Pelecanus occidentalis",
+                       "locName": "X", "obsDt": "2026-07-06"}]"#;
+        let err = serde_json::from_str::<Vec<EBirdObs>>(body)
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("comName"), "got: {err}");
+    }
+
     #[test]
     fn format_hotspots_renders() {
         let spots = vec![Hotspot {

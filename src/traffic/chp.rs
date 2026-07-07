@@ -260,4 +260,72 @@ mod tests {
             "expected to find the Sr17 Summit entry"
         );
     }
+
+    #[test]
+    fn unclosed_tag_xml_errors_gracefully() {
+        // Truncated mid-download: unclosed <Log> element.
+        let cut = &FIXTURE[..FIXTURE.len() / 2];
+        let err = parse_sc_incidents(cut).unwrap_err().to_string();
+        assert!(err.contains("parsing CHP XML"), "got: {err}");
+    }
+
+    #[test]
+    fn feed_without_gghb_center_is_empty() {
+        // Other comm centers only — no GGHB/MYCC means no SC incidents,
+        // not an error.
+        let xml = r#"<?xml version="1.0" ?>
+<State>
+<Center ID = "SAHB">
+<Dispatch ID = "SACC">
+<Log ID = "260707SA0015">
+    <LogTime>"Jul  7 2026 12:18AM"</LogTime>
+    <LogType>"FIRE-Report of Fire"</LogType>
+    <Location>"Hillsdale Blvd"</Location>
+    <LocationDesc>""</LocationDesc>
+    <Area>"North Sac"</Area>
+    <LATLON>"38672378:121356592"</LATLON>
+</Log>
+</Dispatch>
+</Center>
+</State>"#;
+        let incidents = parse_sc_incidents(xml).unwrap();
+        assert!(incidents.is_empty());
+    }
+
+    #[test]
+    fn empty_dispatch_is_empty_not_error() {
+        // MYCC present but with no Log children — `default` on `logs` kicks in.
+        let xml = r#"<?xml version="1.0" ?>
+<State>
+<Center ID = "GGHB">
+<Dispatch ID = "MYCC">
+</Dispatch>
+</Center>
+</State>"#;
+        let incidents = parse_sc_incidents(xml).unwrap();
+        assert!(incidents.is_empty());
+    }
+
+    #[test]
+    fn log_missing_optional_elements_defaults_empty() {
+        // CHP occasionally omits detail elements — every text field defaults
+        // to "" instead of failing the whole feed.
+        let xml = r#"<?xml version="1.0" ?>
+<State>
+<Center ID = "GGHB">
+<Dispatch ID = "MYCC">
+<Log ID = "260707MY0001">
+    <LogType>"1183-Trfc Collision-Unkn Inj"</LogType>
+    <Area>"Santa Cruz"</Area>
+</Log>
+</Dispatch>
+</Center>
+</State>"#;
+        let incidents = parse_sc_incidents(xml).unwrap();
+        assert_eq!(incidents.len(), 1);
+        assert_eq!(incidents[0].log_type, "1183-Trfc Collision-Unkn Inj");
+        assert_eq!(incidents[0].log_time, "");
+        assert_eq!(incidents[0].location, "");
+        assert_eq!(incidents[0].latlon, "");
+    }
 }

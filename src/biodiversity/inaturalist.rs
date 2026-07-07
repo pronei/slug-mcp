@@ -54,8 +54,11 @@ pub(super) async fn fetch_inaturalist(
     }
     let body: InatResponse = resp.json().await.context("parsing iNaturalist JSON")?;
 
-    Ok(body
-        .results
+    Ok(to_observations(body))
+}
+
+fn to_observations(resp: InatResponse) -> Vec<Observation> {
+    resp.results
         .into_iter()
         .map(|r| Observation {
             common_name: r
@@ -70,7 +73,7 @@ pub(super) async fn fetch_inaturalist(
             iconic_taxon: r.taxon.and_then(|t| t.iconic_taxon_name),
             count: None,
         })
-        .collect())
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -147,4 +150,84 @@ pub(super) fn format_species(
         now_pacific().format("%-I:%M %p")
     ));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INAT_FIXTURE: &str = include_str!("fixtures/inat_observations.json");
+
+    #[test]
+    fn parse_live_fixture_and_map() {
+        // Trimmed live capture (2026-07-07): genus-level record has a null
+        // preferred_common_name; one record omits place_guess/photos entirely.
+        let resp: InatResponse = serde_json::from_str(INAT_FIXTURE).unwrap();
+        let obs = to_observations(resp);
+        assert_eq!(obs.len(), 3);
+
+        // Null common name → scientific name only.
+        assert!(obs[0].common_name.is_none());
+        assert_eq!(obs[0].scientific_name.as_deref(), Some("Anthopleura"));
+        assert_eq!(obs[0].iconic_taxon.as_deref(), Some("Animalia"));
+        assert_eq!(obs[0].observer.as_deref(), Some("marusya12"));
+        assert_eq!(
+            obs[0].url.as_deref(),
+            Some("https://www.inaturalist.org/observations/378981231")
+        );
+
+        // Missing place_guess key → location None; parse still succeeds.
+        assert!(obs[1].location.is_none());
+        assert_eq!(obs[1].common_name.as_deref(), Some("Oleander Aphid"));
+
+        assert_eq!(obs[2].common_name.as_deref(), Some("Acorn Woodpecker"));
+        assert_eq!(
+            obs[2].location.as_deref(),
+            Some("Red Hill Rd, Santa Cruz, CA, US")
+        );
+    }
+
+    #[test]
+    fn format_species_renders_null_common_name_as_scientific() {
+        let resp: InatResponse = serde_json::from_str(INAT_FIXTURE).unwrap();
+        let obs = to_observations(resp);
+        let out = format_species(&obs, 36.9741, -122.0308, 25.0, 30);
+        assert!(out.contains("_Anthopleura_"));
+        assert!(out.contains("**Oleander Aphid**"));
+        assert!(out.contains("@sbatory"));
+        assert!(out.contains("3 observations."));
+    }
+
+    #[test]
+    fn format_species_empty_message() {
+        let out = format_species(&[], 36.9741, -122.0308, 25.0, 30);
+        assert!(out.contains("No iNaturalist observations found"));
+    }
+
+    #[test]
+    fn missing_results_key_defaults_empty() {
+        // Unknown envelope without `results` (e.g. an error body that still
+        // returns 200) degrades to zero observations, not a parse failure.
+        let resp: InatResponse =
+            serde_json::from_str(r#"{"error": "Internal Server Error", "status": 500}"#).unwrap();
+        assert!(to_observations(resp).is_empty());
+    }
+
+    #[test]
+    fn truncated_json_errors_gracefully() {
+        let cut = &INAT_FIXTURE[..INAT_FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<InatResponse>(cut).is_err());
+    }
+
+    #[test]
+    fn observation_missing_uri_errors() {
+        // uri is the one required field — its absence is malformed data and
+        // fails the parse with a clear serde message.
+        let body = r#"{"results": [{"observed_on": "2026-07-06"}]}"#;
+        let err = serde_json::from_str::<InatResponse>(body)
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("uri"), "got: {err}");
+    }
 }

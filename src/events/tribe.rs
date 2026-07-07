@@ -257,6 +257,57 @@ mod tests {
     }
 
     #[test]
+    fn wp_json_error_envelope_errors_gracefully() {
+        // WordPress REST errors are a bare {code, message, data} object with
+        // no `events` key — deserialization must fail cleanly (missing field),
+        // never panic or produce a phantom empty response.
+        let body = r#"{
+            "code": "rest_no_route",
+            "message": "No route was found matching the URL and request method.",
+            "data": { "status": 404 }
+        }"#;
+        let err = serde_json::from_str::<TribeEventsResponse>(body)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("events"), "got: {err}");
+    }
+
+    #[test]
+    fn empty_events_page_parses() {
+        // A search with no hits still returns the envelope with events: [].
+        let body = r#"{"events": [], "total": 0, "total_pages": 0}"#;
+        let resp: TribeEventsResponse = serde_json::from_str(body).unwrap();
+        assert!(resp.events.is_empty());
+        assert_eq!(resp.total, 0);
+    }
+
+    #[test]
+    fn truncated_json_errors_gracefully() {
+        let cut = &TRIBE_FIXTURE[..TRIBE_FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<TribeEventsResponse>(cut).is_err());
+    }
+
+    #[test]
+    fn event_missing_venue_key_errors() {
+        // The live API always sends `venue` ([] when absent); if the key ever
+        // disappears the parse fails with a clear missing-field error rather
+        // than fabricating a venue.
+        let body = r#"{
+            "events": [{
+                "id": 3, "title": "No venue key", "description": null,
+                "url": "https://e/3", "start_date": "2026-06-12 10:00:00",
+                "end_date": "2026-06-12 12:00:00", "all_day": false, "cost": null,
+                "organizer": [], "categories": [], "tags": []
+            }],
+            "total": 1, "total_pages": 1
+        }"#;
+        let err = serde_json::from_str::<TribeEventsResponse>(body)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("venue"), "got: {err}");
+    }
+
+    #[test]
     fn event_with_single_venue_object() {
         // The single-object shape still works (the common case).
         let json = r#"{

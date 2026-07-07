@@ -242,15 +242,26 @@ async fn fetch_and_parse(
     }
 
     let body = resp.text().await?;
+    parse_features(&body, category, lat, lon, limit)
+}
 
-    // Overpass sometimes returns 200 with an error message in the body
+/// Parse an Overpass response body into distance-sorted features. Detects the
+/// in-body error signatures Overpass returns with HTTP 200 (JSON `remark`) or
+/// as an HTML error page.
+fn parse_features(
+    body: &str,
+    category: &str,
+    lat: f64,
+    lon: f64,
+    limit: u32,
+) -> Result<Vec<Feature>> {
     if body.contains("runtime error:") || body.contains("Dispatcher_Client") {
         bail!(
             "Overpass API server is busy or timed out. Try again shortly or reduce the search radius."
         );
     }
 
-    let parsed: OverpassResponse = serde_json::from_str(&body)?;
+    let parsed: OverpassResponse = serde_json::from_str(body)?;
 
     let mut features: Vec<Feature> = parsed
         .elements
@@ -642,5 +653,96 @@ mod tests {
         for cat in VALID_CATEGORIES {
             assert!(validate_category(cat).is_ok());
         }
+    }
+
+    const OVERPASS_MIXED: &str = include_str!("fixtures/overpass_mixed.json");
+    const OVERPASS_RUNTIME_ERROR_HTML: &str = include_str!("fixtures/overpass_runtime_error.html");
+    const OVERPASS_REMARK_ERROR: &str = include_str!("fixtures/overpass_remark_error.json");
+
+    #[test]
+    fn parse_mixed_elements_sorted_by_distance() {
+        // Node with coords, way with center, node without name, and a way
+        // missing its center (dropped) — mixed shapes in one response.
+        let features = parse_features(OVERPASS_MIXED, "trails", 36.9741, -122.0308, 20).unwrap();
+        // The center-less "Orphan Segment" way is dropped.
+        assert_eq!(features.len(), 3);
+        assert!(
+            !features
+                .iter()
+                .any(|f| f.name.as_deref() == Some("Orphan Segment"))
+        );
+        // Sorted nearest-first from the query point.
+        let d: Vec<f64> = features
+            .iter()
+            .map(|f| haversine_km(36.9741, -122.0308, f.lat, f.lon))
+            .collect();
+        assert!(d[0] <= d[1] && d[1] <= d[2], "not sorted: {:?}", d);
+        // Way center coordinates are used for ways.
+        let path = features
+            .iter()
+            .find(|f| f.name.as_deref() == Some("West Cliff Path"))
+            .unwrap();
+        assert_eq!(path.category, "footway");
+        assert!(
+            path.extra_tags
+                .iter()
+                .any(|(k, v)| k == "surface" && v == "paved")
+        );
+    }
+
+    #[test]
+    fn parse_mixed_respects_limit() {
+        let features = parse_features(OVERPASS_MIXED, "trails", 36.9741, -122.0308, 1).unwrap();
+        assert_eq!(features.len(), 1);
+    }
+
+    #[test]
+    fn runtime_error_html_body_is_detected() {
+        // Live capture: overpass-api.de returns this HTML (with HTTP 504) when
+        // the dispatcher is overloaded — must become a busy/timed-out Err that
+        // search() converts to a friendly retry message, never a serde panic.
+        let err = parse_features(OVERPASS_RUNTIME_ERROR_HTML, "peaks", 36.9741, -122.0308, 5)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("busy or timed out"), "got: {err}");
+    }
+
+    #[test]
+    fn remark_runtime_error_json_is_detected() {
+        // Overpass also returns HTTP 200 JSON with a `remark` runtime error.
+        let err = parse_features(OVERPASS_REMARK_ERROR, "peaks", 36.9741, -122.0308, 5)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("busy or timed out"), "got: {err}");
+    }
+
+    #[test]
+    fn empty_elements_is_ok_and_formats_no_results() {
+        let features = parse_features(
+            r#"{"version":0.6,"elements":[]}"#,
+            "peaks",
+            36.9741,
+            -122.0308,
+            20,
+        )
+        .unwrap();
+        assert!(features.is_empty());
+        let out = format_output("peaks", &features, 36.9741, -122.0308, 5000, 20);
+        assert!(out.contains("No peaks found within 5.0 km"));
+    }
+
+    #[test]
+    fn truncated_json_errors_gracefully() {
+        let cut = &OVERPASS_MIXED[..OVERPASS_MIXED.len() / 2];
+        assert!(parse_features(cut, "trails", 36.9741, -122.0308, 20).is_err());
+    }
+
+    #[test]
+    fn tags_only_node_without_coords_is_dropped() {
+        // `out tags` verbosity omits node coordinates entirely — such elements
+        // parse fine but can't be placed, so they are silently dropped.
+        let body = r#"{"elements":[{"type":"node","id":42,"tags":{"natural":"peak","name":"Ghost Peak"}}]}"#;
+        let features = parse_features(body, "peaks", 36.9741, -122.0308, 20).unwrap();
+        assert!(features.is_empty());
     }
 }

@@ -1,0 +1,106 @@
+{
+  "data": {
+    "areas": [
+      {
+        "area_name": "Castle Rock Area",
+        "totalClimbs": 49,
+        "metadata": {
+          "lat": 34.23148541666667,
+          "lng": -116.9619775
+        },
+        "pathTokens": [
+          "USA",
+          "California",
+          "San Bernardino Mountains",
+          "Big Bear Lake Area",
+          "Big Bear South",
+          "Highway 18 Crags",
+          "Castle Rock Area"
+        ],
+        "children": [
+          {
+            "area_name": "Camelot Crag",
+            "totalClimbs": 2
+          },
+          {
+            "area_name": "Castle Rock",
+            "totalClimbs": 37
+          },
+          {
+            "area_name": "Castle Rock Boulders",
+            "totalClimbs": 2
+          },
+          {
+            "area_name": "Castle Rock Slab",
+            "totalClimbs": 8
+          }
+        ],
+        "climbs": []
+      },
+      {
+        "area_name": "(a) Castle Rock - Southwest Face",
+        "totalClimbs": 6,
+        "metadata": {
+          "lat": 34.23117,
+          "lng": -116.96156
+        },
+        "pathTokens": [
+          "USA",
+          "California",
+          "San Bernardino Mountains",
+          "Big Bear Lake Area",
+          "Big Bear South",
+          "Highway 18 Crags",
+          "Castle Rock Area",
+          "Castle Rock",
+          "(a) Castle Rock - Southwest Face"
+        ],
+        "children": [],
+        "climbs": [
+          {
+            "name": "Ball and Chain",
+            "grades": {
+              "yds": "5.9+"
+            },
+            "type": {
+              "sport": true,
+              "trad": null,
+              "bouldering": null,
+              "tr": null
+            },
+            "fa": "(TR) Unknown, FL: Gary Henning & Brent Webster, 1997",
+            "length": -1
+          },
+          {
+            "name": "Cryptology",
+            "grades": {
+              "yds": "5.10b"
+            },
+            "type": {
+              "sport": true,
+              "trad": null,
+              "bouldering": null,
+              "tr": null
+            },
+            "fa": "Craig Britton & Chris Miller, September 2011",
+            "length": -1
+          },
+          {
+            "name": "The Sphynx",
+            "grades": {
+              "yds": "5.6"
+            },
+            "type": {
+              "sport": null,
+              "trad": true,
+              "bouldering": null,
+              "tr": null
+            },
+            "fa": "Old School",
+            "length": -1
+          }
+        ]
+      }
+    ]
+  }
+}

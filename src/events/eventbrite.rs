@@ -503,6 +503,81 @@ mod tests {
         );
     }
 
+    const DESTINATION_FIXTURE: &str = include_str!("fixtures/eventbrite_destination.json");
+    const DISCOVER_SNIPPET: &str = include_str!("fixtures/eventbrite_discover_snippet.html");
+
+    #[test]
+    fn parse_live_destination_fixture() {
+        // Trimmed live capture (2026-07-07): is_cancelled comes back null,
+        // prices are objects with display/major_value/currency, venue nests
+        // address with localized_address_display.
+        let resp: DestinationResponse = serde_json::from_str(DESTINATION_FIXTURE).unwrap();
+        assert_eq!(resp.events.len(), 2);
+        let pg = resp.pagination.as_ref().unwrap();
+        assert_eq!(pg.object_count, Some(2));
+        assert_eq!(pg.has_more_items, Some(false));
+
+        let ev = &resp.events[0];
+        assert_eq!(ev.name, "True Love Christian Festival");
+        assert!(ev.is_cancelled.is_none());
+        assert_eq!(ev.is_online_event, Some(false));
+        assert_eq!(
+            ev.primary_venue.as_ref().unwrap().name.as_deref(),
+            Some("Aptos Village County Park")
+        );
+        assert_eq!(ev.ticket_availability.as_ref().unwrap().is_free, Some(true));
+
+        let summary = ev.format_summary();
+        assert!(summary.contains("## True Love Christian Festival"));
+        assert!(summary.contains("**When**: Jul 18, 2026 10:00 AM to 4:30 PM"));
+        assert!(summary.contains(
+            "**Where**: Aptos Village County Park (100 Aptos Creek Road, Aptos, CA 95003)"
+        ));
+        assert!(summary.contains("**Cost**: Free"));
+        assert!(summary.contains("**Category**: Christianity, Religion & Spirituality"));
+    }
+
+    #[test]
+    fn extract_event_ids_from_live_discover_snippet() {
+        // Real anchor markup from the live discover page — primary
+        // data-event-id selector, de-duplicated, in DOM order.
+        let ids = extract_event_ids(DISCOVER_SNIPPET);
+        assert_eq!(ids, vec!["1989905245155", "1989882981564", "1992176293923"]);
+    }
+
+    #[test]
+    fn destination_empty_events_is_ok() {
+        let resp: DestinationResponse =
+            serde_json::from_str(r#"{"events": [], "pagination": null}"#).unwrap();
+        assert!(resp.events.is_empty());
+        assert!(resp.pagination.is_none());
+    }
+
+    #[test]
+    fn destination_truncated_json_errors() {
+        let cut = &DESTINATION_FIXTURE[..DESTINATION_FIXTURE.len() / 2];
+        assert!(serde_json::from_str::<DestinationResponse>(cut).is_err());
+    }
+
+    #[test]
+    fn destination_event_missing_name_errors() {
+        // id/name/url are load-bearing — an event without them is a parse
+        // error (surfaced as a contextual Err), not a silent placeholder.
+        let body = r#"{"events": [{"id": "123", "url": "https://x"}]}"#;
+        let err = serde_json::from_str::<DestinationResponse>(body)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("name"), "got: {err}");
+    }
+
+    #[test]
+    fn extract_event_ids_empty_page_is_empty() {
+        // A page with no event anchors (bot-block interstitial, empty city)
+        // yields no ids — search_events() then returns Ok(vec![]).
+        let ids = extract_event_ids("<html><body><h1>No events</h1></body></html>");
+        assert!(ids.is_empty());
+    }
+
     #[test]
     fn test_format_summary() {
         let event = Event {

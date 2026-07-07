@@ -278,3 +278,93 @@ fn write_caltrans_body(out: &mut String, closures: &[&LaneClosure]) {
         ));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn closure(delay: &str, indefinite: bool) -> LaneClosure {
+        LaneClosure {
+            closure_id: "C1SC".to_string(),
+            route: "SR-1".to_string(),
+            direction: "North / South".to_string(),
+            county: "Santa Cruz".to_string(),
+            nearby_place: "Davenport".to_string(),
+            location_name: "Swanton Road".to_string(),
+            free_form: String::new(),
+            type_of_closure: "One-Way Traffic".to_string(),
+            type_of_work: "Emergency Work".to_string(),
+            lanes_closed: "1".to_string(),
+            total_lanes: "2".to_string(),
+            estimated_delay: delay.to_string(),
+            facility: "Conventional Hwy".to_string(),
+            start_date: "2026-07-06".to_string(),
+            start_time: "08:01:00".to_string(),
+            end_date: "2026-07-06".to_string(),
+            end_time: "18:01:00".to_string(),
+            end_indefinite: indefinite,
+        }
+    }
+
+    fn incident(location: &str, desc: &str) -> Incident {
+        Incident {
+            id: "260707MY0001".to_string(),
+            log_time: "Jul  7 2026  6:50AM".to_string(),
+            log_type: "1125-Traffic Hazard".to_string(),
+            location: location.to_string(),
+            location_desc: desc.to_string(),
+            area: "Santa Cruz".to_string(),
+            latlon: "37143411:121984839".to_string(),
+        }
+    }
+
+    #[test]
+    fn caltrans_delay_sentinels_are_suppressed() {
+        // Caltrans sends "Not Reported" and "0" — neither is a real delay.
+        for sentinel in ["Not Reported", "0", ""] {
+            let c = closure(sentinel, false);
+            let out = format_caltrans(&[&c], None, 1);
+            assert!(
+                !out.contains("min delay"),
+                "delay {sentinel:?} leaked:\n{out}"
+            );
+        }
+        let c = closure("15", false);
+        let out = format_caltrans(&[&c], None, 1);
+        assert!(out.contains("~15 min delay"));
+    }
+
+    #[test]
+    fn caltrans_indefinite_end_renders() {
+        let c = closure("3", true);
+        let out = format_caltrans(&[&c], None, 1);
+        assert!(out.contains("→ indefinite"));
+        assert!(out.contains("1/2 lanes closed"));
+    }
+
+    #[test]
+    fn caltrans_empty_filter_message() {
+        let out = format_caltrans(&[], Some("17"), 3);
+        assert!(out.contains("Route 17 (0 matched of 3"));
+        assert!(out.contains("No matching active Caltrans lane closures."));
+    }
+
+    #[test]
+    fn chp_location_desc_dedupe() {
+        // When LocationDesc duplicates Location it is not repeated in parens.
+        let same = incident("Sr17 N / Summit", "Sr17 N / Summit");
+        let out = format_chp(&[&same], None, 1);
+        assert!(out.contains("Sr17 N / Summit"));
+        assert!(!out.contains("(Sr17 N / Summit)"));
+
+        let diff = incident("Sr17 N / Summit", "NB 17 AT THE SUMMIT");
+        let out = format_chp(&[&diff], None, 1);
+        assert!(out.contains("Sr17 N / Summit (NB 17 AT THE SUMMIT)"));
+    }
+
+    #[test]
+    fn chp_empty_filter_message() {
+        let out = format_chp(&[], Some("9"), 2);
+        assert!(out.contains("No matching active CHP incidents."));
+    }
+}

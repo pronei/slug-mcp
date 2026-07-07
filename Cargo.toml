@@ -9,7 +9,7 @@ name = "slug-mcp"
 path = "src/main.rs"
 
 [dependencies]
-rmcp = { version = "1.7", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "2.1", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
@@ -37,15 +37,10 @@ chrono-tz = "0.10"
 chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
 base64 = "0.22"
-quick-xml = { version = "0.40", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 gtfs-realtime = "0.2"
 prost = "0.14"
 regex = "1"
-# Transitive pin (via reqwest → cookie_store → cookie 0.18.1): time 0.3.48 adds
-# a blanket impl that conflicts with cookie 0.18.1, breaking the build. Hold
-# time at 0.3.47 until cookie/cookie_store ship a compatible release. Remove
-# this line once `cargo update -p time` past 0.3.47 builds clean again.
-time = "=0.3.47"
 
 [features]
 default = ["auth"]

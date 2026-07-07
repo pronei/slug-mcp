@@ -247,7 +247,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get detailed nutrition facts for a specific menu item. Use the recipe ID from get_dining_menu output.")]
@@ -261,7 +261,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get UCSC dining location hours. Optionally filter by location name.")]
@@ -275,7 +275,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(hours)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(hours)]))
             }
 
             // ─── Events Tools ───
@@ -296,13 +296,13 @@ macro_rules! define_tools {
                     .map_err(internal_err)?;
 
                 if events.is_empty() {
-                    return Ok(CallToolResult::success(vec![Content::text(
+                    return Ok(CallToolResult::success(vec![ContentBlock::text(
                         "No events found matching your search.",
                     )]));
                 }
 
                 let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
-                Ok(CallToolResult::success(vec![Content::text(
+                Ok(CallToolResult::success(vec![ContentBlock::text(
                     formatted.join("\n---\n\n"),
                 )]))
             }
@@ -320,13 +320,13 @@ macro_rules! define_tools {
                     .map_err(internal_err)?;
 
                 if events.is_empty() {
-                    return Ok(CallToolResult::success(vec![Content::text(
+                    return Ok(CallToolResult::success(vec![ContentBlock::text(
                         "No upcoming events found.",
                     )]));
                 }
 
                 let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "# Upcoming UCSC Events\n\n{}",
                     formatted.join("\n---\n\n")
                 ))]))
@@ -348,13 +348,13 @@ macro_rules! define_tools {
                     .map_err(internal_err)?;
 
                 if events.is_empty() {
-                    return Ok(CallToolResult::success(vec![Content::text(
+                    return Ok(CallToolResult::success(vec![ContentBlock::text(
                         "No Eventbrite events found matching your search near Santa Cruz.",
                     )]));
                 }
 
                 let formatted: Vec<String> = events.iter().map(|e| e.format_summary()).collect();
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "# Eventbrite Events near Santa Cruz\n\n{}",
                     formatted.join("\n---\n\n")
                 ))]))
@@ -373,7 +373,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get the schedule for a specific UCSC recreation facility. Use the facility UUID from get_facility_occupancy output.")]
@@ -387,7 +387,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get UCSC group exercise class schedule (Spring 2026). Classes include yoga, pilates, cycling, kickboxing, Zumba, conditioning, and self-defense. Filter by day of week and/or class name.")]
@@ -401,7 +401,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Library Tools ───
@@ -417,7 +417,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Academics Tools ───
@@ -444,7 +444,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Search the UCSC campus directory for people or departments. Find faculty/staff contact info, office locations, and emails.")]
@@ -458,7 +458,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Degree Planner Tools ───
@@ -474,7 +474,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Check progress toward completing a UCSC degree. Provide your program and list of completed courses to see which requirements are satisfied vs remaining. Handles all selection rules (all-of, one-of, either-or). Checks GE progress for undergrad programs.")]
@@ -492,7 +492,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Transit Tools ───
@@ -508,7 +508,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes via the BusTime bulletin API (requires key). Specify a route number or stop ID. Prefer `get_system_service_alerts` for general 'are there alerts?' questions — it covers the same bulletins via GTFS-RT with no API key. Use this tool only when you need BusTime-specific per-route or per-stop filtering at the API level.")]
@@ -522,7 +522,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get system-wide Santa Cruz Metro service alerts via the GTFS-RT alerts feed. No API key required, covers all active alerts across the system.")]
@@ -532,7 +532,7 @@ macro_rules! define_tools {
                     .get_system_alerts()
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get live Santa Cruz Metro bus positions via the GTFS-RT vehicles feed. Shows lat/lon, speed, and occupancy for active buses. Optionally filter by route. No API key required.")]
@@ -545,7 +545,7 @@ macro_rules! define_tools {
                     .get_vehicle_positions(req.route.as_deref())
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get per-route delay statistics for Santa Cruz Metro via GTFS-RT trip updates. Shows average and max delay per route across all currently-active trips. Optionally filter by route. No API key required.")]
@@ -558,7 +558,7 @@ macro_rules! define_tools {
                     .get_route_delays(req.route.as_deref())
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Weather Tools ───
@@ -575,13 +575,13 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get active NOAA NWS weather alerts for Santa Cruz coastal (CAZ529) and mountain (CAZ512) public forecast zones. Covers high-wind, flood, winter storm, fire-weather, marine, and other watch/warning/advisory events.")]
             async fn get_weather_alerts(&self) -> Result<CallToolResult, ErrorData> {
                 let result = self.weather.get_alerts().await.map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Marine / Surf Tools ───
@@ -601,7 +601,7 @@ macro_rules! define_tools {
                     )
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get the full Open-Meteo marine forecast (next 12 hourly timesteps) for a named Santa Cruz surf spot or custom lat/lon. Includes wave height, period, direction, and swell components. Useful for planning surf or water activities further out than the 'now' snapshot.")]
@@ -614,7 +614,7 @@ macro_rules! define_tools {
                     .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Air Quality Tools ───
@@ -629,7 +629,7 @@ macro_rules! define_tools {
                     .get_current(req.zip_code.as_deref(), req.distance_miles)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Biodiversity Tools ───
@@ -652,7 +652,7 @@ macro_rules! define_tools {
                     )
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Search eBird for recent bird observations. Two query modes: \
@@ -673,7 +673,7 @@ macro_rules! define_tools {
                     .search_birds(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get eBird observations for a specific historic date in a region. Closes the 30-day rolling window of `search_bird_observations`. \
@@ -692,7 +692,7 @@ macro_rules! define_tools {
                     .get_historic_birds(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "List eBird birding hotspots — sites with documented bird activity. \
@@ -711,7 +711,7 @@ macro_rules! define_tools {
                     .get_bird_hotspots(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Find the nearest recent eBird sightings of a specific species from a coordinate. \
@@ -729,7 +729,7 @@ macro_rules! define_tools {
                     .find_nearest_bird(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── USGS Stream / Water Tools ───
@@ -747,7 +747,7 @@ macro_rules! define_tools {
                     )
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Wave Buoy (CDIP) Tools ───
@@ -762,7 +762,7 @@ macro_rules! define_tools {
                     .get_wave_data(req.stations.as_deref())
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Buoy Tools ───
@@ -777,7 +777,7 @@ macro_rules! define_tools {
                     .get_observations(req.station.as_deref())
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Tide Tools ───
@@ -792,7 +792,7 @@ macro_rules! define_tools {
                     .get_tides(req.station.as_deref(), req.days)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Fire Detection Tools ───
@@ -808,7 +808,7 @@ macro_rules! define_tools {
                     .get_detections(days)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Traffic Tools ───
@@ -823,7 +823,7 @@ macro_rules! define_tools {
                     .get_chp_incidents(req.route.as_deref())
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get active Caltrans District 5 lane closures in Santa Cruz County, including planned and emergency closures. Optionally filter by route number (e.g. '1', '9', '17').")]
@@ -836,7 +836,7 @@ macro_rules! define_tools {
                     .get_lane_closures(req.route.as_deref())
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get a combined Santa Cruz County traffic summary: active CHP incidents plus Caltrans D5 lane closures, fetched in parallel. If one source is unavailable, the other is still rendered with a warning. Use this for 'should I drive Hwy 17 right now?' style questions.")]
@@ -849,7 +849,7 @@ macro_rules! define_tools {
                     .get_traffic_summary(req.route.as_deref())
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Classroom Tools ───
@@ -872,7 +872,7 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Astronomy / Sun & Moon Tools ───
@@ -887,7 +887,7 @@ macro_rules! define_tools {
                     .get_sun_moon(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Space Weather Tools ───
@@ -902,7 +902,7 @@ macro_rules! define_tools {
                     .get_summary()
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Summer Session Tools ───
@@ -917,7 +917,7 @@ macro_rules! define_tools {
                     .get_deadlines(req.session.as_deref(), req.upcoming_only.unwrap_or(false))
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Outdoors / OSM Tools ───
@@ -932,7 +932,7 @@ macro_rules! define_tools {
                     .search(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Climbing Tools ───
@@ -947,7 +947,7 @@ macro_rules! define_tools {
                     .search_routes(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Earthquake Tools ───
@@ -968,7 +968,7 @@ macro_rules! define_tools {
                     .get_earthquakes(lat, lon, radius, min_mag, days, limit)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Beach Water Quality Tools ───
@@ -983,7 +983,7 @@ macro_rules! define_tools {
                     .get_beach_water_quality(req.beach.as_deref(), req.days)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── National Park Service Tools ───
@@ -998,7 +998,7 @@ macro_rules! define_tools {
                     .get_park_info(req.park_code.as_deref(), req.query.as_deref(), req.limit)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Air Quality Forecast Tools ───
@@ -1013,7 +1013,7 @@ macro_rules! define_tools {
                     .get_air_quality_forecast(req.lat, req.lon, req.days)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Ocean / Upwelling Tools ───
@@ -1028,7 +1028,7 @@ macro_rules! define_tools {
                     .get_upwelling_indices(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get a snapshot from the MBARI M1 mooring at the mouth of Monterey Bay (36.75°N, 122.03°W, ~480 m depth). Returns surface sea water temperature, sonic-anemometer wind speed/direction with equatorward (upwelling-favorable) component, and optionally a full water-column temperature profile with stratification index. Data latency is typically ~24h. QC: only QARTOD-pass values (qc_agg=1) are shown. Source: CeNCOOS/Axiom ERDDAP dataset org_mbari_m1.")]
@@ -1041,7 +1041,7 @@ macro_rules! define_tools {
                     .get_m1_water_column(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get live in-situ water quality from the UCSC Santa Cruz Municipal Wharf (36.96°N, 122.02°W). Returns temperature, salinity, pH, chlorophyll-a, dissolved oxygen, and turbidity with trends. 5-minute cadence, freshest in-bay station. The Kudela Lab (UCSC) collects weekly Pseudo-nitzschia counts here — this is the HAB ground-truth station paired with C-HARM satellite forecasts. QC: QARTOD-pass only. Source: CeNCOOS/Axiom ERDDAP dataset edu_ucsc_scwharf1.")]
@@ -1054,7 +1054,7 @@ macro_rules! define_tools {
                     .get_sc_wharf_state(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get the California Harmful Algae Risk Mapping (C-HARM v3.1) forecast for Pseudo-nitzschia bloom probability, particulate domoic acid, and cellular domoic acid. Composes nowcast through 3-day forecast from 4 separate datasets. Also returns DINEOF gap-filled chlorophyll-a. Default location: Santa Cruz Wharf. Lon is auto-converted from Western convention (-122) to the 0-360 system C-HARM uses. Snaps to nearest non-NaN cell if the target is masked. Source: CoastWatch ERDDAP, Anderson et al. 2016.")]
@@ -1067,7 +1067,7 @@ macro_rules! define_tools {
                     .get_hab_risk_forecast(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get MUR SST (sea surface temperature) state for a bounding box. Returns mean/min/max SST, SST anomaly vs 2003-2014 climatology, and maximum thermal gradient (frontal detection). MUR v4.1 is L4 gap-filled (no cloud gaps). Default bbox covers Monterey Bay (36.5-37.2°N, 122.5-121.8°W). Stride controls resolution (2 = 0.02° default). Source: CoastWatch ERDDAP, JPL MUR v4.1.")]
@@ -1080,7 +1080,7 @@ macro_rules! define_tools {
                     .get_sst_state(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Get HF Radar surface current velocities for Monterey Bay. Returns bay-mean current speed and direction, u/v components, coverage percentage, and surface divergence (positive = upwelling-consistent). Resolution: '6km' (default, bay-scale) or '2km' (nearshore detail). Coverage is typically 55-65% — the Monterey Canyon creates radar shadow zones. QC: gross-range filter |u|,|v| < 2.0 m/s. Source: UCSD HFRNet via CoastWatch ERDDAP.")]
@@ -1093,7 +1093,7 @@ macro_rules! define_tools {
                     .get_hfradar_currents(&req)
                     .await
                     .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Fusion tools (composite ocean state) ───
@@ -1101,19 +1101,19 @@ macro_rules! define_tools {
             #[tool(description = "Monterey Bay upwelling state — fuses CUTI/BEUTI, M1 mooring, MUR SST, HF Radar, C-HARM HAB forecast, SC Wharf in-situ, eBird, and iNaturalist into a single causal-chain narrative. Covers physical forcing → ocean state → chemical response → biological indicators. Sources fetched concurrently; partial failures are noted but don't block the response.")]
             async fn monterey_bay_upwelling_state(&self, Parameters(req): Parameters<UpwellingStateRequest>) -> Result<CallToolResult, ErrorData> {
                 let result = self.ocean.monterey_bay_upwelling_state(&req).await.map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Monterey Bay HAB risk summary — C-HARM v3.1 Pseudo-nitzschia bloom forecast (nowcast through +3 day), cross-validated with SC Wharf in-situ chl-a and pH, SST context, and seabird indicators. Focused subset of the full upwelling state tool.")]
             async fn monterey_bay_hab_risk(&self, Parameters(req): Parameters<HabRiskRequest>) -> Result<CallToolResult, ErrorData> {
                 let result = self.ocean.monterey_bay_hab_risk(&req).await.map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             #[tool(description = "Monterey Bay research snapshot — machine-readable JSON of all ocean monitoring sources with a deterministic SHA-256 checksum for reproducibility. Same data as the narrative upwelling state tool but structured for programmatic consumption. Use strict=true to fail if any source is unavailable.")]
             async fn monterey_bay_research_snapshot(&self, Parameters(req): Parameters<ResearchSnapshotRequest>) -> Result<CallToolResult, ErrorData> {
                 let result = self.ocean.monterey_bay_research_snapshot(&req).await.map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![Content::text(result)]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
             // ─── Extra tools (auth or empty) ───
@@ -1132,11 +1132,11 @@ define_tools!({
     )]
     async fn login(&self) -> Result<CallToolResult, ErrorData> {
         match self.auth.login().await {
-            Ok(username) => Ok(CallToolResult::success(vec![Content::text(format!(
+            Ok(username) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "Successfully logged in as **{}**. Session valid for 8 hours.",
                 username
             ))])),
-            Err(e) => Ok(CallToolResult::success(vec![Content::text(format!(
+            Err(e) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "Browser login failed: {}. If the server is running on a remote or headless machine, \
                  use the `authenticate` tool with a token from `slug-mcp export-token` run on a machine with a browser.",
                 e
@@ -1166,7 +1166,7 @@ define_tools!({
 
         *self.session_auth.write().await = Some(session_data);
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Authenticated as **{}**. Session valid for {}h {}m.",
             username, hours, mins
         ))]))
@@ -1186,7 +1186,7 @@ define_tools!({
             let hours = remaining / 3600;
             let mins = (remaining % 3600) / 60;
 
-            return Ok(CallToolResult::success(vec![Content::text(format!(
+            return Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "Authenticated as **{}** (expires in {}h {}m) — via token",
                 data.username, hours, mins
             ))]));
@@ -1195,7 +1195,7 @@ define_tools!({
         // Fall back to disk-based session (stdio mode)
         let status = self.auth.check_auth().map_err(internal_err)?;
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             status.format(),
         )]))
     }
@@ -1207,7 +1207,7 @@ define_tools!({
         let session = match self.get_active_session().await {
             Some(s) => s,
             None => {
-                return Ok(CallToolResult::success(vec![Content::text(
+                return Ok(CallToolResult::success(vec![ContentBlock::text(
                     "You need to log in first. Call the `login` tool to authenticate.",
                 )]));
             }
@@ -1233,7 +1233,7 @@ define_tools!({
             ));
         }
 
-        Ok(CallToolResult::success(vec![Content::text(output)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(output)]))
     }
 });
 
@@ -1338,6 +1338,7 @@ impl ServerHandler for SlugMcpServer {
         };
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("slug-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions)
     }
 }

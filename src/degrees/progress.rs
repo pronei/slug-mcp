@@ -328,7 +328,11 @@ impl ProgressReport {
 impl SectionProgress {
     pub fn format(&self) -> String {
         let mut out = String::new();
-        let status = if self.satisfied { "COMPLETE" } else { "IN PROGRESS" };
+        let status = if self.satisfied {
+            "COMPLETE"
+        } else {
+            "IN PROGRESS"
+        };
         if !self.heading.is_empty() {
             let _ = writeln!(out, "## {} [{}]\n", self.heading, status);
         }
@@ -345,7 +349,11 @@ impl SubsectionProgress {
         if !self.heading.is_empty() {
             let satisfied_count = self.groups.iter().filter(|g| g.satisfied).count();
             let total = self.groups.len();
-            let _ = writeln!(out, "### {} ({}/{})\n", self.heading, satisfied_count, total);
+            let _ = writeln!(
+                out,
+                "### {} ({}/{})\n",
+                self.heading, satisfied_count, total
+            );
         }
         for group in &self.groups {
             out.push_str(&group.format());
@@ -358,7 +366,11 @@ impl GroupProgress {
     pub fn format(&self) -> String {
         let mut out = String::new();
         if let Some(heading) = self.heading.as_ref() {
-            let status = if self.satisfied { "SATISFIED" } else { "INCOMPLETE" };
+            let status = if self.satisfied {
+                "SATISFIED"
+            } else {
+                "INCOMPLETE"
+            };
             let _ = writeln!(out, "#### {} [{}]\n", heading, status);
         }
         for rule in &self.rules {
@@ -483,10 +495,8 @@ mod tests {
             alternative: None,
             description: None,
         };
-        let completed: HashSet<String> = ["CSE 12", "CSE 16"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let completed: HashSet<String> =
+            ["CSE 12", "CSE 16"].iter().map(|s| s.to_string()).collect();
         let progress = evaluate_rule(&rule, &completed);
         assert!(progress.satisfied);
         assert!(progress.remaining_courses.is_empty());
@@ -526,7 +536,12 @@ mod tests {
         let rule = CourseRule {
             rule_type: RuleType::NOf(2),
             heading: None,
-            courses: vec![course("CSE 101"), course("CSE 102"), course("CSE 103"), course("CSE 104")],
+            courses: vec![
+                course("CSE 101"),
+                course("CSE 102"),
+                course("CSE 103"),
+                course("CSE 104"),
+            ],
             alternative: None,
             description: None,
         };
@@ -624,20 +639,56 @@ mod tests {
     fn test_ge_progress() {
         let ge = GeRequirements {
             required: vec![
-                GeArea { code: "CC".into(), name: "Cross-Cultural Analysis".into(), credits: 5 },
-                GeArea { code: "ER".into(), name: "Ethnicity and Race".into(), credits: 5 },
+                GeArea {
+                    code: "CC".into(),
+                    name: "Cross-Cultural Analysis".into(),
+                    credits: 5,
+                },
+                GeArea {
+                    code: "ER".into(),
+                    name: "Ethnicity and Race".into(),
+                    credits: 5,
+                },
             ],
             perspectives: vec![
-                GeArea { code: "PE-E".into(), name: "Environmental".into(), credits: 5 },
-                GeArea { code: "PE-H".into(), name: "Human Behavior".into(), credits: 5 },
-                GeArea { code: "PE-T".into(), name: "Technology".into(), credits: 5 },
+                GeArea {
+                    code: "PE-E".into(),
+                    name: "Environmental".into(),
+                    credits: 5,
+                },
+                GeArea {
+                    code: "PE-H".into(),
+                    name: "Human Behavior".into(),
+                    credits: 5,
+                },
+                GeArea {
+                    code: "PE-T".into(),
+                    name: "Technology".into(),
+                    credits: 5,
+                },
             ],
             practice: vec![
-                GeArea { code: "PR-E".into(), name: "Collaborative".into(), credits: 2 },
-                GeArea { code: "PR-C".into(), name: "Creative".into(), credits: 2 },
-                GeArea { code: "PR-S".into(), name: "Service".into(), credits: 2 },
+                GeArea {
+                    code: "PR-E".into(),
+                    name: "Collaborative".into(),
+                    credits: 2,
+                },
+                GeArea {
+                    code: "PR-C".into(),
+                    name: "Creative".into(),
+                    credits: 2,
+                },
+                GeArea {
+                    code: "PR-S".into(),
+                    name: "Service".into(),
+                    credits: 2,
+                },
             ],
-            composition: GeArea { code: "C".into(), name: "Composition".into(), credits: 5 },
+            composition: GeArea {
+                code: "C".into(),
+                name: "Composition".into(),
+                credits: 5,
+            },
         };
 
         let completed = vec!["CC".to_string(), "PE-H".to_string(), "C".to_string()];

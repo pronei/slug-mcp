@@ -170,35 +170,74 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
         degrees: Arc::new(degrees::DegreeService::new(http.clone(), cache.clone())),
         dining: Arc::new(dining::DiningService::new(http.clone(), cache.clone())),
         events: Arc::new(events::EventsService::new(http.clone(), cache.clone())),
-        recreation: Arc::new(recreation::RecreationService::new(http.clone(), cache.clone())),
+        recreation: Arc::new(recreation::RecreationService::new(
+            http.clone(),
+            cache.clone(),
+        )),
         library: Arc::new(library::LibraryService::new(http.clone(), cache.clone())),
-        academics: Arc::new(academics::AcademicsService::new(http.clone(), cache.clone())),
-        classrooms: Arc::new(classrooms::ClassroomService::new(http.clone(), cache.clone())),
-        transit: Arc::new(transit::TransitService::new(http.clone(), cache.clone(), bustime_key)),
+        academics: Arc::new(academics::AcademicsService::new(
+            http.clone(),
+            cache.clone(),
+        )),
+        classrooms: Arc::new(classrooms::ClassroomService::new(
+            http.clone(),
+            cache.clone(),
+        )),
+        transit: Arc::new(transit::TransitService::new(
+            http.clone(),
+            cache.clone(),
+            bustime_key,
+        )),
         weather: Arc::new(weather::WeatherService::new(http.clone(), cache.clone())),
         marine: Arc::new(marine::MarineService::new(http.clone(), cache.clone())),
-        fire: Arc::new(fire::FireService::new(http.clone(), cache.clone(), firms_key)),
+        fire: Arc::new(fire::FireService::new(
+            http.clone(),
+            cache.clone(),
+            firms_key,
+        )),
         traffic: Arc::new(traffic::TrafficService::new(http.clone(), cache.clone())),
         tides: Arc::new(tides::TidesService::new(http.clone(), cache.clone())),
         buoy: Arc::new(buoy::BuoyService::new(http.clone(), cache.clone())),
         wave_buoy: Arc::new(wave_buoy::WaveBuoyService::new(http.clone(), cache.clone())),
-        usgs_water: Arc::new(usgs_water::UsgsWaterService::new(http.clone(), cache.clone())),
+        usgs_water: Arc::new(usgs_water::UsgsWaterService::new(
+            http.clone(),
+            cache.clone(),
+        )),
         biodiversity: biodiversity.clone(),
         air_quality: Arc::new(air_quality::AirQualityService::new(
             http.clone(),
             cache.clone(),
             airnow_key,
         )),
-        astronomy: Arc::new(astronomy::AstronomyService::new(http.clone(), cache.clone())),
-        space_weather: Arc::new(space_weather::SpaceWeatherService::new(http.clone(), cache.clone())),
+        astronomy: Arc::new(astronomy::AstronomyService::new(
+            http.clone(),
+            cache.clone(),
+        )),
+        space_weather: Arc::new(space_weather::SpaceWeatherService::new(
+            http.clone(),
+            cache.clone(),
+        )),
         summer: Arc::new(summer::SummerService::new(http.clone(), cache.clone())),
         outdoors: Arc::new(outdoors::OutdoorsService::new(http.clone(), cache.clone())),
         climbing: Arc::new(climbing::ClimbingService::new(http.clone(), cache.clone())),
-        earthquakes: Arc::new(earthquakes::EarthquakeService::new(http.clone(), cache.clone())),
-        beach_water: Arc::new(beach_water::BeachWaterService::new(http.clone(), cache.clone())),
+        earthquakes: Arc::new(earthquakes::EarthquakeService::new(
+            http.clone(),
+            cache.clone(),
+        )),
+        beach_water: Arc::new(beach_water::BeachWaterService::new(
+            http.clone(),
+            cache.clone(),
+        )),
         nps: Arc::new(nps::NpsService::new(http.clone(), cache.clone(), nps_key)),
-        air_forecast: Arc::new(air_forecast::AirForecastService::new(http.clone(), cache.clone())),
-        ocean: Arc::new(ocean::OceanService::new(http.clone(), cache.clone(), biodiversity)),
+        air_forecast: Arc::new(air_forecast::AirForecastService::new(
+            http.clone(),
+            cache.clone(),
+        )),
+        ocean: Arc::new(ocean::OceanService::new(
+            http.clone(),
+            cache.clone(),
+            biodiversity,
+        )),
     };
 
     // Pre-warm dining menu cache daily at 5 AM Pacific. The handle is watched
@@ -224,7 +263,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
 
 async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
-        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     };
 
     let session_manager = Arc::new(LocalSessionManager::default());

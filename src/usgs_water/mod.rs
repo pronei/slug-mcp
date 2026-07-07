@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use crate::util::now_pacific;
+use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -173,21 +173,22 @@ fn parse_iv(body: &IvResponse) -> Result<Vec<StreamReading>> {
             .unwrap_or_default();
         for vb in &ts.values {
             if let Some(latest) = vb.value.last()
-                && let Ok(v) = latest.value.parse::<f64>() {
-                    // USGS emits -999999 for missing
-                    if v < -99999.0 {
-                        continue;
-                    }
-                    out.push(StreamReading {
-                        parameter_code: param_code.clone(),
-                        parameter_name: ts.variable.variable_name.clone(),
-                        unit: ts.variable.unit.unit_code.clone(),
-                        value: v,
-                        timestamp: latest.date_time.clone(),
-                        site_name: ts.source_info.site_name.clone(),
-                        site_id: site_id.clone(),
-                    });
+                && let Ok(v) = latest.value.parse::<f64>()
+            {
+                // USGS emits -999999 for missing
+                if v < -99999.0 {
+                    continue;
                 }
+                out.push(StreamReading {
+                    parameter_code: param_code.clone(),
+                    parameter_name: ts.variable.variable_name.clone(),
+                    unit: ts.variable.unit.unit_code.clone(),
+                    value: v,
+                    timestamp: latest.date_time.clone(),
+                    site_name: ts.source_info.site_name.clone(),
+                    site_id: site_id.clone(),
+                });
+            }
         }
     }
     if out.is_empty() {
@@ -206,11 +207,7 @@ fn format_readings(site: &str, readings: &[StreamReading]) -> String {
     // readings may share a site but have different parameters; group by param
     for r in readings {
         let value_str = match r.parameter_code.as_str() {
-            "00010" => format!(
-                "{:.1}°F ({:.1}°C)",
-                r.value * 9.0 / 5.0 + 32.0,
-                r.value
-            ),
+            "00010" => format!("{:.1}°F ({:.1}°C)", r.value * 9.0 / 5.0 + 32.0, r.value),
             "00060" => format!("{:.0} cfs", r.value),
             "00065" => format!("{:.2} ft", r.value),
             _ => format!("{:.2} {}", r.value, r.unit),

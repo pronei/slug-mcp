@@ -21,7 +21,8 @@ use crate::cache::CacheStore;
 
 const KP_URL: &str = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json";
 const SCALES_URL: &str = "https://services.swpc.noaa.gov/products/noaa-scales.json";
-const SOLAR_WIND_URL: &str = "https://services.swpc.noaa.gov/products/summary/solar-wind-speed.json";
+const SOLAR_WIND_URL: &str =
+    "https://services.swpc.noaa.gov/products/summary/solar-wind-speed.json";
 
 // ---------------------------------------------------------------------------
 // Request type (empty — space weather data is global)
@@ -244,8 +245,7 @@ async fn fetch_solar_wind(http: &reqwest::Client) -> Result<SolarWindResponse> {
     if !resp.status().is_success() {
         anyhow::bail!("SWPC solar wind returned HTTP {}", resp.status());
     }
-    let wind: SolarWindResponse =
-        resp.json().await.context("parsing SWPC solar wind JSON")?;
+    let wind: SolarWindResponse = resp.json().await.context("parsing SWPC solar wind JSON")?;
     Ok(wind)
 }
 
@@ -273,14 +273,8 @@ fn kp_level(kp: f64) -> &'static str {
 fn format_scale_line(label: &str, code: &str, sv: Option<&ScaleValue>) -> String {
     match sv {
         Some(v) => {
-            let scale_num = v
-                .scale
-                .as_deref()
-                .unwrap_or("0");
-            let text = v
-                .text
-                .as_deref()
-                .unwrap_or("none");
+            let scale_num = v.scale.as_deref().unwrap_or("0");
+            let text = v.text.as_deref().unwrap_or("none");
             let text_cap = capitalize(text);
 
             let mut line = format!(
@@ -372,27 +366,28 @@ fn format_output(data: &SpaceWeatherData) -> String {
 
     // --- Kp trend table (last 24h = 8 entries) ---
     if let Some(entries) = &data.kp_entries
-        && entries.len() > 1 {
-            out.push_str("\n## Kp Index — Last 24 Hours\n");
-            out.push_str("| Time (UTC) | Kp | Level |\n");
-            out.push_str("|---|---|---|\n");
+        && entries.len() > 1
+    {
+        out.push_str("\n## Kp Index — Last 24 Hours\n");
+        out.push_str("| Time (UTC) | Kp | Level |\n");
+        out.push_str("|---|---|---|\n");
 
-            // Take the last 8 entries (24h of 3-hourly data), newest first.
-            let start = entries.len().saturating_sub(8);
-            let recent: Vec<&KpEntry> = entries[start..].iter().rev().collect();
+        // Take the last 8 entries (24h of 3-hourly data), newest first.
+        let start = entries.len().saturating_sub(8);
+        let recent: Vec<&KpEntry> = entries[start..].iter().rev().collect();
 
-            for entry in recent {
-                // Parse time_tag for display: "2026-04-27T15:00:00" -> "Apr 27 15:00"
-                let display_time = format_time_tag(&entry.time_tag);
-                let _ = writeln!(
-                    out,
-                    "| {} | {:.2} | {} |",
-                    display_time,
-                    entry.kp,
-                    kp_level(entry.kp)
-                );
-            }
+        for entry in recent {
+            // Parse time_tag for display: "2026-04-27T15:00:00" -> "Apr 27 15:00"
+            let display_time = format_time_tag(&entry.time_tag);
+            let _ = writeln!(
+                out,
+                "| {} | {:.2} | {} |",
+                display_time,
+                entry.kp,
+                kp_level(entry.kp)
+            );
         }
+    }
 
     // --- Santa Cruz Notes ---
     out.push_str("\n## Santa Cruz Notes\n");
@@ -409,7 +404,9 @@ fn format_output(data: &SpaceWeatherData) -> String {
                 }
             );
         } else {
-            out.push_str("At latitude 37°N, aurora requires Kp >= 8 (rare). Kp data unavailable.\n");
+            out.push_str(
+                "At latitude 37°N, aurora requires Kp >= 8 (rare). Kp data unavailable.\n",
+            );
         }
     } else {
         out.push_str("At latitude 37°N, aurora requires Kp >= 8 (rare). Kp data unavailable.\n");
@@ -427,9 +424,7 @@ fn format_output(data: &SpaceWeatherData) -> String {
 fn format_time_tag(time_tag: &str) -> String {
     if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(time_tag, "%Y-%m-%dT%H:%M:%S") {
         dt.format("%b %d %H:%M").to_string()
-    } else if let Ok(dt) =
-        chrono::NaiveDateTime::parse_from_str(time_tag, "%Y-%m-%dT%H:%M:%S%.f")
-    {
+    } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(time_tag, "%Y-%m-%dT%H:%M:%S%.f") {
         dt.format("%b %d %H:%M").to_string()
     } else {
         // Fallback: return the raw string

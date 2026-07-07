@@ -160,10 +160,12 @@ pub async fn fetch_typed(
     req: &UpwellingRequest,
 ) -> Result<UpwellingSnapshot> {
     let lat_band = req.lat_band.as_deref().unwrap_or(DEFAULT_LAT_BAND);
-    let band_idx =
-        lat_band_index(lat_band).ok_or_else(|| anyhow::anyhow!(
-            "unknown latitude band '{}'. Available: 31N–47N in 1° steps", lat_band
-        ))?;
+    let band_idx = lat_band_index(lat_band).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown latitude band '{}'. Available: 31N–47N in 1° steps",
+            lat_band
+        )
+    })?;
 
     // Read the parsed archives as `Arc` to avoid deep-cloning ~2 MB out of the
     // cache on every call.
@@ -258,10 +260,12 @@ pub async fn fetch_and_format(
     req: &UpwellingRequest,
 ) -> Result<String> {
     let lat_band = req.lat_band.as_deref().unwrap_or(DEFAULT_LAT_BAND);
-    let band_idx =
-        lat_band_index(lat_band).ok_or_else(|| anyhow::anyhow!(
-            "unknown latitude band '{}'. Available: 31N–47N in 1° steps", lat_band
-        ))?;
+    let band_idx = lat_band_index(lat_band).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown latitude band '{}'. Available: 31N–47N in 1° steps",
+            lat_band
+        )
+    })?;
     let days_back = req.days_back.unwrap_or(7).clamp(1, 90) as usize;
 
     // Read the parsed archives as `Arc` to avoid deep-cloning ~2 MB out of the
@@ -304,7 +308,8 @@ pub async fn fetch_and_format(
 
     let start = n_cuti.saturating_sub(days_back);
     let recent_cuti: Vec<_> = cuti_data.rows[start..].to_vec();
-    let recent_beuti: Vec<_> = beuti_data.rows[start.max(n_beuti.saturating_sub(days_back))..n_beuti].to_vec();
+    let recent_beuti: Vec<_> =
+        beuti_data.rows[start.max(n_beuti.saturating_sub(days_back))..n_beuti].to_vec();
 
     let rolling_5d_cuti = if n_cuti >= 5 {
         let s: f64 = cuti_data.rows[n_cuti - 5..]
@@ -340,7 +345,11 @@ pub async fn fetch_and_format(
     );
     let today = now_pacific().format("%Y-%m-%d").to_string();
     let latency_note = if data_date != today {
-        format!(" (data through {}, ~{}d lag)", data_date, latency_days(&data_date))
+        format!(
+            " (data through {}, ~{}d lag)",
+            data_date,
+            latency_days(&data_date)
+        )
     } else {
         String::new()
     };
@@ -451,7 +460,11 @@ async fn fetch_index_arc(
         .await?;
     let data = Arc::new(parse_index_csv(&body)?);
     cache
-        .set_arc(&cache_key, Arc::clone(&data), std::time::Duration::from_secs(21600))
+        .set_arc(
+            &cache_key,
+            Arc::clone(&data),
+            std::time::Duration::from_secs(21600),
+        )
         .await;
     Ok(data)
 }
@@ -468,7 +481,11 @@ async fn get_or_compute_climatology(
     }
     let clim = Arc::new(compute_climatology(data));
     cache
-        .set_arc(cache_key, Arc::clone(&clim), std::time::Duration::from_secs(86400 * 365))
+        .set_arc(
+            cache_key,
+            Arc::clone(&clim),
+            std::time::Duration::from_secs(86400 * 365),
+        )
         .await;
     clim
 }

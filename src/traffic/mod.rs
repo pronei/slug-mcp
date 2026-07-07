@@ -82,11 +82,9 @@ impl TrafficService {
     /// Combined CHP + Caltrans view, fetched in parallel. If one source fails,
     /// the other is still rendered with a warning line.
     pub async fn get_traffic_summary(&self, route: Option<&str>) -> Result<String> {
-        let (chp_res, ct_res) = futures_util::future::join(
-            self.load_chp_incidents(),
-            self.load_caltrans_closures(),
-        )
-        .await;
+        let (chp_res, ct_res) =
+            futures_util::future::join(self.load_chp_incidents(), self.load_caltrans_closures())
+                .await;
 
         let mut out = if let Some(r) = route {
             format!("# Santa Cruz Traffic Summary — Route {}\n\n", r)
@@ -268,7 +266,15 @@ fn write_caltrans_body(out: &mut String, closures: &[&LaneClosure]) {
         };
         out.push_str(&format!(
             "- **{} {}** [{}]{}{}\n  {} · {} → {}\n  Work: {}\n",
-            c.route, c.direction, c.type_of_closure, lanes, delay, location, c.start_date, end, c.type_of_work,
+            c.route,
+            c.direction,
+            c.type_of_closure,
+            lanes,
+            delay,
+            location,
+            c.start_date,
+            end,
+            c.type_of_work,
         ));
     }
 }

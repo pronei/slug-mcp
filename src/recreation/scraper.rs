@@ -81,10 +81,7 @@ pub async fn scrape_occupancy(client: &reqwest::Client) -> Result<Vec<FacilityOc
         .await
         .context("Failed to fetch facility occupancy page")?;
 
-    let html = resp
-        .text()
-        .await
-        .context("Failed to read occupancy body")?;
+    let html = resp.text().await.context("Failed to read occupancy body")?;
 
     Ok(parse_occupancy(&html))
 }
@@ -173,7 +170,10 @@ fn clean_facility_name(text: &str) -> String {
     }
 }
 
-pub fn find_facility<'a>(query: &str, facilities: &'a [FacilityOccupancy]) -> Vec<&'a FacilityOccupancy> {
+pub fn find_facility<'a>(
+    query: &str,
+    facilities: &'a [FacilityOccupancy],
+) -> Vec<&'a FacilityOccupancy> {
     let q = query.to_lowercase();
     facilities
         .iter()
@@ -196,10 +196,7 @@ pub async fn scrape_schedule(
         .await
         .context("Failed to fetch facility schedule")?;
 
-    let html = resp
-        .text()
-        .await
-        .context("Failed to read schedule body")?;
+    let html = resp.text().await.context("Failed to read schedule body")?;
 
     Ok(parse_schedule(&html, facility_id))
 }
@@ -253,7 +250,10 @@ fn parse_schedule(html: &str, facility_id: &str) -> FacilitySchedule {
     }
 
     if facility_name.is_empty() {
-        facility_name = format!("Facility {}", facility_id.chars().take(8).collect::<String>());
+        facility_name = format!(
+            "Facility {}",
+            facility_id.chars().take(8).collect::<String>()
+        );
     }
 
     FacilitySchedule {
@@ -488,7 +488,13 @@ CYCLING</span></strong></a><br />
         assert_eq!(classes[0].instructor, "Padma");
         assert_eq!(classes[0].location, "MAS");
         assert_eq!(classes[0].location_full, "Martial Arts Studio");
-        assert!(classes[0].registration_url.as_ref().unwrap().contains("abc-123"));
+        assert!(
+            classes[0]
+                .registration_url
+                .as_ref()
+                .unwrap()
+                .contains("abc-123")
+        );
 
         assert_eq!(classes[1].name, "MAT PILATES");
         assert_eq!(classes[1].day, "Tuesday");
@@ -524,11 +530,7 @@ CYCLING</span></strong></a><br />
         assert_eq!(cafe.instructor, "Renée");
         assert_eq!(cafe.location, "DNC");
         assert_eq!(cafe.location_full, "Dance Studio");
-        assert!(cafe
-            .registration_url
-            .as_ref()
-            .unwrap()
-            .contains("cafe-001"));
+        assert!(cafe.registration_url.as_ref().unwrap().contains("cafe-001"));
 
         let piyo = &classes[1];
         assert_eq!(piyo.name, "PIYO® STRENGTH");
@@ -623,7 +625,10 @@ mod schedule_tests {
 
         // A 3-cell row joins the extra cells with " — ".
         assert_eq!(schedule.entries[1].time, "12:00 PM - 1:00 PM");
-        assert_eq!(schedule.entries[1].event, "Water Aerobics — Instructor: Dana");
+        assert_eq!(
+            schedule.entries[1].event,
+            "Water Aerobics — Instructor: Dana"
+        );
 
         assert_eq!(schedule.entries[2].event, "Open Rec Swim");
     }

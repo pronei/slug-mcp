@@ -116,9 +116,7 @@ impl MarineService {
         } else if let (Some(lat), Some(lon)) = (lat, lon) {
             (format!("{:.4}, {:.4}", lat, lon), lat, lon, None)
         } else {
-            anyhow::bail!(
-                "Provide either `spot` (e.g. 'Steamer Lane') or both `lat` and `lon`."
-            );
+            anyhow::bail!("Provide either `spot` (e.g. 'Steamer Lane') or both `lat` and `lon`.");
         };
 
         let marine = self.load_marine_by_coords(lat, lon).await?;
@@ -260,13 +258,14 @@ fn write_spot_body(out: &mut String, c: &SpotConditions) {
             ));
         }
         if let Some(wind_wave_m) = current.wind_wave_height
-            && wind_wave_m > 0.0 {
-                out.push_str(&format!(
-                    "- **Wind wave**: {:.1} ft ({:.1} m)\n",
-                    m_to_ft(wind_wave_m),
-                    wind_wave_m
-                ));
-            }
+            && wind_wave_m > 0.0
+        {
+            out.push_str(&format!(
+                "- **Wind wave**: {:.1} ft ({:.1} m)\n",
+                m_to_ft(wind_wave_m),
+                wind_wave_m
+            ));
+        }
     } else {
         out.push_str("  ⚠ No current marine data\n");
     }
@@ -342,7 +341,9 @@ fn format_marine_detail(label: &str, notes: Option<&str>, m: &MarineResponse) ->
     }
 
     if let Some(hourly) = &m.hourly {
-        let now_hour = crate::util::now_pacific().format("%Y-%m-%dT%H:00").to_string();
+        let now_hour = crate::util::now_pacific()
+            .format("%Y-%m-%dT%H:00")
+            .to_string();
         let start = hourly
             .time
             .iter()

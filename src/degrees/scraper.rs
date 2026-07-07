@@ -3,7 +3,7 @@ use std::fmt::Write;
 use anyhow::{Context, Result};
 use scraper::{ElementRef, Html};
 
-use crate::util::{selectors, FuzzyMatcher};
+use crate::util::{FuzzyMatcher, selectors};
 
 selectors! {
     SEL_REQ_CONTAINER => "div#degree-req-2",
@@ -30,6 +30,9 @@ pub struct DegreeRequirements {
     pub general_education: Option<GeRequirements>,
 }
 
+// MFA stays fully capitalized: variant names serialize as UCSC's official
+// degree codes and surface verbatim in progress reports.
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub enum DegreeType {
     BA,
@@ -55,8 +58,7 @@ impl DegreeType {
             Self::MS
         } else if lower.ends_with("-ma") || lower.ends_with(" m.a.") || lower.ends_with(" ma") {
             Self::MA
-        } else if lower.ends_with("-mfa") || lower.ends_with(" m.f.a.") || lower.ends_with(" mfa")
-        {
+        } else if lower.ends_with("-mfa") || lower.ends_with(" m.f.a.") || lower.ends_with(" mfa") {
             Self::MFA
         } else if lower.ends_with("-phd") || lower.ends_with(" ph.d.") || lower.ends_with(" phd") {
             Self::PhD
@@ -221,10 +223,7 @@ pub fn ge_requirements() -> GeRequirements {
 
 // ─── Scraping ───
 
-pub async fn scrape_program_list(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<Vec<ProgramEntry>> {
+pub async fn scrape_program_list(client: &reqwest::Client, url: &str) -> Result<Vec<ProgramEntry>> {
     let resp = client
         .get(url)
         .send()
@@ -369,7 +368,11 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
         // Check if this is one of our heading types
         if is_matching(element, "h3", "sc-RequiredCoursesHeading1") {
             // Push everything accumulated so far
-            flush_group(&mut current_group, &current_rule_heading, &mut current_subsection);
+            flush_group(
+                &mut current_group,
+                &current_rule_heading,
+                &mut current_subsection,
+            );
             flush_subsection(&mut current_subsection, &mut current_section);
             flush_section(&mut current_section, &mut sections);
 
@@ -381,7 +384,11 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
             });
             current_rule_heading = None;
         } else if is_matching(element, "h4", "sc-RequiredCoursesHeading2") {
-            flush_group(&mut current_group, &current_rule_heading, &mut current_subsection);
+            flush_group(
+                &mut current_group,
+                &current_rule_heading,
+                &mut current_subsection,
+            );
             flush_subsection(&mut current_subsection, &mut current_section);
 
             let heading = element.text().collect::<String>().trim().to_string();
@@ -392,7 +399,11 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
             });
             current_rule_heading = None;
         } else if is_matching(element, "h5", "sc-RequiredCoursesHeading3") {
-            flush_group(&mut current_group, &current_rule_heading, &mut current_subsection);
+            flush_group(
+                &mut current_group,
+                &current_rule_heading,
+                &mut current_subsection,
+            );
 
             let heading = element.text().collect::<String>().trim().to_string();
             current_group = Some(RequirementGroup {
@@ -411,10 +422,8 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
             }
 
             // Determine rule type from the current h6 heading
-            let (rule_type, primary, alternative) = classify_courses(
-                courses,
-                current_rule_heading.as_deref(),
-            );
+            let (rule_type, primary, alternative) =
+                classify_courses(courses, current_rule_heading.as_deref());
 
             let rule = CourseRule {
                 rule_type,
@@ -496,9 +505,7 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
                     .select(&SEL_COURSE_LINK)
                     .filter_map(|a| {
                         let href = a.value().attr("href").unwrap_or("");
-                        if href.contains("narrative-courses")
-                            || !href.contains("/courses/")
-                        {
+                        if href.contains("narrative-courses") || !href.contains("/courses/") {
                             return None;
                         }
                         let code = a.text().collect::<String>().trim().to_string();
@@ -566,7 +573,11 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
             let inner = parse_heading_hierarchy(element);
             for inner_section in inner {
                 // Flush current group/subsection before merging
-                flush_group(&mut current_group, &current_rule_heading, &mut current_subsection);
+                flush_group(
+                    &mut current_group,
+                    &current_rule_heading,
+                    &mut current_subsection,
+                );
                 flush_subsection(&mut current_subsection, &mut current_section);
 
                 if current_section.is_some() {
@@ -585,7 +596,11 @@ fn parse_heading_hierarchy(container: ElementRef) -> Vec<RequirementSection> {
     }
 
     // Flush remaining state
-    flush_group(&mut current_group, &current_rule_heading, &mut current_subsection);
+    flush_group(
+        &mut current_group,
+        &current_rule_heading,
+        &mut current_subsection,
+    );
     flush_subsection(&mut current_subsection, &mut current_section);
     flush_section(&mut current_section, &mut sections);
 
@@ -619,12 +634,13 @@ fn flush_group(
     subsection: &mut Option<RequirementSubsection>,
 ) {
     if let Some(g) = group.take()
-        && (!g.rules.is_empty() || !g.notes.is_empty()) {
-            ensure_subsection(subsection, rule_heading);
-            if let Some(sub) = subsection.as_mut() {
-                sub.groups.push(g);
-            }
+        && (!g.rules.is_empty() || !g.notes.is_empty())
+    {
+        ensure_subsection(subsection, rule_heading);
+        if let Some(sub) = subsection.as_mut() {
+            sub.groups.push(g);
         }
+    }
 }
 
 fn ensure_subsection(subsection: &mut Option<RequirementSubsection>, _hint: &Option<String>) {
@@ -642,12 +658,13 @@ fn flush_subsection(
     section: &mut Option<RequirementSection>,
 ) {
     if let Some(sub) = subsection.take()
-        && (!sub.groups.is_empty() || !sub.notes.is_empty()) {
-            ensure_section(section);
-            if let Some(sec) = section.as_mut() {
-                sec.subsections.push(sub);
-            }
+        && (!sub.groups.is_empty() || !sub.notes.is_empty())
+    {
+        ensure_section(section);
+        if let Some(sec) = section.as_mut() {
+            sec.subsections.push(sub);
         }
+    }
 }
 
 fn ensure_section(section: &mut Option<RequirementSection>) {
@@ -660,14 +677,12 @@ fn ensure_section(section: &mut Option<RequirementSection>) {
     }
 }
 
-fn flush_section(
-    section: &mut Option<RequirementSection>,
-    sections: &mut Vec<RequirementSection>,
-) {
+fn flush_section(section: &mut Option<RequirementSection>, sections: &mut Vec<RequirementSection>) {
     if let Some(sec) = section.take()
-        && (!sec.subsections.is_empty() || !sec.notes.is_empty()) {
-            sections.push(sec);
-        }
+        && (!sec.subsections.is_empty() || !sec.notes.is_empty())
+    {
+        sections.push(sec);
+    }
 }
 
 /// Parse a course table, handling either/or narrative rows.
@@ -711,10 +726,14 @@ fn parse_course_table(table: ElementRef) -> Vec<ParsedRow> {
             .and_then(|a| a.value().attr("href"))
             .map(|h| format!("{}{}", CATALOG_BASE, h));
 
-        let cross_listed = num_cell
-            .select(&SEL_CROSSLISTED)
-            .next()
-            .map(|d| d.text().collect::<String>().trim().trim_start_matches('/').trim().to_string());
+        let cross_listed = num_cell.select(&SEL_CROSSLISTED).next().map(|d| {
+            d.text()
+                .collect::<String>()
+                .trim()
+                .trim_start_matches('/')
+                .trim()
+                .to_string()
+        });
 
         let title = tr
             .select(&SEL_COURSE_TITLE)
@@ -722,13 +741,10 @@ fn parse_course_table(table: ElementRef) -> Vec<ParsedRow> {
             .map(|t| t.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
 
-        let credits = tr
-            .select(&SEL_CREDITS)
-            .next()
-            .and_then(|p| {
-                let text = p.text().collect::<String>().trim().to_string();
-                text.parse::<u32>().ok()
-            });
+        let credits = tr.select(&SEL_CREDITS).next().and_then(|p| {
+            let text = p.text().collect::<String>().trim().to_string();
+            text.parse::<u32>().ok()
+        });
 
         rows.push(ParsedRow::Course(Course {
             code,
@@ -754,8 +770,12 @@ fn classify_courses(
     heading: Option<&str>,
 ) -> (RuleType, Vec<Course>, Option<Vec<Course>>) {
     // Check for either/or pattern
-    let has_either = rows.iter().any(|r| matches!(r, ParsedRow::Narrative(t) if t.contains("either")));
-    let has_or = rows.iter().any(|r| matches!(r, ParsedRow::Narrative(t) if t.starts_with("or ")));
+    let has_either = rows
+        .iter()
+        .any(|r| matches!(r, ParsedRow::Narrative(t) if t.contains("either")));
+    let has_or = rows
+        .iter()
+        .any(|r| matches!(r, ParsedRow::Narrative(t) if t.starts_with("or ")));
 
     if has_either && has_or {
         let mut primary = Vec::new();
@@ -790,9 +810,7 @@ fn classify_courses(
         })
         .collect();
 
-    let rule_type = heading
-        .map(infer_rule_type)
-        .unwrap_or(RuleType::AllOf);
+    let rule_type = heading.map(infer_rule_type).unwrap_or(RuleType::AllOf);
 
     (rule_type, courses, None)
 }
@@ -809,14 +827,15 @@ fn infer_rule_type(heading: &str) -> RuleType {
         && (lower.contains("of the following")
             || lower.contains("courses from")
             || lower.contains("courses must"))
-        {
-            return RuleType::NOf(n);
-        }
+    {
+        return RuleType::NOf(n);
+    }
 
     if (lower.contains("credits from") || lower.contains("credits of"))
-        && let Some(n) = extract_number_from_heading(&lower) {
-            return RuleType::CreditsFrom(n);
-        }
+        && let Some(n) = extract_number_from_heading(&lower)
+    {
+        return RuleType::CreditsFrom(n);
+    }
 
     // Default: all of
     RuleType::AllOf
@@ -889,7 +908,8 @@ fn extract_course_codes_from_text(text: &str) -> Vec<String> {
                     let num_len = i - num_start;
                     if (1..=3).contains(&num_len) {
                         // Optional trailing uppercase letter (e.g., "210A")
-                        let end = if i < len && chars[i].is_ascii_uppercase()
+                        let end = if i < len
+                            && chars[i].is_ascii_uppercase()
                             && (i + 1 >= len || !chars[i + 1].is_ascii_uppercase())
                         {
                             i += 1;
@@ -940,9 +960,7 @@ fn fix_allof_from_selection(
                 }
 
                 // Found a matching AllOf rule — fix it based on selection language
-                if lower.contains("any two out of")
-                    || lower.contains("two out of the following")
-                {
+                if lower.contains("any two out of") || lower.contains("two out of the following") {
                     // Split: courses mentioned before "any two" are required (AllOf),
                     // courses mentioned after are the pool (NOf(2)).
                     // In practice: first course in list is required, rest are pool.
@@ -981,9 +999,7 @@ fn fix_allof_from_selection(
                         });
                         return; // Only fix the first matching rule
                     }
-                } else if lower.contains("any one of")
-                    || lower.contains("one of the following")
-                {
+                } else if lower.contains("any one of") || lower.contains("one of the following") {
                     rule.rule_type = RuleType::OneOf;
                     return;
                 }
@@ -995,13 +1011,15 @@ fn fix_allof_from_selection(
 fn parse_credits_from_prose(text: &str) -> Option<RuleType> {
     let lower = text.to_lowercase();
     if lower.contains("credits")
-        && let Some(n) = extract_number_from_heading(&lower) {
-            return Some(RuleType::CreditsFrom(n));
-        }
+        && let Some(n) = extract_number_from_heading(&lower)
+    {
+        return Some(RuleType::CreditsFrom(n));
+    }
     if (lower.contains("courses") || lower.contains("must be completed"))
-        && let Some(n) = extract_number_from_heading(&lower) {
-            return Some(RuleType::NOf(n));
-        }
+        && let Some(n) = extract_number_from_heading(&lower)
+    {
+        return Some(RuleType::NOf(n));
+    }
     None
 }
 
@@ -1150,15 +1168,27 @@ impl GeRequirements {
     pub fn format(&self) -> String {
         let mut out = String::from("**Required (all of the following):**\n");
         for area in &self.required {
-            let _ = writeln!(out, "- {} — {} ({} credits)", area.code, area.name, area.credits);
+            let _ = writeln!(
+                out,
+                "- {} — {} ({} credits)",
+                area.code, area.name, area.credits
+            );
         }
         out.push_str("\n**Perspectives (one of the following):**\n");
         for area in &self.perspectives {
-            let _ = writeln!(out, "- {} — {} ({} credits)", area.code, area.name, area.credits);
+            let _ = writeln!(
+                out,
+                "- {} — {} ({} credits)",
+                area.code, area.name, area.credits
+            );
         }
         out.push_str("\n**Practice (one of the following):**\n");
         for area in &self.practice {
-            let _ = writeln!(out, "- {} — {} ({} credits)", area.code, area.name, area.credits);
+            let _ = writeln!(
+                out,
+                "- {} — {} ({} credits)",
+                area.code, area.name, area.credits
+            );
         }
         let _ = writeln!(
             out,
@@ -1226,14 +1256,34 @@ mod tests {
         assert_eq!(reqs.sections.len(), 1);
         assert_eq!(reqs.sections[0].heading, "Course Requirements");
         assert_eq!(reqs.sections[0].subsections.len(), 1);
-        assert_eq!(reqs.sections[0].subsections[0].heading, "Lower-Division Courses");
+        assert_eq!(
+            reqs.sections[0].subsections[0].heading,
+            "Lower-Division Courses"
+        );
         assert_eq!(reqs.sections[0].subsections[0].groups.len(), 1);
-        assert_eq!(reqs.sections[0].subsections[0].groups[0].heading.as_deref(), Some("Computer Science"));
+        assert_eq!(
+            reqs.sections[0].subsections[0].groups[0].heading.as_deref(),
+            Some("Computer Science")
+        );
         assert_eq!(reqs.sections[0].subsections[0].groups[0].rules.len(), 1);
-        assert_eq!(reqs.sections[0].subsections[0].groups[0].rules[0].rule_type, RuleType::AllOf);
-        assert_eq!(reqs.sections[0].subsections[0].groups[0].rules[0].courses.len(), 2);
-        assert_eq!(reqs.sections[0].subsections[0].groups[0].rules[0].courses[0].code, "CSE 12");
-        assert_eq!(reqs.sections[0].subsections[0].groups[0].rules[0].courses[0].credits, Some(7));
+        assert_eq!(
+            reqs.sections[0].subsections[0].groups[0].rules[0].rule_type,
+            RuleType::AllOf
+        );
+        assert_eq!(
+            reqs.sections[0].subsections[0].groups[0].rules[0]
+                .courses
+                .len(),
+            2
+        );
+        assert_eq!(
+            reqs.sections[0].subsections[0].groups[0].rules[0].courses[0].code,
+            "CSE 12"
+        );
+        assert_eq!(
+            reqs.sections[0].subsections[0].groups[0].rules[0].courses[0].credits,
+            Some(7)
+        );
     }
 
     #[test]
@@ -1313,7 +1363,12 @@ mod tests {
 
         let reqs = parse_requirements(html, "Test", "http://test", &DegreeType::BS).unwrap();
         // Should have 1 section with 1 subsection with courses
-        assert_eq!(reqs.sections[0].subsections[0].groups[0].rules[0].courses.len(), 1);
+        assert_eq!(
+            reqs.sections[0].subsections[0].groups[0].rules[0]
+                .courses
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1340,15 +1395,27 @@ mod tests {
     fn test_infer_rule_type() {
         assert_eq!(infer_rule_type("All of the following"), RuleType::AllOf);
         assert_eq!(infer_rule_type("One of the following"), RuleType::OneOf);
-        assert_eq!(infer_rule_type("Plus one of the following"), RuleType::OneOf);
+        assert_eq!(
+            infer_rule_type("Plus one of the following"),
+            RuleType::OneOf
+        );
         assert_eq!(infer_rule_type("Two of the following"), RuleType::NOf(2));
-        assert_eq!(infer_rule_type("Four courses from the following"), RuleType::NOf(4));
-        assert_eq!(infer_rule_type("15 credits from the following"), RuleType::CreditsFrom(15));
+        assert_eq!(
+            infer_rule_type("Four courses from the following"),
+            RuleType::NOf(4)
+        );
+        assert_eq!(
+            infer_rule_type("15 credits from the following"),
+            RuleType::CreditsFrom(15)
+        );
     }
 
     #[test]
     fn test_degree_type_from_slug() {
-        assert_eq!(DegreeType::from_slug("Computer Science B.S."), DegreeType::BS);
+        assert_eq!(
+            DegreeType::from_slug("Computer Science B.S."),
+            DegreeType::BS
+        );
         assert_eq!(DegreeType::from_slug("History B.A."), DegreeType::BA);
         assert_eq!(DegreeType::from_slug("computer-science-ms"), DegreeType::MS);
         assert_eq!(DegreeType::from_slug("Music B.M."), DegreeType::BM);
@@ -1385,7 +1452,7 @@ mod tests {
     #[test]
     fn test_extract_course_codes_from_text() {
         let codes = extract_course_codes_from_text(
-            "A core requirement must be met by taking CSE 200, and any two out of the following three courses: CSE 201, CSE 210A, and CSE 220."
+            "A core requirement must be met by taking CSE 200, and any two out of the following three courses: CSE 201, CSE 210A, and CSE 220.",
         );
         assert_eq!(codes, vec!["CSE 200", "CSE 201", "CSE 210A", "CSE 220"]);
 
@@ -1439,17 +1506,30 @@ mod tests {
 
         // The first subsection (from the table, before h4) should have been fixed
         let first_sub = &section.subsections[0];
-        assert!(!first_sub.groups.is_empty(), "should have groups from the table");
+        assert!(
+            !first_sub.groups.is_empty(),
+            "should have groups from the table"
+        );
         let group = &first_sub.groups[0];
 
         // Should now have 2 rules: AllOf [CSE 200] + NOf(2) [CSE 201, CSE 210A, CSE 220]
-        assert_eq!(group.rules.len(), 2, "expected 2 rules after fix, got {}: {:?}", group.rules.len(), group.rules);
+        assert_eq!(
+            group.rules.len(),
+            2,
+            "expected 2 rules after fix, got {}: {:?}",
+            group.rules.len(),
+            group.rules
+        );
         assert_eq!(group.rules[0].rule_type, RuleType::AllOf);
         assert_eq!(group.rules[0].courses.len(), 1);
         assert_eq!(group.rules[0].courses[0].code, "CSE 200");
         assert_eq!(group.rules[1].rule_type, RuleType::NOf(2));
         assert_eq!(group.rules[1].courses.len(), 3);
-        let pool_codes: Vec<&str> = group.rules[1].courses.iter().map(|c| c.code.as_str()).collect();
+        let pool_codes: Vec<&str> = group.rules[1]
+            .courses
+            .iter()
+            .map(|c| c.code.as_str())
+            .collect();
         assert!(pool_codes.contains(&"CSE 201"));
         assert!(pool_codes.contains(&"CSE 210A"));
         assert!(pool_codes.contains(&"CSE 220"));

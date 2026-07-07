@@ -10,8 +10,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::cache::CacheStore;
-use breadth::{scrape_breadth_requirements, BreadthRequirements};
-use programs::{resolve_program, ProgramIndex};
+use breadth::{BreadthRequirements, scrape_breadth_requirements};
+use programs::{ProgramIndex, resolve_program};
 use scraper::{scrape_program_list, scrape_requirements};
 
 const BACHELORS_URL: &str =
@@ -101,10 +101,11 @@ impl DegreeService {
 
         // Append breadth requirements for CSE MS
         if Self::has_breadth_requirements(&entry.slug)
-            && let Ok(breadth) = self.load_breadth_requirements().await {
-                output.push('\n');
-                output.push_str(&breadth.format());
-            }
+            && let Ok(breadth) = self.load_breadth_requirements().await
+        {
+            output.push('\n');
+            output.push_str(&breadth.format());
+        }
 
         Ok(output)
     }
@@ -135,11 +136,12 @@ impl DegreeService {
 
         // Append breadth progress for CSE MS
         if Self::has_breadth_requirements(&entry.slug)
-            && let Ok(breadth_reqs) = self.load_breadth_requirements().await {
-                let breadth_progress =
-                    breadth::check_breadth_progress(&breadth_reqs, completed_courses);
-                report.breadth_progress = Some(breadth_progress);
-            }
+            && let Ok(breadth_reqs) = self.load_breadth_requirements().await
+        {
+            let breadth_progress =
+                breadth::check_breadth_progress(&breadth_reqs, completed_courses);
+            report.breadth_progress = Some(breadth_progress);
+        }
 
         Ok(report.format())
     }

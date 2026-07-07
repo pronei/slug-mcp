@@ -119,9 +119,15 @@ impl Ab411Thresholds {
 fn check_threshold(analyte: &str, value: f64) -> (&'static str, bool) {
     let lower = analyte.to_lowercase();
     if lower.contains("total coliform") {
-        ("<10,000 single", value > Ab411Thresholds::TOTAL_COLIFORM_SINGLE)
+        (
+            "<10,000 single",
+            value > Ab411Thresholds::TOTAL_COLIFORM_SINGLE,
+        )
     } else if lower.contains("fecal coliform") {
-        ("<400 single", value > Ab411Thresholds::FECAL_COLIFORM_SINGLE)
+        (
+            "<400 single",
+            value > Ab411Thresholds::FECAL_COLIFORM_SINGLE,
+        )
     } else if lower.contains("enterococcus") {
         ("<104 single", value > Ab411Thresholds::ENTEROCOCCUS_SINGLE)
     } else if lower.contains("e. coli") || lower.contains("e.coli") || lower.contains("escherichia")
@@ -184,7 +190,12 @@ async fn fetch_records(
             .replace('\'', "''")
             .replace('%', "\\%")
             .replace('_', "\\_");
-        write!(sql, r#" AND LOWER("StationName") LIKE '%{}%'"#, escaped.to_lowercase()).unwrap();
+        write!(
+            sql,
+            r#" AND LOWER("StationName") LIKE '%{}%'"#,
+            escaped.to_lowercase()
+        )
+        .unwrap();
     }
 
     write!(
@@ -207,8 +218,7 @@ async fn fetch_records(
     }
 
     let body = resp.text().await.context("reading CKAN response body")?;
-    let ckan: CkanResponse =
-        serde_json::from_str(&body).context("parsing CKAN JSON response")?;
+    let ckan: CkanResponse = serde_json::from_str(&body).context("parsing CKAN JSON response")?;
 
     if !ckan.success {
         anyhow::bail!("CKAN API returned success=false");
@@ -296,10 +306,7 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
 
     for (station_raw, (latest_date, recs)) in &latest_by_station {
         let name = clean_station_name(station_raw);
-        let code = recs
-            .first()
-            .map(|r| r.station_code.as_str())
-            .unwrap_or("—");
+        let code = recs.first().map(|r| r.station_code.as_str()).unwrap_or("—");
         let date_display = if latest_date.is_empty() {
             "Unknown".to_string()
         } else {
@@ -319,7 +326,11 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
             if let Ok(value) = result_str.parse::<f64>() {
                 let (threshold, exceeds) = check_threshold(&rec.analyte, value);
                 let status = if exceeds { "Exceeds" } else { "Pass" };
-                let icon = if exceeds { "\u{26a0}\u{fe0f}" } else { "\u{2705}" };
+                let icon = if exceeds {
+                    "\u{26a0}\u{fe0f}"
+                } else {
+                    "\u{2705}"
+                };
                 writeln!(
                     out,
                     "| {} | {} {} | {} | {} {} |",
@@ -327,27 +338,27 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
                 )
                 .unwrap();
             } else {
-                writeln!(
-                    out,
-                    "| {} | {} {} | — | — |",
-                    rec.analyte, result_str, unit
-                )
-                .unwrap();
+                writeln!(out, "| {} | {} {} | — | — |", rec.analyte, result_str, unit).unwrap();
             }
 
             // 30-day geo mean row (if present and parseable)
             if let Some(geo_str) = rec.geo_mean_30d.as_deref()
-                && let Ok(geo_val) = geo_str.parse::<f64>() {
-                    let (threshold, exceeds) = check_geo_threshold(&rec.analyte, geo_val);
-                    let status = if exceeds { "Exceeds" } else { "Pass" };
-                    let icon = if exceeds { "\u{26a0}\u{fe0f}" } else { "\u{2705}" };
-                    writeln!(
-                        out,
-                        "| 30-day geo mean ({}) | {} | {} | {} {} |",
-                        rec.analyte, geo_str, threshold, icon, status
-                    )
-                    .unwrap();
-                }
+                && let Ok(geo_val) = geo_str.parse::<f64>()
+            {
+                let (threshold, exceeds) = check_geo_threshold(&rec.analyte, geo_val);
+                let status = if exceeds { "Exceeds" } else { "Pass" };
+                let icon = if exceeds {
+                    "\u{26a0}\u{fe0f}"
+                } else {
+                    "\u{2705}"
+                };
+                writeln!(
+                    out,
+                    "| 30-day geo mean ({}) | {} | {} | {} {} |",
+                    rec.analyte, geo_str, threshold, icon, status
+                )
+                .unwrap();
+            }
         }
 
         out.push('\n');
@@ -385,10 +396,7 @@ mod tests {
             "Capitola City Beach"
         );
         // No prefix
-        assert_eq!(
-            clean_station_name("Some Beach, Santa Cruz"),
-            "Some Beach"
-        );
+        assert_eq!(clean_station_name("Some Beach, Santa Cruz"), "Some Beach");
         // No suffix
         assert_eq!(clean_station_name("O100-My Beach"), "My Beach");
         // Neither prefix nor suffix
@@ -583,10 +591,7 @@ mod tests {
 
     #[test]
     fn format_sample_date_parses() {
-        assert_eq!(
-            format_sample_date("2022-05-16T00:00:00"),
-            "May 16, 2022"
-        );
+        assert_eq!(format_sample_date("2022-05-16T00:00:00"), "May 16, 2022");
         assert_eq!(format_sample_date("2023-12-01"), "December 1, 2023");
         // Unparseable falls back to raw
         assert_eq!(format_sample_date("garbage"), "garbage");

@@ -133,7 +133,14 @@ impl EarthquakeService {
             .await;
 
         match result {
-            Ok(resp) => Ok(format_output(&resp, lat, lon, radius_km, min_magnitude, days)),
+            Ok(resp) => Ok(format_output(
+                &resp,
+                lat,
+                lon,
+                radius_km,
+                min_magnitude,
+                days,
+            )),
             Err(e) => {
                 tracing::warn!("USGS earthquake fetch failed: {}", e);
                 Ok(format!(
@@ -182,10 +189,7 @@ async fn fetch_earthquakes(
         anyhow::bail!("USGS returned HTTP {}", status);
     }
 
-    let body = resp
-        .text()
-        .await
-        .context("reading USGS response body")?;
+    let body = resp.text().await.context("reading USGS response body")?;
 
     serde_json::from_str::<UsgsResponse>(&body).context("parsing USGS GeoJSON response")
 }
@@ -276,17 +280,9 @@ fn format_output(
                 format!("M{:.1} ({})", mag, label)
             };
 
-            let depth = feature
-                .geometry
-                .coordinates
-                .get(2)
-                .copied()
-                .unwrap_or(0.0);
+            let depth = feature.geometry.coordinates.get(2).copied().unwrap_or(0.0);
 
-            let location = props
-                .place
-                .as_deref()
-                .unwrap_or("Unknown location");
+            let location = props.place.as_deref().unwrap_or("Unknown location");
 
             let felt_str = match props.felt {
                 Some(n) if n > 0 => format!("{} reports", n),
@@ -411,10 +407,7 @@ mod tests {
         let second = &resp.features[1];
         assert_eq!(second.properties.mag, Some(1.3));
         assert_eq!(second.properties.felt, None);
-        assert_eq!(
-            second.properties.mag_type.as_deref(),
-            Some("md")
-        );
+        assert_eq!(second.properties.mag_type.as_deref(), Some("md"));
     }
 
     #[test]

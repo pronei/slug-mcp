@@ -15,8 +15,8 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use crate::util::now_pacific;
+use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -111,8 +111,7 @@ impl WaveBuoyService {
 /// "46114"). Reject anything else before it reaches the URL path so a crafted
 /// `station` can't traverse paths or inject extra request targets.
 fn validate_station(station: &str) -> Result<()> {
-    let ok = (4..=6).contains(&station.len())
-        && station.chars().all(|c| c.is_ascii_alphanumeric());
+    let ok = (4..=6).contains(&station.len()) && station.chars().all(|c| c.is_ascii_alphanumeric());
     if !ok {
         anyhow::bail!(
             "invalid NDBC station ID '{}': expected 4-6 alphanumeric characters (e.g. 46114)",
@@ -122,10 +121,7 @@ fn validate_station(station: &str) -> Result<()> {
     Ok(())
 }
 
-async fn fetch_latest_spec(
-    http: &reqwest::Client,
-    station: &str,
-) -> Result<SpectralObservation> {
+async fn fetch_latest_spec(http: &reqwest::Client, station: &str) -> Result<SpectralObservation> {
     validate_station(station)?;
     let url = format!("https://www.ndbc.noaa.gov/data/realtime2/{}.spec", station);
     let resp = http

@@ -65,7 +65,13 @@ impl AstronomyService {
             }
         };
 
-        Ok(format_output(&open_meteo, twilight.as_ref(), lat, lon, days))
+        Ok(format_output(
+            &open_meteo,
+            twilight.as_ref(),
+            lat,
+            lon,
+            days,
+        ))
     }
 
     async fn load_open_meteo(&self, lat: f64, lon: f64, days: u32) -> Result<OpenMeteoResponse> {
@@ -170,9 +176,7 @@ pub struct TwilightData {
 }
 
 async fn fetch_twilight(http: &reqwest::Client, lat: f64, lon: f64) -> Result<TwilightData> {
-    let url = format!(
-        "https://api.sunrise-sunset.org/json?lat={lat}&lng={lon}&formatted=0"
-    );
+    let url = format!("https://api.sunrise-sunset.org/json?lat={lat}&lng={lon}&formatted=0");
     let resp = http
         .get(&url)
         .send()
@@ -339,8 +343,11 @@ fn format_output(
             )
             .unwrap();
         } else {
-            writeln!(out, "- _Twilight times unavailable (sunrise-sunset.org unreachable)_")
-                .unwrap();
+            writeln!(
+                out,
+                "- _Twilight times unavailable (sunrise-sunset.org unreachable)_"
+            )
+            .unwrap();
         }
 
         // Moon for today
@@ -360,14 +367,15 @@ fn format_output(
     writeln!(out, "## UV Index").unwrap();
 
     if let Some(current) = &om.current
-        && let Some(uv) = current.uv_index {
-            let cat = uv_category(uv);
-            let clear_sky = current
-                .uv_index_clear_sky
-                .map(|cs| format!(" · Clear-sky: {:.1}", cs))
-                .unwrap_or_default();
-            writeln!(out, "- **Current**: {:.1} ({}){}", uv, cat, clear_sky).unwrap();
-        }
+        && let Some(uv) = current.uv_index
+    {
+        let cat = uv_category(uv);
+        let clear_sky = current
+            .uv_index_clear_sky
+            .map(|cs| format!(" · Clear-sky: {:.1}", cs))
+            .unwrap_or_default();
+        writeln!(out, "- **Current**: {:.1} ({}){}", uv, cat, clear_sky).unwrap();
+    }
 
     if !daily.uv_index_max.is_empty() {
         let today_max = daily.uv_index_max[0];
@@ -466,7 +474,7 @@ mod tests {
         let date = NaiveDate::from_ymd_opt(2025, 1, 29).unwrap();
         let (phase, name, illum) = moon_phase(date);
         assert!(
-            phase < 0.07 || phase > 0.93,
+            !(0.07..=0.93).contains(&phase),
             "expected near-new for 2025-01-29, got phase={:.3}",
             phase
         );

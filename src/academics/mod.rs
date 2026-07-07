@@ -44,8 +44,8 @@ pub struct SearchDirectoryRequest {
 
 use crate::cache::CacheStore;
 use scraper::{
-    current_term_code, scrape_class_search, scrape_directory, ClassSearchParams, ClassSearchResult,
-    DirectoryResult,
+    ClassSearchParams, ClassSearchResult, DirectoryResult, current_term_code, scrape_class_search,
+    scrape_directory,
 };
 
 pub struct AcademicsService {
@@ -90,7 +90,11 @@ impl AcademicsService {
             instructor: instructor.map(|s| s.to_string()),
             title: title.map(|s| s.to_string()),
             ge: ge.map(|s| s.to_string()),
-            reg_status: if open_only { "O".to_string() } else { "all".to_string() },
+            reg_status: if open_only {
+                "O".to_string()
+            } else {
+                "all".to_string()
+            },
             career: career.map(|s| s.to_uppercase()),
             session_code: session_code.clone(),
             page_start,
@@ -125,11 +129,7 @@ impl AcademicsService {
         Ok(result.format())
     }
 
-    pub async fn search_directory(
-        &self,
-        query: &str,
-        search_type: Option<&str>,
-    ) -> Result<String> {
+    pub async fn search_directory(&self, query: &str, search_type: Option<&str>) -> Result<String> {
         let stype = search_type.unwrap_or("people");
         let cache_key = format!("academics:directory:{}:{}", stype, query.to_lowercase());
 

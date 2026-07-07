@@ -6,10 +6,15 @@ use serde::Deserialize;
 use crate::util::now_pacific;
 
 use super::erddap_client::{ErddapClient, grid_selector, lon_to_360};
-use super::types::{HabSnapshot, HabDayForecast as HabDayTyped};
+use super::types::{HabDayForecast as HabDayTyped, HabSnapshot};
 
 const SERVER: &str = "https://coastwatch.pfeg.noaa.gov/erddap";
-const DATASETS: &[&str] = &["wvcharmV3_0day", "wvcharmV3_1day", "wvcharmV3_2day", "wvcharmV3_3day"];
+const DATASETS: &[&str] = &[
+    "wvcharmV3_0day",
+    "wvcharmV3_1day",
+    "wvcharmV3_2day",
+    "wvcharmV3_3day",
+];
 const RISK_THRESHOLD: f64 = 0.6;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -62,10 +67,11 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &HabRequest) -> Result
     // Fetch all 4 forecast horizons concurrently. Partial failures are
     // tolerated: a failed dataset becomes an "unavailable" placeholder so the
     // remaining horizons still render.
-    let results = join_all(DATASETS.iter().map(|&ds| {
-        fetch_one_day(erddap, ds, (lat_lo, lat_hi), (lon_lo, lon_hi), lat, lon_360)
-    }))
-    .await;
+    let results =
+        join_all(DATASETS.iter().map(|&ds| {
+            fetch_one_day(erddap, ds, (lat_lo, lat_hi), (lon_lo, lon_hi), lat, lon_360)
+        }))
+        .await;
 
     let forecasts: Vec<DayForecast> = DATASETS
         .iter()
@@ -87,7 +93,11 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &HabRequest) -> Result
         .collect();
 
     if forecasts.iter().all(|f| f.p_pseudo_nitzschia.is_none()) {
-        bail!("C-HARM: all 4 forecast horizons returned no data near ({}, {})", lat, lon_west);
+        bail!(
+            "C-HARM: all 4 forecast horizons returned no data near ({}, {})",
+            lat,
+            lon_west
+        );
     }
 
     let typed_forecasts: Vec<HabDayTyped> = forecasts
@@ -141,7 +151,9 @@ async fn fetch_one_day(
     let i_cd = t.col_index("cellular_domoic");
     let i_chl = t.col_index("chla_filled");
 
-    let date = t.rows.first()
+    let date = t
+        .rows
+        .first()
         .and_then(|r| r.get(i_time)?.as_str())
         .unwrap_or("")
         .to_string();
@@ -226,21 +238,43 @@ fn format_output(snap: &HabSnapshot) -> Result<String> {
             3 => "+3 day",
             _ => "—",
         };
-        let pn_str = f.p_pseudo_nitzschia.map(|v| format!("{:.2}", v)).unwrap_or("—".into());
-        let pd_str = f.p_particulate_domoic.map(|v| format!("{:.2}", v)).unwrap_or("—".into());
-        let cd_str = f.p_cellular_domoic.map(|v| format!("{:.2}", v)).unwrap_or("—".into());
-        let chl_str = f.chla_filled.map(|v| format!("{:.1} mg/m³", v)).unwrap_or("—".into());
+        let pn_str = f
+            .p_pseudo_nitzschia
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or("—".into());
+        let pd_str = f
+            .p_particulate_domoic
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or("—".into());
+        let cd_str = f
+            .p_cellular_domoic
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or("—".into());
+        let chl_str = f
+            .chla_filled
+            .map(|v| format!("{:.1} mg/m³", v))
+            .unwrap_or("—".into());
         let risk = risk_class(f.p_pseudo_nitzschia);
 
         out.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} | {} |\n",
             label,
-            if f.date.len() > 10 { &f.date[..10] } else { &f.date },
-            pn_str, risk, pd_str, cd_str, chl_str,
+            if f.date.len() > 10 {
+                &f.date[..10]
+            } else {
+                &f.date
+            },
+            pn_str,
+            risk,
+            pd_str,
+            cd_str,
+            chl_str,
         ));
     }
 
-    let any_high = forecasts.iter().any(|f| f.p_pseudo_nitzschia.is_some_and(|v| v >= RISK_THRESHOLD));
+    let any_high = forecasts
+        .iter()
+        .any(|f| f.p_pseudo_nitzschia.is_some_and(|v| v >= RISK_THRESHOLD));
     if any_high {
         out.push_str(
             "\n> **HAB Advisory**: Elevated *Pseudo-nitzschia* bloom probability detected. \
@@ -254,7 +288,11 @@ fn format_output(snap: &HabSnapshot) -> Result<String> {
          Source: CoastWatch ERDDAP, C-HARM v3.1. \
          Last updated: {}._\n",
         RISK_THRESHOLD,
-        forecasts.iter().map(|f| f.dataset.as_str()).collect::<Vec<_>>().join(", "),
+        forecasts
+            .iter()
+            .map(|f| f.dataset.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
         now_pacific().format("%-I:%M %p %Z"),
     ));
 
@@ -282,8 +320,18 @@ mod tests {
     #[test]
     fn find_nearest_skips_null() {
         let rows = vec![
-            vec![serde_json::json!("t"), serde_json::json!(36.9), serde_json::json!(238.0), serde_json::Value::Null],
-            vec![serde_json::json!("t"), serde_json::json!(36.95), serde_json::json!(238.05), serde_json::json!(0.7)],
+            vec![
+                serde_json::json!("t"),
+                serde_json::json!(36.9),
+                serde_json::json!(238.0),
+                serde_json::Value::Null,
+            ],
+            vec![
+                serde_json::json!("t"),
+                serde_json::json!(36.95),
+                serde_json::json!(238.05),
+                serde_json::json!(0.7),
+            ],
         ];
         let idx = find_nearest_valid(&rows, 1, 2, Some(3), 36.96, 238.03);
         assert_eq!(idx, Some(1));

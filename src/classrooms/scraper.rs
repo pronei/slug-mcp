@@ -42,9 +42,10 @@ impl Classroom {
         }
         // Only show raw area if no location data was found
         if location.is_none()
-            && let Some(area) = &self.area {
-                let _ = write!(out, "\n- **Area**: {}", humanize(area));
-            }
+            && let Some(area) = &self.area
+        {
+            let _ = write!(out, "\n- **Area**: {}", humanize(area));
+        }
         if !self.technology.is_empty() {
             let techs: Vec<String> = self.technology.iter().map(|t| humanize(t)).collect();
             let _ = write!(out, "\n- **Technology**: {}", techs.join(", "));
@@ -82,7 +83,10 @@ pub async fn scrape_classrooms(client: &reqwest::Client) -> Result<Vec<Classroom
         .await
         .context("Failed to fetch classrooms page")?;
 
-    let html = resp.text().await.context("Failed to read classrooms body")?;
+    let html = resp
+        .text()
+        .await
+        .context("Failed to read classrooms body")?;
     Ok(parse_classrooms(&html))
 }
 
@@ -155,17 +159,20 @@ pub fn filter_classrooms<'a>(
         .iter()
         .filter(|c| {
             if let Some(q) = name
-                && !c.name.to_lowercase().contains(&q.to_lowercase()) {
-                    return false;
-                }
+                && !c.name.to_lowercase().contains(&q.to_lowercase())
+            {
+                return false;
+            }
             if let Some(min) = min_capacity
-                && c.capacity.unwrap_or(0) < min {
-                    return false;
-                }
+                && c.capacity.unwrap_or(0) < min
+            {
+                return false;
+            }
             if let Some(max) = max_capacity
-                && c.capacity.unwrap_or(u32::MAX) > max {
-                    return false;
-                }
+                && c.capacity.unwrap_or(u32::MAX) > max
+            {
+                return false;
+            }
             if let Some(b) = building {
                 let b_lower = b.to_lowercase();
                 let area_match = c
@@ -179,7 +186,11 @@ pub fn filter_classrooms<'a>(
             }
             if let Some(t) = technology {
                 let t_lower = t.to_lowercase();
-                if !c.technology.iter().any(|tech| tech.to_lowercase().contains(&t_lower)) {
+                if !c
+                    .technology
+                    .iter()
+                    .any(|tech| tech.to_lowercase().contains(&t_lower))
+                {
                     return false;
                 }
             }

@@ -15,7 +15,7 @@ pub struct StudyRoomAvailabilityRequest {
 }
 
 use crate::cache::CacheStore;
-use scraper::{find_library, library_names, scrape_availability, RoomAvailability, LIBRARIES};
+use scraper::{LIBRARIES, RoomAvailability, find_library, library_names, scrape_availability};
 
 pub struct LibraryService {
     http: reqwest::Client,

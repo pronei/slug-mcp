@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use super::scraper::ProgramEntry;
 
@@ -79,10 +79,7 @@ pub fn resolve_program<'a>(query: &str, index: &'a ProgramIndex) -> Result<&'a P
 }
 
 fn normalize_query(query: &str) -> String {
-    query
-        .trim()
-        .to_lowercase()
-        .replace(['.', ','], "")
+    query.trim().to_lowercase().replace(['.', ','], "")
 }
 
 #[cfg(test)]

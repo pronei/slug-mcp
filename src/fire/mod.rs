@@ -107,12 +107,10 @@ impl FireService {
         let map_key = match &self.map_key {
             Some(k) if !k.is_empty() => k.clone(),
             _ => {
-                return Ok(
-                    "NASA FIRMS map key not configured.\n\
+                return Ok("NASA FIRMS map key not configured.\n\
                      Get a free key at https://firms.modaps.eosdis.nasa.gov/api/area/ and\n\
                      set the `SLUG_MCP_FIRMS_KEY` environment variable."
-                        .to_string(),
-                );
+                    .to_string());
             }
         };
 
@@ -261,7 +259,11 @@ fn format_detections(detections: &[Detection], days: u32) -> String {
 
     // Sort by FRP (fire radiative power) descending — brightest first.
     let mut sorted: Vec<&Detection> = detections.iter().collect();
-    sorted.sort_by(|a, b| b.frp.partial_cmp(&a.frp).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        b.frp
+            .partial_cmp(&a.frp)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut out = format!(
         "# Santa Cruz County fire detections ({} total, last {} {})\n\n",
@@ -276,8 +278,7 @@ fn format_detections(detections: &[Detection], days: u32) -> String {
     );
 
     for d in sorted.iter().take(25) {
-        let dist =
-            haversine_miles(DOWNTOWN_LAT, DOWNTOWN_LON, d.latitude, d.longitude);
+        let dist = haversine_miles(DOWNTOWN_LAT, DOWNTOWN_LON, d.latitude, d.longitude);
         let daynight = if d.daynight == "D" {
             "day"
         } else if d.daynight == "N" {
@@ -305,7 +306,10 @@ fn format_detections(detections: &[Detection], days: u32) -> String {
     }
 
     if sorted.len() > 25 {
-        out.push_str(&format!("_...and {} more detections omitted._\n\n", sorted.len() - 25));
+        out.push_str(&format!(
+            "_...and {} more detections omitted._\n\n",
+            sorted.len() - 25
+        ));
     }
 
     out.push_str(&format!(

@@ -2,7 +2,7 @@ use std::fmt::Write;
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use regex::Regex;
 use scraper::{ElementRef, Html};
 
@@ -278,7 +278,12 @@ fn normalize_ws(s: &str) -> String {
 /// Expects whitespace already normalized.
 fn parse_course_header(text: &str) -> (String, String, String, String) {
     let Some((left, right)) = text.split_once(" - ") else {
-        return (text.to_string(), String::new(), String::new(), String::new());
+        return (
+            text.to_string(),
+            String::new(),
+            String::new(),
+            String::new(),
+        );
     };
     let (subject, catalog) = left
         .trim()
@@ -404,10 +409,26 @@ struct Term {
 }
 
 const TERMS: &[Term] = &[
-    Term { digit: 0, name: "Winter", month_range: 1..=3 },
-    Term { digit: 2, name: "Spring", month_range: 4..=6 },
-    Term { digit: 4, name: "Summer", month_range: 7..=8 },
-    Term { digit: 8, name: "Fall",   month_range: 9..=12 },
+    Term {
+        digit: 0,
+        name: "Winter",
+        month_range: 1..=3,
+    },
+    Term {
+        digit: 2,
+        name: "Spring",
+        month_range: 4..=6,
+    },
+    Term {
+        digit: 4,
+        name: "Summer",
+        month_range: 7..=8,
+    },
+    Term {
+        digit: 8,
+        name: "Fall",
+        month_range: 9..=12,
+    },
 ];
 
 /// Convenience: compute the human-readable name of the current/upcoming term
@@ -515,7 +536,9 @@ pub async fn scrape_directory(
     let client = DIRECTORY_CLIENT
         .get_or_init(|| {
             reqwest::Client::builder()
-                .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
+                .user_agent(
+                    "slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)",
+                )
                 .cookie_store(true)
                 .gzip(true)
                 .connect_timeout(std::time::Duration::from_secs(10))
@@ -577,10 +600,7 @@ fn extract_csrf_for(html: &str, form_action: &str) -> Option<(String, String)> {
         .find(|f| f.contains(&needle))?;
 
     let attr = |name: &str| -> Option<String> {
-        let re = Regex::new(&format!(
-            r#"name=['"]{name}['"]\s+value=['"]([^'"]+)['"]"#
-        ))
-        .ok()?;
+        let re = Regex::new(&format!(r#"name=['"]{name}['"]\s+value=['"]([^'"]+)['"]"#)).ok()?;
         re.captures(block).map(|c| c[1].to_string())
     };
     Some((attr("CSRFName")?, attr("CSRFToken")?))
@@ -730,11 +750,21 @@ mod tests {
         // &nbsp;-normalized header.
         assert_eq!(
             parse_course_header("AM 10 - 01 Lin Algebra for Engrs"),
-            ("AM".into(), "10".into(), "01".into(), "Lin Algebra for Engrs".into())
+            (
+                "AM".into(),
+                "10".into(),
+                "01".into(),
+                "Lin Algebra for Engrs".into()
+            )
         );
         assert_eq!(
             parse_course_header("CSE 115A - 01A Intro to Software Eng"),
-            ("CSE".into(), "115A".into(), "01A".into(), "Intro to Software Eng".into())
+            (
+                "CSE".into(),
+                "115A".into(),
+                "01A".into(),
+                "Intro to Software Eng".into()
+            )
         );
     }
 

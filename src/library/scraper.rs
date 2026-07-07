@@ -265,10 +265,11 @@ fn decode_js_unicode(s: &str) -> String {
             if let Some('u') = chars.next() {
                 let hex: String = chars.by_ref().take(4).collect();
                 if let Ok(code) = u32::from_str_radix(&hex, 16)
-                    && let Some(ch) = char::from_u32(code) {
-                        result.push(ch);
-                        continue;
-                    }
+                    && let Some(ch) = char::from_u32(code)
+                {
+                    result.push(ch);
+                    continue;
+                }
                 // Malformed escape — keep raw
                 result.push('\\');
                 result.push('u');
@@ -286,11 +287,7 @@ fn decode_js_unicode(s: &str) -> String {
 /// Extract "HH:MM" from "YYYY-MM-DD HH:MM:SS"
 fn format_time(datetime_str: &str) -> String {
     if let Some(time_part) = datetime_str.split_whitespace().nth(1) {
-        time_part
-            .split(':')
-            .take(2)
-            .collect::<Vec<_>>()
-            .join(":")
+        time_part.split(':').take(2).collect::<Vec<_>>().join(":")
     } else {
         datetime_str.to_string()
     }
@@ -371,9 +368,10 @@ pub async fn scrape_availability(
     for slot in &grid.slots {
         // Filter by lid: only include rooms belonging to the requested library
         if let Some(meta) = meta_map.get(&slot.item_id)
-            && meta.lid != lid {
-                continue;
-            }
+            && meta.lid != lid
+        {
+            continue;
+        }
 
         let entry = slots_by_room.entry(slot.item_id).or_default();
         let time_slot = TimeSlot {
@@ -478,7 +476,10 @@ mod tests {
         assert!(rendered.contains("**Open**: 09:00 - 09:30"));
         assert!(rendered.contains("**Booked**: 09:30 - 10:00"));
         // Room name links to its LibCal deep link.
-        assert!(rendered.contains("[4th Floor Room 4360](https://calendar.library.ucsc.edu/space/139536)"));
+        assert!(
+            rendered
+                .contains("[4th Floor Room 4360](https://calendar.library.ucsc.edu/space/139536)")
+        );
     }
 
     #[test]
@@ -500,9 +501,7 @@ mod tests {
         };
         let out = avail.format();
         // Library-level grid deep link carries lid + date.
-        assert!(out.contains(
-            "(https://calendar.library.ucsc.edu/spaces?lid=16578&d=2026-06-15)"
-        ));
+        assert!(out.contains("(https://calendar.library.ucsc.edu/spaces?lid=16578&d=2026-06-15)"));
         // "Reserve a room" CTA and an open-room count line.
         assert!(out.contains("Reserve a room"));
         assert!(out.contains("1 of 1 rooms have open slots"));

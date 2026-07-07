@@ -70,11 +70,11 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &HfrRequest) -> Result
             match erddap.griddap(SERVER, dataset, &[sel_u, sel_v]).await {
                 Ok(r) => {
                     let i_u_check = r.table.col_index("water_u");
-                    let has_valid = r.table.rows.iter().any(|row| {
-                        i_u_check
-                            .and_then(|i| row.get(i)?.as_f64())
-                            .is_some()
-                    });
+                    let has_valid = r
+                        .table
+                        .rows
+                        .iter()
+                        .any(|row| i_u_check.and_then(|i| row.get(i)?.as_f64()).is_some());
                     if has_valid {
                         result = Some(r);
                         break;
@@ -97,7 +97,9 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &HfrRequest) -> Result
     let i_u = t.col_index("water_u");
     let i_v = t.col_index("water_v");
 
-    let timestamp = t.rows.first()
+    let timestamp = t
+        .rows
+        .first()
         .and_then(|r| r.get(i_time)?.as_str())
         .unwrap_or("unknown")
         .to_string();
@@ -184,11 +186,11 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &HfrRequest) -> Result
             match erddap.griddap(SERVER, dataset, &[sel_u, sel_v]).await {
                 Ok(r) => {
                     let i_u_check = r.table.col_index("water_u");
-                    let has_valid = r.table.rows.iter().any(|row| {
-                        i_u_check
-                            .and_then(|i| row.get(i)?.as_f64())
-                            .is_some()
-                    });
+                    let has_valid = r
+                        .table
+                        .rows
+                        .iter()
+                        .any(|row| i_u_check.and_then(|i| row.get(i)?.as_f64()).is_some());
                     if has_valid {
                         result = Some(r);
                         break;
@@ -211,7 +213,9 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &HfrRequest) -> Result
     let i_u = t.col_index("water_u");
     let i_v = t.col_index("water_v");
 
-    let timestamp = t.rows.first()
+    let timestamp = t
+        .rows
+        .first()
         .and_then(|r| r.get(i_time)?.as_str())
         .unwrap_or("unknown")
         .to_string();
@@ -269,14 +273,18 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &HfrRequest) -> Result
          | Mean u (east) | {:+.3} m/s |\n\
          | Mean v (north) | {:+.3} m/s |\n\
          | Valid cells | {} / {} ({:.0}%) |\n",
-        dataset, res,
+        dataset,
+        res,
         timestamp,
-        mean_speed, mean_speed * 100.0,
+        mean_speed,
+        mean_speed * 100.0,
         max_speed,
-        flow_compass, flow_dir,
+        flow_compass,
+        flow_dir,
         mean_u,
         mean_v,
-        n_valid, total_cells,
+        n_valid,
+        total_cells,
         n_valid as f64 / total_cells as f64 * 100.0,
     );
 
@@ -288,10 +296,7 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &HfrRequest) -> Result
         } else {
             ""
         };
-        out.push_str(&format!(
-            "| Divergence | {:.2e} s⁻¹{} |\n",
-            div, div_note,
-        ));
+        out.push_str(&format!("| Divergence | {:.2e} s⁻¹{} |\n", div, div_note,));
     }
 
     out.push_str(&format!(
@@ -364,13 +369,36 @@ mod tests {
     #[test]
     fn divergence_uniform_field() {
         let cells = vec![
-            Cell { lat: 36.8, lon: -122.0, u: 0.1, v: 0.1 },
-            Cell { lat: 36.8, lon: -121.94, u: 0.1, v: 0.1 },
-            Cell { lat: 36.854, lon: -122.0, u: 0.1, v: 0.1 },
-            Cell { lat: 36.854, lon: -121.94, u: 0.1, v: 0.1 },
+            Cell {
+                lat: 36.8,
+                lon: -122.0,
+                u: 0.1,
+                v: 0.1,
+            },
+            Cell {
+                lat: 36.8,
+                lon: -121.94,
+                u: 0.1,
+                v: 0.1,
+            },
+            Cell {
+                lat: 36.854,
+                lon: -122.0,
+                u: 0.1,
+                v: 0.1,
+            },
+            Cell {
+                lat: 36.854,
+                lon: -121.94,
+                u: 0.1,
+                v: 0.1,
+            },
         ];
         let div = compute_divergence(&cells, "6km");
         assert!(div.is_some());
-        assert!(div.unwrap().abs() < 1e-6, "uniform field should have ~0 divergence");
+        assert!(
+            div.unwrap().abs() < 1e-6,
+            "uniform field should have ~0 divergence"
+        );
     }
 }

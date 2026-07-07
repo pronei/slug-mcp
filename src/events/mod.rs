@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::cache::CacheStore;
-use eventbrite::{EventbriteClient, Event as EventbriteEvent};
+use eventbrite::{Event as EventbriteEvent, EventbriteClient};
 use tribe::{TribeClient, TribeEvent};
 
 /// Default location for Eventbrite searches (Eventbrite URL slug format).

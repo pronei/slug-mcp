@@ -220,7 +220,6 @@ The exception is **`SLUG_MCP_BUSTIME_KEY`**: the SC Metro stops catalog is loade
 | Env var | Needed by | Get one |
 |---------|-----------|---------|
 | `SLUG_MCP_BUSTIME_KEY` | `get_bus_predictions`, stop lookups | <https://rt.scmetro.org> (developer access) |
-| `SLUG_MCP_EVENTBRITE_KEY` | `search_eventbrite_events` | <https://www.eventbrite.com/platform/api> |
 | `SLUG_MCP_FIRMS_KEY` | `get_fire_detections` | <https://firms.modaps.eosdis.nasa.gov/api/area/> |
 | `AIRNOW_API_KEY` | `get_air_quality` | <https://docs.airnowapi.org/> |
 | `EBIRD_API_KEY` | `search_bird_observations` | <https://ebird.org/api/keygen> |

@@ -2,7 +2,7 @@ pub mod scraper;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::Datelike;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -36,10 +36,10 @@ use std::time::Duration;
 use crate::cache::CacheStore;
 use crate::util::FuzzyMatcher;
 #[cfg(feature = "auth")]
-use scraper::{scrape_balance, BalanceResult, MealBalance};
+use scraper::{BalanceResult, MealBalance, scrape_balance};
 use scraper::{
-    find_hall, hall_names, scrape_hours, scrape_menu, scrape_nutrition,
-    DiningLocation, HallKind, DINING_HALLS,
+    DINING_HALLS, DiningLocation, HallKind, find_hall, hall_names, scrape_hours, scrape_menu,
+    scrape_nutrition,
 };
 
 /// Category names we hide by default (condiments, beverages, etc.) so the menu
@@ -80,7 +80,8 @@ impl DiningService {
             Some(d) => {
                 if let Ok(parsed) = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d") {
                     let iso = d.to_string();
-                    let formatted = format!("{}/{}/{}", parsed.month(), parsed.day(), parsed.year());
+                    let formatted =
+                        format!("{}/{}/{}", parsed.month(), parsed.day(), parsed.year());
                     (iso, Some(formatted))
                 } else {
                     // Assume it's already in M/D/YYYY — store raw as cache key
@@ -105,7 +106,10 @@ impl DiningService {
             })?;
             vec![hall]
         } else {
-            DINING_HALLS.iter().filter(|h| h.kind == HallKind::Full).collect()
+            DINING_HALLS
+                .iter()
+                .filter(|h| h.kind == HallKind::Full)
+                .collect()
         };
 
         let futures: Vec<_> = halls
@@ -212,7 +216,10 @@ impl DiningService {
         // parse failed and we want to refetch next time, so no get_or_fetch.
         let cache_key = format!("dining:balance:{session_key}");
         if let Some(balance) = self.cache.get::<MealBalance>(&cache_key).await {
-            return Ok(BalanceResult { balance, debug_snippet: None });
+            return Ok(BalanceResult {
+                balance,
+                debug_snippet: None,
+            });
         }
 
         let result = scrape_balance(auth_client).await?;
@@ -239,7 +246,11 @@ pub fn start_cache_refresher(
     tokio::spawn(async move {
         loop {
             let delay = duration_until_next_5am();
-            tracing::info!("Next dining cache refresh in {}h {}m", delay.as_secs() / 3600, (delay.as_secs() % 3600) / 60);
+            tracing::info!(
+                "Next dining cache refresh in {}h {}m",
+                delay.as_secs() / 3600,
+                (delay.as_secs() % 3600) / 60
+            );
             tokio::time::sleep(delay).await;
 
             let now = crate::util::now_pacific();
@@ -270,9 +281,7 @@ fn duration_until_next_5am() -> Duration {
     };
     // 5 AM Pacific is never ambiguous (DST transitions happen at 2 AM); on the
     // off chance chrono returns Ambiguous/None, fall back to 1h to retry.
-    let pacific_next = next_5am
-        .and_local_timezone(chrono_tz::US::Pacific)
-        .single();
+    let pacific_next = next_5am.and_local_timezone(chrono_tz::US::Pacific).single();
     match pacific_next {
         Some(t) => (t - now).to_std().unwrap_or(Duration::from_secs(3600)),
         None => {

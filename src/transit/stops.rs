@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use super::BUSTIME_BASE_URL;
@@ -212,8 +212,8 @@ pub fn search_stops<'a>(stops: &'a [Stop], query: &str, limit: usize) -> Vec<&'a
             } else {
                 // Also match individual words
                 let query_words: Vec<&str> = query_lower.split_whitespace().collect();
-                let all_words_match = !query_words.is_empty()
-                    && query_words.iter().all(|w| name_lower.contains(w));
+                let all_words_match =
+                    !query_words.is_empty() && query_words.iter().all(|w| name_lower.contains(w));
                 if all_words_match {
                     Some((3, stop))
                 } else {

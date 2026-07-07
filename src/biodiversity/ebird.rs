@@ -67,7 +67,11 @@ struct EBirdHotspot {
 
 // ─── HTTP helpers ───
 
-async fn fetch_observations(http: &reqwest::Client, key: &str, url: &str) -> Result<Vec<Observation>> {
+async fn fetch_observations(
+    http: &reqwest::Client,
+    key: &str,
+    url: &str,
+) -> Result<Vec<Observation>> {
     let resp = http
         .get(url)
         .header("X-eBirdApiToken", key)
@@ -162,9 +166,7 @@ pub async fn fetch_recent_region(
     days: u32,
     limit: u32,
 ) -> Result<Vec<Observation>> {
-    let url = format!(
-        "{BASE}/data/obs/{region}/recent?back={days}&maxResults={limit}"
-    );
+    let url = format!("{BASE}/data/obs/{region}/recent?back={days}&maxResults={limit}");
     fetch_observations(http, key, &url).await
 }
 
@@ -176,9 +178,7 @@ pub async fn fetch_recent_region_species(
     days: u32,
     limit: u32,
 ) -> Result<Vec<Observation>> {
-    let url = format!(
-        "{BASE}/data/obs/{region}/recent/{code}?back={days}&maxResults={limit}"
-    );
+    let url = format!("{BASE}/data/obs/{region}/recent/{code}?back={days}&maxResults={limit}");
     fetch_observations(http, key, &url).await
 }
 
@@ -189,9 +189,7 @@ pub async fn fetch_recent_region_notable(
     days: u32,
     limit: u32,
 ) -> Result<Vec<Observation>> {
-    let url = format!(
-        "{BASE}/data/obs/{region}/recent/notable?back={days}&maxResults={limit}"
-    );
+    let url = format!("{BASE}/data/obs/{region}/recent/notable?back={days}&maxResults={limit}");
     fetch_observations(http, key, &url).await
 }
 
@@ -302,11 +300,7 @@ async fn fetch_hotspots(http: &reqwest::Client, key: &str, url: &str) -> Result<
 
 // ─── Formatters ───
 
-pub fn format_recent(
-    obs: &[Observation],
-    title_suffix: &str,
-    empty_suffix: &str,
-) -> String {
+pub fn format_recent(obs: &[Observation], title_suffix: &str, empty_suffix: &str) -> String {
     if obs.is_empty() {
         return format!("No eBird observations found {empty_suffix}.\n");
     }
@@ -329,13 +323,9 @@ pub fn format_historic(
 ) -> String {
     let date = format!("{year:04}-{month:02}-{day:02}");
     if obs.is_empty() {
-        return format!(
-            "No eBird historic observations found for region `{region}` on {date}.\n"
-        );
+        return format!("No eBird historic observations found for region `{region}` on {date}.\n");
     }
-    let mut out = format!(
-        "# eBird historic observations — region `{region}` · {date}\n\n"
-    );
+    let mut out = format!("# eBird historic observations — region `{region}` · {date}\n\n");
     out.push_str(&format!("_{} species reported._\n\n", obs.len()));
     push_obs_lines(&mut out, obs);
     out.push_str(&format!(

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chromiumoxide::browser::{Browser, BrowserConfig};
 use chromiumoxide::cdp::browser_protocol::storage::GetCookiesParams as StorageGetCookiesParams;
 use futures_util::StreamExt;
@@ -46,9 +46,8 @@ pub async fn login_via_browser() -> Result<Vec<StoredCookie>> {
         .context("failed to launch Chrome. Is Chrome/Chromium installed?")?;
 
     // Spawn the CDP event handler
-    let handler_task = tokio::spawn(async move {
-        while let Some(_event) = handler.next().await {}
-    });
+    let handler_task =
+        tokio::spawn(async move { while let Some(_event) = handler.next().await {} });
 
     let result = do_login_flow(&browser).await;
 

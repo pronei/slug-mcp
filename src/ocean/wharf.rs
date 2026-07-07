@@ -72,7 +72,10 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &WharfRequest) -> Resu
     let i_turb = t.col_index("sea_water_turbidity");
 
     let last = t.rows.last().unwrap();
-    let time_str = last.get(i_time).and_then(|v| v.as_str()).unwrap_or("unknown");
+    let time_str = last
+        .get(i_time)
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
 
     let get_f = |row: &Vec<serde_json::Value>, idx: Option<usize>| -> Option<f64> {
         idx.and_then(|i| row.get(i)?.as_f64())
@@ -142,7 +145,10 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &WharfRequest) -> Resu
     let i_turb = t.col_index("sea_water_turbidity");
 
     let last = t.rows.last().unwrap();
-    let time_str = last.get(i_time).and_then(|v| v.as_str()).unwrap_or("unknown");
+    let time_str = last
+        .get(i_time)
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
 
     let get_f = |row: &Vec<serde_json::Value>, idx: Option<usize>| -> Option<f64> {
         idx.and_then(|i| row.get(i)?.as_f64())
@@ -196,13 +202,19 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &WharfRequest) -> Resu
         } else {
             ""
         };
-        out.push_str(&format!("- **Chlorophyll-a**: {:.1} mg/m³{}\n", v, chl_note));
+        out.push_str(&format!(
+            "- **Chlorophyll-a**: {:.1} mg/m³{}\n",
+            v, chl_note
+        ));
     }
     if let Some(v) = do_mg {
         let sat_str = do_sat
             .map(|s| format!(" ({:.0}% saturation)", s))
             .unwrap_or_default();
-        out.push_str(&format!("- **Dissolved oxygen**: {:.1} mg/L{}\n", v, sat_str));
+        out.push_str(&format!(
+            "- **Dissolved oxygen**: {:.1} mg/L{}\n",
+            v, sat_str
+        ));
     }
     if let Some(v) = turb {
         out.push_str(&format!("- **Turbidity**: {:.1} NTU\n", v));
@@ -242,6 +254,6 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &WharfRequest) -> Resu
 mod tests {
     #[test]
     fn ph_annotation() {
-        assert!(super::fetch_and_format as usize > 0); // module compiles
+        assert!(super::fetch_and_format as *const () as usize > 0); // module compiles
     }
 }

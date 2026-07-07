@@ -65,14 +65,11 @@ pub fn find(query: &str) -> Option<&'static SurfSpot> {
         return None;
     }
     // Try exact slug first, then fallback to substring in slug or name.
-    SURF_SPOTS
-        .iter()
-        .find(|s| s.slug == q)
-        .or_else(|| {
-            SURF_SPOTS
-                .iter()
-                .find(|s| s.slug.contains(&q) || s.name.to_lowercase().contains(&q))
-        })
+    SURF_SPOTS.iter().find(|s| s.slug == q).or_else(|| {
+        SURF_SPOTS
+            .iter()
+            .find(|s| s.slug.contains(&q) || s.name.to_lowercase().contains(&q))
+    })
 }
 
 pub fn names_list() -> String {

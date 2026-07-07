@@ -53,7 +53,10 @@ impl TaxonomyIndex {
         }
 
         // Fast path: literal 6-char alphanumeric species code (e.g. "norcar").
-        if q.len() == 6 && q.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()) {
+        if q.len() == 6
+            && q.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        {
             if let Some(entry) = self.by_code.get(&q) {
                 return SpeciesLookup::Exact(entry.species_code.clone());
             }
@@ -71,8 +74,7 @@ impl TaxonomyIndex {
             .all_entries
             .iter()
             .filter(|e| {
-                e.com_name.to_lowercase().contains(&q)
-                    || e.sci_name.to_lowercase().contains(&q)
+                e.com_name.to_lowercase().contains(&q) || e.sci_name.to_lowercase().contains(&q)
             })
             .collect();
 
@@ -114,7 +116,11 @@ impl TaxonomyIndex {
             })
             .collect();
         scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
-        scored.into_iter().take(n).map(|(_, _, e)| e.clone()).collect()
+        scored
+            .into_iter()
+            .take(n)
+            .map(|(_, _, e)| e.clone())
+            .collect()
     }
 }
 

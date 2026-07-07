@@ -28,8 +28,8 @@ pub struct GroupExerciseRequest {
 
 use crate::cache::CacheStore;
 use scraper::{
-    find_facility, scrape_group_exercise, scrape_occupancy, scrape_schedule, FacilityOccupancy,
-    FacilitySchedule, GroupExerciseClass,
+    FacilityOccupancy, FacilitySchedule, GroupExerciseClass, find_facility, scrape_group_exercise,
+    scrape_occupancy, scrape_schedule,
 };
 
 pub struct RecreationService {
@@ -86,13 +86,15 @@ impl RecreationService {
             .iter()
             .filter(|c| {
                 if let Some(d) = day
-                    && !c.day.eq_ignore_ascii_case(d) {
-                        return false;
-                    }
+                    && !c.day.eq_ignore_ascii_case(d)
+                {
+                    return false;
+                }
                 if let Some(name) = class_name
-                    && !c.name.to_lowercase().contains(&name.to_lowercase()) {
-                        return false;
-                    }
+                    && !c.name.to_lowercase().contains(&name.to_lowercase())
+                {
+                    return false;
+                }
                 true
             })
             .collect();

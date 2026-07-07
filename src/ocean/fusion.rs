@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 
 use super::erddap_client::ErddapClient;
 use super::types::*;
-use super::{upwelling, m1, wharf, charm, sst, hfr};
-use super::{UpwellingRequest, M1Request, WharfRequest, HabRequest, SstRequest, HfrRequest};
+use super::{HabRequest, HfrRequest, M1Request, SstRequest, UpwellingRequest, WharfRequest};
+use super::{charm, hfr, m1, sst, upwelling, wharf};
 use crate::biodiversity::{BiodiversityService, Observation};
 use crate::cache::CacheStore;
 use crate::util::{degrees_to_compass, now_pacific};
@@ -85,12 +85,34 @@ async fn collect_snapshot(
     erddap: &ErddapClient,
     bio: &Arc<BiodiversityService>,
 ) -> FullSnapshot {
-    let upw_req = UpwellingRequest { lat_band: Some("37N".into()), days_back: Some(7) };
-    let m1_req = M1Request { hours: Some(72), include_profile: Some(true) };
+    let upw_req = UpwellingRequest {
+        lat_band: Some("37N".into()),
+        days_back: Some(7),
+    };
+    let m1_req = M1Request {
+        hours: Some(72),
+        include_profile: Some(true),
+    };
     let wharf_req = WharfRequest { hours: Some(6) };
-    let hab_req = HabRequest { lat: None, lon: None, snap_radius: None };
-    let sst_req = SstRequest { lat_min: None, lat_max: None, lon_min: None, lon_max: None, stride: None };
-    let hfr_req = HfrRequest { resolution: Some("6km".into()), lat_min: None, lat_max: None, lon_min: None, lon_max: None };
+    let hab_req = HabRequest {
+        lat: None,
+        lon: None,
+        snap_radius: None,
+    };
+    let sst_req = SstRequest {
+        lat_min: None,
+        lat_max: None,
+        lon_min: None,
+        lon_max: None,
+        stride: None,
+    };
+    let hfr_req = HfrRequest {
+        resolution: Some("6km".into()),
+        lat_min: None,
+        lat_max: None,
+        lon_min: None,
+        lon_max: None,
+    };
 
     // Fan out all fetchers concurrently.
     // upwelling takes (http, cache, req); all erddap-based take (erddap, req).
@@ -225,7 +247,9 @@ fn render_narrative(snap: &FullSnapshot) -> String {
         out.push_str(&format!(
             "**M1 mooring** ({}): surface temp {}, ",
             m.timestamp_utc,
-            m.surface_temp_c.map(|v| format!("{:.1}\u{00b0}C", v)).unwrap_or_else(|| "N/A".to_string()),
+            m.surface_temp_c
+                .map(|v| format!("{:.1}\u{00b0}C", v))
+                .unwrap_or_else(|| "N/A".to_string()),
         ));
         if let (Some(spd), Some(dir)) = (m.wind_speed_ms, m.wind_dir_from_deg) {
             let compass = degrees_to_compass(dir);
@@ -243,10 +267,15 @@ fn render_narrative(snap: &FullSnapshot) -> String {
             out.push_str(&format!(
                 ". Stratification index {:.2}\u{00b0}C{}",
                 strat,
-                if strat > 3.0 { " (strongly stratified)" }
-                else if strat > 1.5 { " (moderately stratified)" }
-                else if strat > 0.5 { " (weakly stratified, active mixing)" }
-                else { " (well-mixed)" },
+                if strat > 3.0 {
+                    " (strongly stratified)"
+                } else if strat > 1.5 {
+                    " (moderately stratified)"
+                } else if strat > 0.5 {
+                    " (weakly stratified, active mixing)"
+                } else {
+                    " (well-mixed)"
+                },
             ));
         }
         out.push_str(".\n\n");
@@ -277,18 +306,26 @@ fn render_narrative(snap: &FullSnapshot) -> String {
         out.push_str(&format!(
             "**HF Radar** ({}, {}): mean {:.3} m/s toward {} ({:.0}\u{00b0}), \
              max {:.3} m/s, coverage {}/{} cells",
-            h.timestamp_utc, h.resolution,
-            h.mean_speed_ms, compass, h.flow_direction_deg,
+            h.timestamp_utc,
+            h.resolution,
+            h.mean_speed_ms,
+            compass,
+            h.flow_direction_deg,
             h.max_speed_ms,
-            h.n_cells_valid, h.n_cells_total,
+            h.n_cells_valid,
+            h.n_cells_total,
         ));
         if let Some(div) = h.divergence_per_s {
             out.push_str(&format!(
                 ", divergence {:.2e} s\u{207b}\u{00b9}{}",
                 div,
-                if div > 1e-6 { " (upwelling-consistent)" }
-                else if div < -1e-6 { " (convergence)" }
-                else { "" },
+                if div > 1e-6 {
+                    " (upwelling-consistent)"
+                } else if div < -1e-6 {
+                    " (convergence)"
+                } else {
+                    ""
+                },
             ));
         }
         out.push_str(".\n\n");
@@ -297,34 +334,52 @@ fn render_narrative(snap: &FullSnapshot) -> String {
     // 5. C-HARM HAB
     if let Some(ref h) = snap.hab {
         out.push_str("**C-HARM HAB forecast**: ");
-        let parts: Vec<String> = h.forecasts.iter().enumerate().map(|(i, f)| {
-            let label = match i {
-                0 => "nowcast",
-                1 => "+1d",
-                2 => "+2d",
-                3 => "+3d",
-                _ => "?",
-            };
-            let pn = f.p_pseudo_nitzschia.map(|v| format!("{:.0}%", v * 100.0)).unwrap_or_else(|| "N/A".to_string());
-            let chl = f.chla_filled.map(|v| format!("{:.1} mg/m\u{00b3}", v)).unwrap_or_else(|| "N/A".to_string());
-            format!("{} P(PN) {} [{}] chl-a {}", label, pn, f.risk_class, chl)
-        }).collect();
+        let parts: Vec<String> = h
+            .forecasts
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let label = match i {
+                    0 => "nowcast",
+                    1 => "+1d",
+                    2 => "+2d",
+                    3 => "+3d",
+                    _ => "?",
+                };
+                let pn = f
+                    .p_pseudo_nitzschia
+                    .map(|v| format!("{:.0}%", v * 100.0))
+                    .unwrap_or_else(|| "N/A".to_string());
+                let chl = f
+                    .chla_filled
+                    .map(|v| format!("{:.1} mg/m\u{00b3}", v))
+                    .unwrap_or_else(|| "N/A".to_string());
+                format!("{} P(PN) {} [{}] chl-a {}", label, pn, f.risk_class, chl)
+            })
+            .collect();
         out.push_str(&parts.join("; "));
         out.push_str(".\n\n");
     }
 
     // 6. SC Wharf in-situ
     if let Some(ref w) = snap.wharf {
-        out.push_str(&format!(
-            "**SC Wharf** ({}): ",
-            w.timestamp_utc,
-        ));
+        out.push_str(&format!("**SC Wharf** ({}): ", w.timestamp_utc,));
         let mut fields = Vec::new();
-        if let Some(t) = w.temp_c { fields.push(format!("temp {:.1}\u{00b0}C", t)); }
-        if let Some(c) = w.chla_mg_m3 { fields.push(format!("chl-a {:.1} mg/m\u{00b3}", c)); }
-        if let Some(p) = w.ph { fields.push(format!("pH {:.2}", p)); }
-        if let Some(d) = w.do_mg_l { fields.push(format!("DO {:.1} mg/L", d)); }
-        if let Some(s) = w.salinity_psu { fields.push(format!("salinity {:.2} PSU", s)); }
+        if let Some(t) = w.temp_c {
+            fields.push(format!("temp {:.1}\u{00b0}C", t));
+        }
+        if let Some(c) = w.chla_mg_m3 {
+            fields.push(format!("chl-a {:.1} mg/m\u{00b3}", c));
+        }
+        if let Some(p) = w.ph {
+            fields.push(format!("pH {:.2}", p));
+        }
+        if let Some(d) = w.do_mg_l {
+            fields.push(format!("DO {:.1} mg/L", d));
+        }
+        if let Some(s) = w.salinity_psu {
+            fields.push(format!("salinity {:.2} PSU", s));
+        }
         out.push_str(&fields.join(", "));
         out.push_str(".\n\n");
     }
@@ -333,24 +388,34 @@ fn render_narrative(snap: &FullSnapshot) -> String {
     if let Some(ref b) = snap.birds {
         if b.total_observations > 0 {
             out.push_str("**Upwelling bird indicators** (eBird, 7d): ");
-            let parts: Vec<String> = b.species.iter().map(|s| format!("{} ({})", s.common_name, s.count)).collect();
+            let parts: Vec<String> = b
+                .species
+                .iter()
+                .map(|s| format!("{} ({})", s.common_name, s.count))
+                .collect();
             out.push_str(&parts.join(", "));
             out.push_str(&format!(". Total: {}.\n\n", b.total_observations));
         } else {
-            out.push_str("**Upwelling bird indicators**: no indicator species reported in last 7 days.\n\n");
+            out.push_str(
+                "**Upwelling bird indicators**: no indicator species reported in last 7 days.\n\n",
+            );
         }
     }
 
     // 8. iNat strandings
     if !snap.inat.is_empty() {
         out.push_str("**iNaturalist strandings** (14d): ");
-        let parts: Vec<String> = snap.inat.iter().map(|s| {
-            if s.total_observations > 0 {
-                format!("{}: {} obs", s.query, s.total_observations)
-            } else {
-                format!("{}: none", s.query)
-            }
-        }).collect();
+        let parts: Vec<String> = snap
+            .inat
+            .iter()
+            .map(|s| {
+                if s.total_observations > 0 {
+                    format!("{}: {} obs", s.query, s.total_observations)
+                } else {
+                    format!("{}: none", s.query)
+                }
+            })
+            .collect();
         out.push_str(&parts.join("; "));
         out.push_str(".\n\n");
     }
@@ -358,7 +423,11 @@ fn render_narrative(snap: &FullSnapshot) -> String {
     // 9. Partial failure notes
     if !snap.partial_failures.is_empty() {
         out.push_str("**Partial failures**: ");
-        let parts: Vec<String> = snap.partial_failures.iter().map(|f| format!("{}: {}", f.source, f.error)).collect();
+        let parts: Vec<String> = snap
+            .partial_failures
+            .iter()
+            .map(|f| format!("{}: {}", f.source, f.error))
+            .collect();
         out.push_str(&parts.join("; "));
         out.push_str(".\n\n");
     }
@@ -384,7 +453,8 @@ fn render_hab_narrative(snap: &FullSnapshot) -> String {
     if let Some(ref h) = snap.hab {
         out.push_str(&format!(
             "_Nearest valid cell to ({:.2}\u{00b0}N, {:.2}\u{00b0}W)_\n\n",
-            h.query_lat, h.query_lon.abs(),
+            h.query_lat,
+            h.query_lon.abs(),
         ));
         out.push_str("| Horizon | P(PN) | Risk | Chl-a |\n");
         out.push_str("|---|---|---|---|\n");
@@ -397,9 +467,18 @@ fn render_hab_narrative(snap: &FullSnapshot) -> String {
                 3 => "+3 day",
                 _ => "--",
             };
-            let pn = f.p_pseudo_nitzschia.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "--".to_string());
-            let chl = f.chla_filled.map(|v| format!("{:.1} mg/m\u{00b3}", v)).unwrap_or_else(|| "--".to_string());
-            out.push_str(&format!("| {} | {} | {} | {} |\n", label, pn, f.risk_class, chl));
+            let pn = f
+                .p_pseudo_nitzschia
+                .map(|v| format!("{:.2}", v))
+                .unwrap_or_else(|| "--".to_string());
+            let chl = f
+                .chla_filled
+                .map(|v| format!("{:.1} mg/m\u{00b3}", v))
+                .unwrap_or_else(|| "--".to_string());
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                label, pn, f.risk_class, chl
+            ));
         }
         out.push('\n');
     } else {
@@ -410,11 +489,21 @@ fn render_hab_narrative(snap: &FullSnapshot) -> String {
     if let Some(ref w) = snap.wharf {
         out.push_str("## SC Wharf ground-truth\n\n");
         if let Some(c) = w.chla_mg_m3 {
-            let note = if c > 10.0 { " (bloom-level)" } else if c > 5.0 { " (elevated)" } else { "" };
+            let note = if c > 10.0 {
+                " (bloom-level)"
+            } else if c > 5.0 {
+                " (elevated)"
+            } else {
+                ""
+            };
             out.push_str(&format!("- Chl-a: {:.1} mg/m\u{00b3}{}\n", c, note));
         }
         if let Some(p) = w.ph {
-            let note = if p < 7.8 { " (depressed, upwelling-driven CO\u{2082})" } else { "" };
+            let note = if p < 7.8 {
+                " (depressed, upwelling-driven CO\u{2082})"
+            } else {
+                ""
+            };
             out.push_str(&format!("- pH: {:.2}{}\n", p, note));
         }
         if let Some(t) = w.temp_c {
@@ -435,13 +524,14 @@ fn render_hab_narrative(snap: &FullSnapshot) -> String {
 
     // Bird indicators
     if let Some(ref b) = snap.birds
-        && b.total_observations > 0 {
-            out.push_str("## Seabird indicators\n\n");
-            for s in &b.species {
-                out.push_str(&format!("- {}: {}\n", s.common_name, s.count));
-            }
-            out.push('\n');
+        && b.total_observations > 0
+    {
+        out.push_str("## Seabird indicators\n\n");
+        for s in &b.species {
+            out.push_str(&format!("- {}: {}\n", s.common_name, s.count));
         }
+        out.push('\n');
+    }
 
     // Partial failures
     if !snap.partial_failures.is_empty() {
@@ -469,60 +559,160 @@ fn collect_f64s(snap: &FullSnapshot) -> Vec<f64> {
     let mut vals = Vec::new();
 
     if let Some(ref u) = snap.upwelling {
-        for v in [u.today_cuti, u.today_beuti, u.climatology_cuti, u.climatology_beuti,
-                  u.anomaly_cuti, u.z_cuti, u.rolling_5d_cuti, u.rolling_5d_beuti] {
-            if v.is_finite() { vals.push(v); }
+        for v in [
+            u.today_cuti,
+            u.today_beuti,
+            u.climatology_cuti,
+            u.climatology_beuti,
+            u.anomaly_cuti,
+            u.z_cuti,
+            u.rolling_5d_cuti,
+            u.rolling_5d_beuti,
+        ] {
+            if v.is_finite() {
+                vals.push(v);
+            }
         }
     }
 
     if let Some(ref m) = snap.m1 {
-        if let Some(v) = m.surface_temp_c && v.is_finite() { vals.push(v); }
-        if let Some(v) = m.wind_speed_ms && v.is_finite() { vals.push(v); }
-        if let Some(v) = m.wind_dir_from_deg && v.is_finite() { vals.push(v); }
-        if let Some(v) = m.equatorward_wind_ms && v.is_finite() { vals.push(v); }
-        if let Some(v) = m.stratification_index && v.is_finite() { vals.push(v); }
+        if let Some(v) = m.surface_temp_c
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = m.wind_speed_ms
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = m.wind_dir_from_deg
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = m.equatorward_wind_ms
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = m.stratification_index
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
         // Skip m.latency_hours — it's wall-clock-derived (now - timestamp),
         // so including it would break checksum determinism across calls with
         // the same underlying data. Wharf's latency_minutes (i64) is also
         // excluded by type.
         for p in &m.profile {
-            if p.z_m.is_finite() { vals.push(p.z_m); }
-            if p.temp_c.is_finite() { vals.push(p.temp_c); }
+            if p.z_m.is_finite() {
+                vals.push(p.z_m);
+            }
+            if p.temp_c.is_finite() {
+                vals.push(p.temp_c);
+            }
         }
     }
 
     if let Some(ref w) = snap.wharf {
-        if let Some(v) = w.temp_c && v.is_finite() { vals.push(v); }
-        if let Some(v) = w.salinity_psu && v.is_finite() { vals.push(v); }
-        if let Some(v) = w.ph && v.is_finite() { vals.push(v); }
-        if let Some(v) = w.chla_mg_m3 && v.is_finite() { vals.push(v); }
-        if let Some(v) = w.do_mg_l && v.is_finite() { vals.push(v); }
-        if let Some(v) = w.do_saturation_pct && v.is_finite() { vals.push(v); }
-        if let Some(v) = w.turbidity_ntu && v.is_finite() { vals.push(v); }
+        if let Some(v) = w.temp_c
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = w.salinity_psu
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = w.ph
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = w.chla_mg_m3
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = w.do_mg_l
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = w.do_saturation_pct
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = w.turbidity_ntu
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
     }
 
     if let Some(ref h) = snap.hab {
         for f in &h.forecasts {
-            if let Some(v) = f.p_pseudo_nitzschia && v.is_finite() { vals.push(v); }
-            if let Some(v) = f.p_particulate_domoic && v.is_finite() { vals.push(v); }
-            if let Some(v) = f.p_cellular_domoic && v.is_finite() { vals.push(v); }
-            if let Some(v) = f.chla_filled && v.is_finite() { vals.push(v); }
+            if let Some(v) = f.p_pseudo_nitzschia
+                && v.is_finite()
+            {
+                vals.push(v);
+            }
+            if let Some(v) = f.p_particulate_domoic
+                && v.is_finite()
+            {
+                vals.push(v);
+            }
+            if let Some(v) = f.p_cellular_domoic
+                && v.is_finite()
+            {
+                vals.push(v);
+            }
+            if let Some(v) = f.chla_filled
+                && v.is_finite()
+            {
+                vals.push(v);
+            }
         }
     }
 
     if let Some(ref s) = snap.sst_snap {
         for v in [s.mean_sst_c, s.min_sst_c, s.max_sst_c] {
-            if v.is_finite() { vals.push(v); }
+            if v.is_finite() {
+                vals.push(v);
+            }
         }
-        if let Some(v) = s.mean_anom_c && v.is_finite() { vals.push(v); }
-        if let Some(v) = s.max_grad_c_per_km && v.is_finite() { vals.push(v); }
+        if let Some(v) = s.mean_anom_c
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
+        if let Some(v) = s.max_grad_c_per_km
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
     }
 
     if let Some(ref h) = snap.hfr_snap {
-        for v in [h.mean_speed_ms, h.max_speed_ms, h.mean_u_ms, h.mean_v_ms, h.flow_direction_deg] {
-            if v.is_finite() { vals.push(v); }
+        for v in [
+            h.mean_speed_ms,
+            h.max_speed_ms,
+            h.mean_u_ms,
+            h.mean_v_ms,
+            h.flow_direction_deg,
+        ] {
+            if v.is_finite() {
+                vals.push(v);
+            }
         }
-        if let Some(v) = h.divergence_per_s && v.is_finite() { vals.push(v); }
+        if let Some(v) = h.divergence_per_s
+            && v.is_finite()
+        {
+            vals.push(v);
+        }
     }
 
     if let Some(ref b) = snap.birds {
@@ -598,7 +788,11 @@ pub async fn research_snapshot(
     let snap = collect_snapshot(http, cache, erddap, bio).await;
 
     if req.strict.unwrap_or(false) && !snap.partial_failures.is_empty() {
-        let sources: Vec<&str> = snap.partial_failures.iter().map(|f| f.source.as_str()).collect();
+        let sources: Vec<&str> = snap
+            .partial_failures
+            .iter()
+            .map(|f| f.source.as_str())
+            .collect();
         bail!("strict mode: unavailable sources: {}", sources.join(", "));
     }
 
@@ -628,7 +822,7 @@ mod tests {
 
     #[test]
     fn checksum_deterministic() {
-        let vals = vec![1.0, 2.5, 3.14159];
+        let vals = vec![1.0, 2.5, 3.625];
         let c1 = compute_checksum(&vals);
         let c2 = compute_checksum(&vals);
         assert_eq!(c1, c2);
@@ -704,5 +898,4 @@ mod tests {
         assert_eq!(summary.notable.len(), 5);
         assert_eq!(summary.query, "test query");
     }
-
 }

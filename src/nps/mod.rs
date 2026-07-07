@@ -16,7 +16,7 @@ use crate::cache::CacheStore;
 
 mod scraper;
 
-use scraper::{fetch_parks, format_response, NpsResponse};
+use scraper::{NpsResponse, fetch_parks, format_response};
 
 // ─── Request type ───
 
@@ -56,12 +56,10 @@ impl NpsService {
         let key = match &self.api_key {
             Some(k) if !k.is_empty() => k.clone(),
             _ => {
-                return Ok(
-                    "NPS API key not configured.\n\
+                return Ok("NPS API key not configured.\n\
                      Get a free key at https://www.nps.gov/subjects/developer/get-started.htm \
                      and set the `NPS_API_KEY` environment variable."
-                        .to_string(),
-                );
+                    .to_string());
             }
         };
 
@@ -80,11 +78,9 @@ impl NpsService {
         } else if let Some(q) = query {
             let q = q.trim().to_string();
             if q.is_empty() {
-                return Ok(
-                    "Please provide either a `park_code` (e.g. \"pinn\") or a \
+                return Ok("Please provide either a `park_code` (e.g. \"pinn\") or a \
                      `query` (e.g. \"Pinnacles\") to search for a national park."
-                        .to_string(),
-                );
+                    .to_string());
             }
             (
                 format!("nps:search:{}:{}", q.to_lowercase(), limit),
@@ -95,11 +91,9 @@ impl NpsService {
                 ],
             )
         } else {
-            return Ok(
-                "Please provide either a `park_code` (e.g. \"pinn\") or a \
+            return Ok("Please provide either a `park_code` (e.g. \"pinn\") or a \
                  `query` (e.g. \"Pinnacles\") to search for a national park."
-                    .to_string(),
-            );
+                .to_string());
         };
 
         let http = self.http.clone();
@@ -115,11 +109,9 @@ impl NpsService {
             Err(e) => {
                 let msg = e.to_string();
                 if msg.contains("403") {
-                    Ok(
-                        "NPS API returned 403 Forbidden. Please check that your \
+                    Ok("NPS API returned 403 Forbidden. Please check that your \
                          `NPS_API_KEY` is valid and has not expired."
-                            .to_string(),
-                    )
+                        .to_string())
                 } else {
                     tracing::warn!("NPS API fetch failed: {}", e);
                     Ok(format!(
@@ -140,12 +132,10 @@ mod tests {
         let api_key: Option<String> = None;
         let msg = match &api_key {
             Some(k) if !k.is_empty() => unreachable!(),
-            _ => {
-                "NPS API key not configured.\n\
+            _ => "NPS API key not configured.\n\
                  Get a free key at https://www.nps.gov/subjects/developer/get-started.htm \
                  and set the `NPS_API_KEY` environment variable."
-                    .to_string()
-            }
+                .to_string(),
         };
         assert!(msg.contains("NPS API key not configured"));
         assert!(msg.contains("nps.gov/subjects/developer"));
@@ -155,12 +145,10 @@ mod tests {
         let api_key_empty: Option<String> = Some(String::new());
         let msg_empty = match &api_key_empty {
             Some(k) if !k.is_empty() => unreachable!(),
-            _ => {
-                "NPS API key not configured.\n\
+            _ => "NPS API key not configured.\n\
                  Get a free key at https://www.nps.gov/subjects/developer/get-started.htm \
                  and set the `NPS_API_KEY` environment variable."
-                    .to_string()
-            }
+                .to_string(),
         };
         assert!(msg_empty.contains("NPS API key not configured"));
     }

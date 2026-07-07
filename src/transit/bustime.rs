@@ -5,7 +5,7 @@
 // GTFS-RT's alerts feed exists but doesn't support per-route/per-stop
 // filtering as cleanly as BusTime's bulletin API.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::NaiveDateTime;
 use serde::Deserialize;
 
@@ -59,11 +59,7 @@ pub async fn get_predictions(
     stop_id: &str,
     route: Option<&str>,
 ) -> Result<Vec<Prediction>> {
-    let mut params = vec![
-        ("key", api_key),
-        ("stpid", stop_id),
-        ("format", "json"),
-    ];
+    let mut params = vec![("key", api_key), ("stpid", stop_id), ("format", "json")];
 
     if let Some(rt) = route {
         params.push(("rt", rt));
@@ -101,8 +97,7 @@ pub async fn get_predictions(
         .into_iter()
         .filter_map(|p| {
             // BusTime returns times like "20260330 14:35"
-            let predicted =
-                NaiveDateTime::parse_from_str(&p.prdtm, "%Y%m%d %H:%M").ok()?;
+            let predicted = NaiveDateTime::parse_from_str(&p.prdtm, "%Y%m%d %H:%M").ok()?;
             let eta = (predicted - now).num_minutes();
 
             Some(Prediction {
@@ -114,8 +109,16 @@ pub async fn get_predictions(
                 countdown: p.prdctdn,
                 is_delayed: p.dly,
                 trip_status: TripStatus::from_dyn(p.dyn_flag),
-                passenger_load: if p.psgld.is_empty() { None } else { Some(p.psgld) },
-                next_bus_minutes: if p.nbus.is_empty() { None } else { Some(p.nbus) },
+                passenger_load: if p.psgld.is_empty() {
+                    None
+                } else {
+                    Some(p.psgld)
+                },
+                next_bus_minutes: if p.nbus.is_empty() {
+                    None
+                } else {
+                    Some(p.nbus)
+                },
                 vehicle_id: p.vid,
             })
         })
@@ -142,10 +145,7 @@ pub async fn get_service_bulletins(
     route: Option<&str>,
     stop_id: Option<&str>,
 ) -> Result<Vec<ServiceBulletin>> {
-    let mut params: Vec<(&str, &str)> = vec![
-        ("key", api_key),
-        ("format", "json"),
-    ];
+    let mut params: Vec<(&str, &str)> = vec![("key", api_key), ("format", "json")];
 
     if let Some(rt) = route {
         params.push(("rt", rt));

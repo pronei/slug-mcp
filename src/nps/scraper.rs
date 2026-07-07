@@ -105,10 +105,7 @@ pub(super) async fn fetch_parks(
         anyhow::bail!("NPS API returned HTTP {}", status);
     }
 
-    let body = resp
-        .text()
-        .await
-        .context("reading NPS API response body")?;
+    let body = resp.text().await.context("reading NPS API response body")?;
 
     serde_json::from_str::<NpsResponse>(&body).context("parsing NPS API JSON response")
 }
@@ -153,11 +150,12 @@ fn format_single_park(park: &NpsPark) -> String {
 
     // Description
     if let Some(desc) = &park.description
-        && !desc.is_empty() {
-            let _ = writeln!(out, "## Description");
-            let _ = writeln!(out, "{}", desc);
-            out.push('\n');
-        }
+        && !desc.is_empty()
+    {
+        let _ = writeln!(out, "## Description");
+        let _ = writeln!(out, "{}", desc);
+        out.push('\n');
+    }
 
     // Operating hours
     if !park.operating_hours.is_empty() {
@@ -196,19 +194,21 @@ fn format_single_park(park: &NpsPark) -> String {
 
     // Directions
     if let Some(dir) = &park.directions_info
-        && !dir.is_empty() {
-            let _ = writeln!(out, "## Directions");
-            let _ = writeln!(out, "{}", dir);
-            out.push('\n');
-        }
+        && !dir.is_empty()
+    {
+        let _ = writeln!(out, "## Directions");
+        let _ = writeln!(out, "{}", dir);
+        out.push('\n');
+    }
 
     // Weather
     if let Some(weather) = &park.weather_info
-        && !weather.is_empty() {
-            let _ = writeln!(out, "## Weather");
-            let _ = writeln!(out, "{}", weather);
-            out.push('\n');
-        }
+        && !weather.is_empty()
+    {
+        let _ = writeln!(out, "## Weather");
+        let _ = writeln!(out, "{}", weather);
+        out.push('\n');
+    }
 
     // Contact
     if let Some(contacts) = &park.contacts {
@@ -242,11 +242,7 @@ fn format_search_results(response: &NpsResponse) -> String {
     let mut out = String::new();
 
     // Try to extract the search term context for the title
-    let _ = writeln!(
-        out,
-        "# National Parks ({} results)\n",
-        response.data.len()
-    );
+    let _ = writeln!(out, "# National Parks ({} results)\n", response.data.len());
 
     for (i, park) in response.data.iter().enumerate() {
         let state = park.states.as_deref().unwrap_or("US");
@@ -260,10 +256,11 @@ fn format_search_results(response: &NpsResponse) -> String {
         );
 
         if let Some(desc) = &park.description
-            && !desc.is_empty() {
-                let snippet = crate::util::truncate(desc, 150);
-                let _ = writeln!(out, "   _{}_", snippet);
-            }
+            && !desc.is_empty()
+        {
+            let snippet = crate::util::truncate(desc, 150);
+            let _ = writeln!(out, "   _{}_", snippet);
+        }
 
         if let Some(url) = &park.url {
             let _ = writeln!(out, "   [nps.gov/{}]({})", park.park_code, url);
@@ -301,7 +298,13 @@ fn summarize_hours(hours: &NpsHours) -> String {
     };
 
     let days = [
-        "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+        "sunday",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
     ];
 
     let values: Vec<String> = days
@@ -359,10 +362,7 @@ mod tests {
         NpsPark {
             full_name: "Pinnacles National Park".to_string(),
             park_code: "pinn".to_string(),
-            description: Some(
-                "Some of the most unique rock formations in the world."
-                    .to_string(),
-            ),
+            description: Some("Some of the most unique rock formations in the world.".to_string()),
             latitude: Some("36.49".to_string()),
             longitude: Some("-121.18".to_string()),
             states: Some("CA".to_string()),
@@ -467,10 +467,7 @@ mod tests {
         assert_eq!(resp.data[0].full_name, "Pinnacles National Park");
         assert_eq!(resp.data[0].park_code, "pinn");
         assert_eq!(resp.data[0].entrance_fees.len(), 1);
-        assert_eq!(
-            resp.data[0].entrance_fees[0].cost.as_deref(),
-            Some("30.00")
-        );
+        assert_eq!(resp.data[0].entrance_fees[0].cost.as_deref(), Some("30.00"));
         assert_eq!(resp.data[0].activities.len(), 2);
         assert_eq!(resp.data[0].activities[0].name, "Hiking");
         assert!(resp.data[0].contacts.is_some());

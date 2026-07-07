@@ -4,7 +4,7 @@ pub mod stops;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::cache::CacheStore;
 use stops::Stop;
@@ -69,13 +69,9 @@ impl TransitService {
         let other_matches: Vec<&Stop> = matches.iter().skip(1).copied().collect();
 
         // Primary: GTFS-RT (feed-level cache is 30s inside gtfs_rt).
-        let gtfs_result = gtfs_rt::get_predictions_for_stop(
-            &self.http,
-            &self.cache,
-            &best_match.stop_id,
-            route,
-        )
-        .await;
+        let gtfs_result =
+            gtfs_rt::get_predictions_for_stop(&self.http, &self.cache, &best_match.stop_id, route)
+                .await;
 
         let output = match gtfs_result {
             Ok(preds) if !preds.is_empty() => {
@@ -210,8 +206,7 @@ impl TransitService {
             return Ok(cached);
         }
 
-        let bulletins =
-            bustime::get_service_bulletins(&self.http, &api_key, route, stop_id).await;
+        let bulletins = bustime::get_service_bulletins(&self.http, &api_key, route, stop_id).await;
 
         let output = match bulletins {
             Ok(b) => format_service_bulletins(&b),
@@ -236,7 +231,11 @@ impl TransitService {
         };
 
         self.cache
-            .set(&cache_key, output.clone(), std::time::Duration::from_secs(300))
+            .set(
+                &cache_key,
+                output.clone(),
+                std::time::Duration::from_secs(300),
+            )
             .await;
 
         Ok(output)
@@ -250,9 +249,7 @@ impl TransitService {
             .get_or_fetch(cache_key, 86400, || async move {
                 let stops = stops::fetch_all_stops(&http, &api_key)
                     .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to load stops from BusTime API: {}", e)
-                    })?;
+                    .map_err(|e| anyhow::anyhow!("Failed to load stops from BusTime API: {}", e))?;
                 if stops.is_empty() {
                     bail!(
                         "BusTime API returned no stops — the API may be temporarily unavailable."

@@ -135,11 +135,7 @@ pub fn build_authenticated_client(cookie_data: &str) -> Result<reqwest::Client> 
                 cookie.domain,
                 cookie.path,
                 if cookie.secure { "; Secure" } else { "" },
-                if cookie.http_only {
-                    "; HttpOnly"
-                } else {
-                    ""
-                },
+                if cookie.http_only { "; HttpOnly" } else { "" },
             );
             jar.add_cookie_str(&cookie_str, &url);
         }
@@ -241,9 +237,8 @@ fn parse_saml_form(html: &str) -> Option<(String, Vec<(String, String)>)> {
 
     static FORM_SEL: LazyLock<Selector> =
         LazyLock::new(|| Selector::parse("form").expect("hardcoded selector"));
-    static INPUT_SEL: LazyLock<Selector> = LazyLock::new(|| {
-        Selector::parse("input[type=\"hidden\"]").expect("hardcoded selector")
-    });
+    static INPUT_SEL: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("input[type=\"hidden\"]").expect("hardcoded selector"));
 
     let document = Html::parse_document(html);
 
@@ -265,11 +260,7 @@ fn parse_saml_form(html: &str) -> Option<(String, Vec<(String, String)>)> {
         }
 
         if has_saml_field {
-            let action = form
-                .value()
-                .attr("action")
-                .unwrap_or_default()
-                .to_string();
+            let action = form.value().attr("action").unwrap_or_default().to_string();
 
             if !action.is_empty() {
                 return Some((action, fields));
@@ -358,14 +349,18 @@ mod tests {
     fn test_parse_consent_form_fixture() {
         let (action, fields) = parse_consent_form(IDP_CONSENT_FIXTURE).expect("consent form");
         assert_eq!(action, "/idp/profile/SAML2/Redirect/SSO?execution=e4s1");
-        assert!(fields
-            .iter()
-            .any(|(n, v)| n == "_shib_idp_consentOptions" && v == "_shib_idp_rememberConsent"));
+        assert!(
+            fields
+                .iter()
+                .any(|(n, v)| n == "_shib_idp_consentOptions" && v == "_shib_idp_rememberConsent")
+        );
         assert!(fields.iter().any(|(n, _)| n == "_eventId_proceed"));
         // Reject button must NOT be submitted
-        assert!(!fields
-            .iter()
-            .any(|(n, _)| n == "_eventId_AttributeReleaseRejected"));
+        assert!(
+            !fields
+                .iter()
+                .any(|(n, _)| n == "_eventId_AttributeReleaseRejected")
+        );
         // Exactly one consent option
         assert_eq!(
             fields
@@ -395,7 +390,11 @@ mod tests {
             <input type="submit" name="_eventId_proceed" value="Accept"/>
         </form>"#;
         let (_, fields) = parse_consent_form(html).unwrap();
-        assert!(fields.iter().any(|(n, v)| n == "csrf_token" && v == "tok123"));
+        assert!(
+            fields
+                .iter()
+                .any(|(n, v)| n == "csrf_token" && v == "tok123")
+        );
     }
 
     #[test]

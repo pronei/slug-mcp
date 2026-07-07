@@ -19,10 +19,7 @@ pub struct M1Request {
     pub include_profile: Option<bool>,
 }
 
-pub async fn fetch_and_format(
-    erddap: &ErddapClient,
-    req: &M1Request,
-) -> Result<String> {
+pub async fn fetch_and_format(erddap: &ErddapClient, req: &M1Request) -> Result<String> {
     let hours = req.hours.unwrap_or(24).clamp(1, 168);
     let include_profile = req.include_profile.unwrap_or(true);
 
@@ -40,10 +37,7 @@ pub async fn fetch_and_format(
     format_snapshot(&surface, wind.as_ref().ok(), profile.as_ref(), hours)
 }
 
-pub async fn fetch_typed(
-    erddap: &ErddapClient,
-    req: &M1Request,
-) -> Result<M1SnapTyped> {
+pub async fn fetch_typed(erddap: &ErddapClient, req: &M1Request) -> Result<M1SnapTyped> {
     // Cache the typed snapshot under the same TTL as the single-tool string
     // path (1800s) so fusion callers hit cache instead of refetching ERDDAP.
     let hours = req.hours.unwrap_or(24);
@@ -55,10 +49,7 @@ pub async fn fetch_typed(
         .await
 }
 
-async fn fetch_typed_uncached(
-    erddap: &ErddapClient,
-    req: &M1Request,
-) -> Result<M1SnapTyped> {
+async fn fetch_typed_uncached(erddap: &ErddapClient, req: &M1Request) -> Result<M1SnapTyped> {
     let hours = req.hours.unwrap_or(24).clamp(1, 168);
     let include_profile = req.include_profile.unwrap_or(true);
 
@@ -81,17 +72,33 @@ async fn fetch_typed_uncached(
         (
             Some(w_latest.speed_ms),
             Some(w_latest.dir_from_deg),
-            Some(equatorward_component(w_latest.speed_ms, w_latest.dir_from_deg)),
+            Some(equatorward_component(
+                w_latest.speed_ms,
+                w_latest.dir_from_deg,
+            )),
         )
     } else {
         (None, None, None)
     };
 
     let (profile_levels, stratification_index) = if let Some(ref p) = profile {
-        let levels: Vec<ProfileLevel> = p.levels.iter().map(|&(z, t)| ProfileLevel { z_m: z, temp_c: t }).collect();
+        let levels: Vec<ProfileLevel> = p
+            .levels
+            .iter()
+            .map(|&(z, t)| ProfileLevel { z_m: z, temp_c: t })
+            .collect();
 
-        let surface_t = p.levels.iter().rev().find(|(z, _)| *z >= -5.0).map(|(_, t)| *t);
-        let deep_50_t = p.levels.iter().find(|(z, _)| *z <= -45.0 && *z >= -55.0).map(|(_, t)| *t);
+        let surface_t = p
+            .levels
+            .iter()
+            .rev()
+            .find(|(z, _)| *z >= -5.0)
+            .map(|(_, t)| *t);
+        let deep_50_t = p
+            .levels
+            .iter()
+            .find(|(z, _)| *z <= -45.0 && *z >= -55.0)
+            .map(|(_, t)| *t);
         let strat = match (surface_t, deep_50_t) {
             (Some(st), Some(dt)) => Some(st - dt),
             _ => None,
@@ -142,11 +149,12 @@ struct ProfileData {
 
 fn trim_to_latest_hours(surface: &mut SurfaceData, hours: u32) {
     if let Some(latest) = surface.rows.last()
-        && let Ok(latest_dt) = chrono::DateTime::parse_from_rfc3339(&latest.time) {
-            let cutoff = latest_dt - chrono::Duration::hours(hours as i64);
-            let cutoff_str = cutoff.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-            surface.rows.retain(|r| r.time >= cutoff_str);
-        }
+        && let Ok(latest_dt) = chrono::DateTime::parse_from_rfc3339(&latest.time)
+    {
+        let cutoff = latest_dt - chrono::Duration::hours(hours as i64);
+        let cutoff_str = cutoff.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        surface.rows.retain(|r| r.time >= cutoff_str);
+    }
 }
 
 fn format_time_min(hours: u32) -> String {
@@ -208,7 +216,9 @@ async fn fetch_wind(erddap: &ErddapClient, time_min: &str) -> Result<WindData> {
 
     let resp = erddap.tabledap(SERVER, DATASET, query).await?;
     let t = &resp.table;
-    let i_time = t.col_index("time").ok_or_else(|| anyhow::anyhow!("missing time col"))?;
+    let i_time = t
+        .col_index("time")
+        .ok_or_else(|| anyhow::anyhow!("missing time col"))?;
     let i_spd = t
         .col_index("wind_speed_sonic")
         .ok_or_else(|| anyhow::anyhow!("missing wind_speed_sonic col"))?;
@@ -287,12 +297,7 @@ async fn fetch_profile(erddap: &ErddapClient, time_min: &str) -> Result<ProfileD
     })
 }
 
-fn resolve_cols(
-    t: &ErddapTable,
-    c1: &str,
-    c2: &str,
-    c3: &str,
-) -> Result<(usize, usize, usize)> {
+fn resolve_cols(t: &ErddapTable, c1: &str, c2: &str, c3: &str) -> Result<(usize, usize, usize)> {
     Ok((
         t.col_index(c1)
             .ok_or_else(|| anyhow::anyhow!("missing column '{}'", c1))?,

@@ -11,8 +11,8 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use crate::util::now_pacific;
+use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -81,8 +81,7 @@ impl BuoyService {
 /// "46042"). Reject anything else before it reaches the URL path so a crafted
 /// `station` can't traverse paths or inject extra request targets.
 fn validate_station(station: &str) -> Result<()> {
-    let ok = (4..=6).contains(&station.len())
-        && station.chars().all(|c| c.is_ascii_alphanumeric());
+    let ok = (4..=6).contains(&station.len()) && station.chars().all(|c| c.is_ascii_alphanumeric());
     if !ok {
         anyhow::bail!(
             "invalid NDBC station ID '{}': expected 4-6 alphanumeric characters (e.g. 46042)",
@@ -92,10 +91,7 @@ fn validate_station(station: &str) -> Result<()> {
     Ok(())
 }
 
-async fn fetch_observations(
-    http: &reqwest::Client,
-    station: &str,
-) -> Result<Vec<BuoyObservation>> {
+async fn fetch_observations(http: &reqwest::Client, station: &str) -> Result<Vec<BuoyObservation>> {
     validate_station(station)?;
     let url = format!("https://www.ndbc.noaa.gov/data/realtime2/{}.txt", station);
     let resp = http
@@ -226,10 +222,7 @@ fn format_observations(name: &str, obs: &[BuoyObservation]) -> String {
             .wind_dir_deg
             .map(|d| format!(" from {}° ({})", d as i32, degrees_to_compass(d)))
             .unwrap_or_default();
-        out.push_str(&format!(
-            "- **Wind**: {:.0} mph{}{}\n",
-            mph, gust, dir
-        ));
+        out.push_str(&format!("- **Wind**: {:.0} mph{}{}\n", mph, gust, dir));
     }
 
     // Waves
@@ -288,14 +281,15 @@ fn format_observations(name: &str, obs: &[BuoyObservation]) -> String {
     // 3h trend: find observation ~3 hours earlier
     if obs.len() > 1
         && let (Some(w_now), Some(older)) = (latest.water_temp_c, obs.get(18))
-            && let Some(w_old) = older.water_temp_c {
-                let delta = w_now - w_old;
-                out.push_str(&format!(
-                    "\n_Water temp trend over ~3h: {:+.1}°C ({:+.1}°F)_\n",
-                    delta,
-                    delta * 9.0 / 5.0
-                ));
-            }
+        && let Some(w_old) = older.water_temp_c
+    {
+        let delta = w_now - w_old;
+        out.push_str(&format!(
+            "\n_Water temp trend over ~3h: {:+.1}°C ({:+.1}°F)_\n",
+            delta,
+            delta * 9.0 / 5.0
+        ));
+    }
 
     out.push_str(&format!(
         "\n_Source: NDBC realtime2. Last updated: {}_\n",

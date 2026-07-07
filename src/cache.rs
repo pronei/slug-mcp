@@ -67,12 +67,7 @@ impl CacheStore {
 
     /// Insert an already-shared `Arc<T>` — useful when the caller wants to
     /// retain its own reference without an extra clone of `T`.
-    pub async fn set_arc<T: Send + Sync + 'static>(
-        &self,
-        key: &str,
-        value: Arc<T>,
-        ttl: Duration,
-    ) {
+    pub async fn set_arc<T: Send + Sync + 'static>(&self, key: &str, value: Arc<T>, ttl: Duration) {
         let entry = CacheEntry {
             value: value as Arc<dyn Any + Send + Sync>,
             ttl,

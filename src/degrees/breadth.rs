@@ -80,18 +80,20 @@ fn parse_breadth_csv(csv: &str) -> Result<BreadthRequirements> {
         // Empty line = category boundary
         if line.is_empty() {
             if let Some(cat) = current_category.take()
-                && !cat.courses.is_empty() {
-                    categories.push(cat);
-                }
+                && !cat.courses.is_empty()
+            {
+                categories.push(cat);
+            }
             continue;
         }
 
         // Check for "NOT ALLOWED" section
         if line.to_uppercase().contains("NOT ALLOWED") {
             if let Some(cat) = current_category.take()
-                && !cat.courses.is_empty() {
-                    categories.push(cat);
-                }
+                && !cat.courses.is_empty()
+            {
+                categories.push(cat);
+            }
             in_not_allowed = true;
             continue;
         }
@@ -115,9 +117,10 @@ fn parse_breadth_csv(csv: &str) -> Result<BreadthRequirements> {
         } else {
             // Non-course, non-empty line = category header
             if let Some(cat) = current_category.take()
-                && !cat.courses.is_empty() {
-                    categories.push(cat);
-                }
+                && !cat.courses.is_empty()
+            {
+                categories.push(cat);
+            }
             if !in_not_allowed {
                 current_category = Some(BreadthCategory {
                     name: line.to_string(),
@@ -129,9 +132,10 @@ fn parse_breadth_csv(csv: &str) -> Result<BreadthRequirements> {
 
     // Flush remaining category
     if let Some(cat) = current_category.take()
-        && !cat.courses.is_empty() {
-            categories.push(cat);
-        }
+        && !cat.courses.is_empty()
+    {
+        categories.push(cat);
+    }
 
     Ok(BreadthRequirements {
         categories,
@@ -204,8 +208,8 @@ pub fn check_breadth_progress(
     reqs: &BreadthRequirements,
     completed_courses: &[String],
 ) -> BreadthProgress {
-    use std::collections::HashSet;
     use super::progress::normalize_course_code;
+    use std::collections::HashSet;
 
     let completed_set: HashSet<String> = completed_courses
         .iter()
@@ -365,7 +369,10 @@ CSE 280S: Seminar,
         assert_eq!(reqs.categories[0].name, "Computer Architecture/Networks");
         assert_eq!(reqs.categories[0].courses.len(), 2);
         assert_eq!(reqs.categories[0].courses[0].code, "CSE 202");
-        assert_eq!(reqs.categories[1].name, "Machine Learning/Artificial Intelligence");
+        assert_eq!(
+            reqs.categories[1].name,
+            "Machine Learning/Artificial Intelligence"
+        );
         assert_eq!(reqs.categories[1].courses.len(), 3);
         assert_eq!(reqs.categories[2].name, "Theoretical Computer Science");
         assert_eq!(reqs.categories[2].courses.len(), 2);
@@ -377,9 +384,9 @@ CSE 280S: Seminar,
     fn test_breadth_progress_satisfied() {
         let reqs = parse_breadth_csv(TEST_CSV).unwrap();
         let completed = vec![
-            "CSE 202".to_string(),  // Architecture
-            "CSE 242".to_string(),  // ML/AI
-            "CSE 201".to_string(),  // Theory
+            "CSE 202".to_string(), // Architecture
+            "CSE 242".to_string(), // ML/AI
+            "CSE 201".to_string(), // Theory
         ];
         let progress = check_breadth_progress(&reqs, &completed);
         assert!(progress.satisfied);
@@ -390,9 +397,9 @@ CSE 280S: Seminar,
     fn test_breadth_progress_not_satisfied() {
         let reqs = parse_breadth_csv(TEST_CSV).unwrap();
         let completed = vec![
-            "CSE 202".to_string(),  // Architecture
-            "CSE 242".to_string(),  // ML/AI
-            // Missing third category
+            "CSE 202".to_string(), // Architecture
+            "CSE 242".to_string(), // ML/AI
+                                   // Missing third category
         ];
         let progress = check_breadth_progress(&reqs, &completed);
         assert!(!progress.satisfied);

@@ -25,10 +25,26 @@ const CALENDAR_URL: &str = "https://summer.ucsc.edu/summer-student-guide/academi
 /// The four scheduled summer sessions, in display order. `id` matches the
 /// page's `<h2 id="…">` anchor; `aliases` are what a user might pass to filter.
 const SESSIONS: &[(&str, &str, &[&str])] = &[
-    ("session-1", "Session 1", &["1", "s1", "session1", "session 1"]),
-    ("session-2", "Session 2", &["2", "s2", "session2", "session 2"]),
-    ("8-week", "8-Week Session", &["8", "8week", "8-week", "8 week"]),
-    ("10-week", "10-Week Session", &["10", "10week", "10-week", "10 week"]),
+    (
+        "session-1",
+        "Session 1",
+        &["1", "s1", "session1", "session 1"],
+    ),
+    (
+        "session-2",
+        "Session 2",
+        &["2", "s2", "session2", "session 2"],
+    ),
+    (
+        "8-week",
+        "8-Week Session",
+        &["8", "8week", "8-week", "8 week"],
+    ),
+    (
+        "10-week",
+        "10-Week Session",
+        &["10", "10week", "10-week", "10 week"],
+    ),
 ];
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -104,16 +120,20 @@ impl SummerService {
 
         // Resolve a session filter to its canonical id.
         let want_id = session.and_then(resolve_session_id);
-        if let Some(req) = session {
-            if want_id.is_none() {
-                return Ok(format!(
-                    "Unknown session '{}'. Valid: 1, 2, 8-week, 10-week.",
-                    req
-                ));
-            }
+        if let Some(req) = session
+            && want_id.is_none()
+        {
+            return Ok(format!(
+                "Unknown session '{}'. Valid: 1, 2, 8-week, 10-week.",
+                req
+            ));
         }
 
-        Ok(format_deadlines(&sessions, want_id.as_deref(), upcoming_only))
+        Ok(format_deadlines(
+            &sessions,
+            want_id.as_deref(),
+            upcoming_only,
+        ))
     }
 }
 
@@ -134,10 +154,7 @@ fn parse_calendar(html: &str) -> Vec<SummerSession> {
             continue;
         };
         let after = &html[start..];
-        let end = after[1..]
-            .find("<h2")
-            .map(|i| i + 1)
-            .unwrap_or(after.len());
+        let end = after[1..].find("<h2").map(|i| i + 1).unwrap_or(after.len());
         let block = &after[..end];
 
         // First <h3>…</h3> is the date range.
@@ -225,7 +242,10 @@ fn format_deadlines(
         "_Summer has no Add by Petition — these are hard deadlines, and each session has its own._\n",
     );
 
-    for s in sessions.iter().filter(|s| want_id.is_none_or(|w| s.id == w)) {
+    for s in sessions
+        .iter()
+        .filter(|s| want_id.is_none_or(|w| s.id == w))
+    {
         let _ = write!(out, "\n## {} — {}\n", s.name, s.date_range);
         let mut shown = 0;
         for d in &s.deadlines {
@@ -363,7 +383,10 @@ mod tests {
     #[test]
     fn session_alias_resolution() {
         assert_eq!(resolve_session_id("1").as_deref(), Some("session-1"));
-        assert_eq!(resolve_session_id("Session 2").as_deref(), Some("session-2"));
+        assert_eq!(
+            resolve_session_id("Session 2").as_deref(),
+            Some("session-2")
+        );
         assert_eq!(resolve_session_id("10week").as_deref(), Some("10-week"));
         assert_eq!(resolve_session_id("8-Week").as_deref(), Some("8-week"));
         assert_eq!(resolve_session_id("bogus"), None);

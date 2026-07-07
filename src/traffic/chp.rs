@@ -208,11 +208,7 @@ mod tests {
             "expected at least 1 Santa Cruz incident"
         );
         for i in &incidents {
-            assert!(
-                is_sc_county_area(&i.area),
-                "unexpected area: {}",
-                i.area
-            );
+            assert!(is_sc_county_area(&i.area), "unexpected area: {}", i.area);
         }
     }
 

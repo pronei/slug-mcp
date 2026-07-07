@@ -6,7 +6,7 @@ use scraper::Html;
 #[cfg(feature = "auth")]
 use scraper::Selector;
 
-use crate::util::{selectors, FuzzyMatcher};
+use crate::util::{FuzzyMatcher, selectors};
 
 selectors! {
     SEL_ANCHOR_NAME => "a[name]",
@@ -269,7 +269,10 @@ async fn fetch_with_cookies(client: &reqwest::Client, url: &str) -> Result<Strin
         .context("Failed to fetch nutrition page")?;
 
     let status = resp.status();
-    let html = resp.text().await.context("Failed to read nutrition page body")?;
+    let html = resp
+        .text()
+        .await
+        .context("Failed to read nutrition page body")?;
 
     if !status.is_success() || html.contains("Runtime Error") || html.contains("Server Error") {
         anyhow::bail!("Nutrition site returned error (status {})", status);
@@ -304,7 +307,12 @@ pub async fn scrape_menu(
                 enrich_recipe_ids(&mut menu, &long_menu);
             }
             Err(e) => {
-                tracing::warn!("Longmenu fallback failed for {} ({}): {}", hall.name, meal_name, e);
+                tracing::warn!(
+                    "Longmenu fallback failed for {} ({}): {}",
+                    hall.name,
+                    meal_name,
+                    e
+                );
             }
         }
     }
@@ -326,13 +334,15 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
             // Flush previous state
             if let Some(cat) = current_cat.take()
                 && let Some(meal) = current_meal.as_mut()
-                    && !cat.items.is_empty() {
-                        meal.categories.push(cat);
-                    }
+                && !cat.items.is_empty()
+            {
+                meal.categories.push(cat);
+            }
             if let Some(meal) = current_meal.take()
-                && !meal.categories.is_empty() {
-                    meals.push(meal);
-                }
+                && !meal.categories.is_empty()
+            {
+                meals.push(meal);
+            }
 
             let meal_name = element.text().collect::<String>().trim().to_string();
             current_meal = Some(Meal {
@@ -342,9 +352,10 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
         } else if classes.contains(&"shortmenucats") {
             if let Some(cat) = current_cat.take()
                 && let Some(meal) = current_meal.as_mut()
-                    && !cat.items.is_empty() {
-                        meal.categories.push(cat);
-                    }
+                && !cat.items.is_empty()
+            {
+                meal.categories.push(cat);
+            }
 
             let name = element.text().collect::<String>();
             let name = name
@@ -361,58 +372,64 @@ fn parse_shortmenu(html: &str, hall_name: &str) -> DiningMenu {
                 });
             }
         } else if classes.contains(&"shortmenurecipes")
-            && let Some(cat) = current_cat.as_mut() {
-                let item_name = element
-                    .text()
-                    .collect::<String>()
-                    .trim()
-                    .trim_end_matches('\u{a0}') // &nbsp;
-                    .trim()
-                    .to_string();
+            && let Some(cat) = current_cat.as_mut()
+        {
+            let item_name = element
+                .text()
+                .collect::<String>()
+                .trim()
+                .trim_end_matches('\u{a0}') // &nbsp;
+                .trim()
+                .to_string();
 
-                // Dietary icons are in sibling <td> elements in the parent <tr>
-                let mut dietary_tags = Vec::new();
-                // Walk up: div.shortmenurecipes → td → tr (inner table) → td → tr (outer)
-                if let Some(parent_td) = element.parent()
-                    && let Some(parent_tr) = parent_td.parent() {
-                        // Check the outer row's sibling tds for images
-                        if let Some(outer_td) = parent_tr.parent()
-                            && let Some(outer_tr) = outer_td.parent()
-                                && let Some(outer_el) = scraper::ElementRef::wrap(outer_tr) {
-                                    for td in outer_el.select(&SEL_TD) {
-                                        for img in td.select(&SEL_IMG) {
-                                            if let Some(src) = img.value().attr("src")
-                                                && let Some(icon_name) = src
-                                                    .strip_prefix("LegendImages/")
-                                                    .and_then(|s| s.strip_suffix(".gif"))
-                                                    && let Some(tag) = icon_to_tag(icon_name) {
-                                                        dietary_tags.push(tag.to_string());
-                                                    }
-                                        }
-                                    }
-                                }
+            // Dietary icons are in sibling <td> elements in the parent <tr>
+            let mut dietary_tags = Vec::new();
+            // Walk up: div.shortmenurecipes → td → tr (inner table) → td → tr (outer)
+            if let Some(parent_td) = element.parent()
+                && let Some(parent_tr) = parent_td.parent()
+            {
+                // Check the outer row's sibling tds for images
+                if let Some(outer_td) = parent_tr.parent()
+                    && let Some(outer_tr) = outer_td.parent()
+                    && let Some(outer_el) = scraper::ElementRef::wrap(outer_tr)
+                {
+                    for td in outer_el.select(&SEL_TD) {
+                        for img in td.select(&SEL_IMG) {
+                            if let Some(src) = img.value().attr("src")
+                                && let Some(icon_name) = src
+                                    .strip_prefix("LegendImages/")
+                                    .and_then(|s| s.strip_suffix(".gif"))
+                                && let Some(tag) = icon_to_tag(icon_name)
+                            {
+                                dietary_tags.push(tag.to_string());
+                            }
+                        }
                     }
-
-                if !item_name.is_empty() {
-                    cat.items.push(MenuItem {
-                        name: item_name,
-                        dietary_tags,
-                        recipe_id: None,
-                    });
                 }
             }
+
+            if !item_name.is_empty() {
+                cat.items.push(MenuItem {
+                    name: item_name,
+                    dietary_tags,
+                    recipe_id: None,
+                });
+            }
+        }
     }
 
     // Flush remaining
     if let Some(cat) = current_cat
         && let Some(meal) = current_meal.as_mut()
-            && !cat.items.is_empty() {
-                meal.categories.push(cat);
-            }
+        && !cat.items.is_empty()
+    {
+        meal.categories.push(cat);
+    }
     if let Some(meal) = current_meal
-        && !meal.categories.is_empty() {
-            meals.push(meal);
-        }
+        && !meal.categories.is_empty()
+    {
+        meals.push(meal);
+    }
 
     DiningMenu {
         hall_name: hall_name.to_string(),
@@ -440,9 +457,10 @@ fn enrich_recipe_ids(menu: &mut DiningMenu, long_menu: &DiningMenu) {
         for cat in &mut meal.categories {
             for item in &mut cat.items {
                 if item.recipe_id.is_none()
-                    && let Some(rid) = recipe_map.get(&item.name.to_lowercase()) {
-                        item.recipe_id = Some(rid.clone());
-                    }
+                    && let Some(rid) = recipe_map.get(&item.name.to_lowercase())
+                {
+                    item.recipe_id = Some(rid.clone());
+                }
             }
         }
     }
@@ -462,13 +480,15 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
             // Finish previous category and meal
             if let Some(cat) = current_cat.take()
                 && let Some(meal) = current_meal.as_mut()
-                    && !cat.items.is_empty() {
-                        meal.categories.push(cat);
-                    }
+                && !cat.items.is_empty()
+            {
+                meal.categories.push(cat);
+            }
             if let Some(meal) = current_meal.take()
-                && !meal.categories.is_empty() {
-                    meals.push(meal);
-                }
+                && !meal.categories.is_empty()
+            {
+                meals.push(meal);
+            }
 
             // Extract meal name from <a name="MealName">
             let meal_name = element
@@ -486,9 +506,10 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
             // Finish previous category
             if let Some(cat) = current_cat.take()
                 && let Some(meal) = current_meal.as_mut()
-                    && !cat.items.is_empty() {
-                        meal.categories.push(cat);
-                    }
+                && !cat.items.is_empty()
+            {
+                meal.categories.push(cat);
+            }
 
             let name = element.text().collect::<String>();
             let name = name
@@ -505,59 +526,64 @@ fn parse_longmenu(html: &str, hall_name: &str) -> DiningMenu {
                 });
             }
         } else if classes.contains(&"longmenucoldispname")
-            && let Some(cat) = current_cat.as_mut() {
-                // Extract item name and recipe ID from <a> link
-                let (item_name, recipe_id) = if let Some(a) = element.select(&SEL_LINK).next() {
-                    let name = a.text().collect::<String>().trim().to_string();
-                    let href = a.value().attr("href").unwrap_or("");
-                    let rid = href
-                        .split("RecNumAndPort=")
-                        .nth(1)
-                        .map(|s| s.split('&').next().unwrap_or(s).to_string());
-                    (name, rid)
-                } else {
-                    (element.text().collect::<String>().trim().to_string(), None)
-                };
+            && let Some(cat) = current_cat.as_mut()
+        {
+            // Extract item name and recipe ID from <a> link
+            let (item_name, recipe_id) = if let Some(a) = element.select(&SEL_LINK).next() {
+                let name = a.text().collect::<String>().trim().to_string();
+                let href = a.value().attr("href").unwrap_or("");
+                let rid = href
+                    .split("RecNumAndPort=")
+                    .nth(1)
+                    .map(|s| s.split('&').next().unwrap_or(s).to_string());
+                (name, rid)
+            } else {
+                (element.text().collect::<String>().trim().to_string(), None)
+            };
 
-                // Extract dietary icons from sibling <td> elements
-                let mut dietary_tags = Vec::new();
-                if let Some(parent_tr) = element
+            // Extract dietary icons from sibling <td> elements
+            let mut dietary_tags = Vec::new();
+            if let Some(parent_tr) = element
                     .parent() // td
                     .and_then(|n| n.parent()) // tr (inner)
-                    && let Some(parent_el) = scraper::ElementRef::wrap(parent_tr) {
-                        for td in parent_el.select(&SEL_TD) {
-                            for img in td.select(&SEL_IMG) {
-                                if let Some(src) = img.value().attr("src")
-                                    && let Some(icon_name) = src
-                                        .strip_prefix("LegendImages/")
-                                        .and_then(|s| s.strip_suffix(".gif"))
-                                        && let Some(tag) = icon_to_tag(icon_name) {
-                                            dietary_tags.push(tag.to_string());
-                                        }
-                            }
+                    && let Some(parent_el) = scraper::ElementRef::wrap(parent_tr)
+            {
+                for td in parent_el.select(&SEL_TD) {
+                    for img in td.select(&SEL_IMG) {
+                        if let Some(src) = img.value().attr("src")
+                            && let Some(icon_name) = src
+                                .strip_prefix("LegendImages/")
+                                .and_then(|s| s.strip_suffix(".gif"))
+                            && let Some(tag) = icon_to_tag(icon_name)
+                        {
+                            dietary_tags.push(tag.to_string());
                         }
                     }
-
-                if !item_name.is_empty() {
-                    cat.items.push(MenuItem {
-                        name: item_name,
-                        dietary_tags,
-                        recipe_id,
-                    });
                 }
             }
+
+            if !item_name.is_empty() {
+                cat.items.push(MenuItem {
+                    name: item_name,
+                    dietary_tags,
+                    recipe_id,
+                });
+            }
+        }
     }
 
     // Flush remaining category and meal
     if let Some(cat) = current_cat
         && let Some(meal) = current_meal.as_mut()
-            && !cat.items.is_empty() {
-                meal.categories.push(cat);
-            }
+        && !cat.items.is_empty()
+    {
+        meal.categories.push(cat);
+    }
     if let Some(meal) = current_meal
-        && !meal.categories.is_empty() {
-            meals.push(meal);
-        }
+        && !meal.categories.is_empty()
+    {
+        meals.push(meal);
+    }
 
     DiningMenu {
         hall_name: hall_name.to_string(),
@@ -669,9 +695,15 @@ pub async fn scrape_balance(client: &reqwest::Client) -> Result<BalanceResult> {
         .context("failed to fetch funds overview partial")?;
 
     if !partial.status().is_success() {
-        anyhow::bail!("Funds overview partial returned status {}", partial.status());
+        anyhow::bail!(
+            "Funds overview partial returned status {}",
+            partial.status()
+        );
     }
-    let body = partial.text().await.context("reading funds overview partial")?;
+    let body = partial
+        .text()
+        .await
+        .context("reading funds overview partial")?;
 
     let balance = parse_balance_table(&body);
     if balance.accounts.is_empty() {
@@ -738,9 +770,10 @@ fn parse_balance_table(html: &str) -> MealBalance {
             .next()
             .map(|c| c.text().collect::<String>().trim().to_string());
         if let (Some(name), Some(balance)) = (name, balance)
-            && !name.is_empty() {
-                accounts.push(BalanceAccount { name, balance });
-            }
+            && !name.is_empty()
+        {
+            accounts.push(BalanceAccount { name, balance });
+        }
     }
 
     MealBalance { plan, accounts }
@@ -778,10 +811,7 @@ pub struct NutritionInfo {
 
 const LABEL_URL: &str = "https://nutrition.sa.ucsc.edu/label.aspx";
 
-pub async fn scrape_nutrition(
-    client: &reqwest::Client,
-    recipe_id: &str,
-) -> Result<NutritionInfo> {
+pub async fn scrape_nutrition(client: &reqwest::Client, recipe_id: &str) -> Result<NutritionInfo> {
     let url = format!(
         "{}?RecNumAndPort={}",
         LABEL_URL,
@@ -963,11 +993,7 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
                 continue;
             }
 
-            let date = times[0]
-                .value()
-                .attr("datetime")
-                .unwrap_or("")
-                .to_string();
+            let date = times[0].value().attr("datetime").unwrap_or("").to_string();
 
             let (opens, closes) = if times.len() >= 3 {
                 (
@@ -979,7 +1005,11 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
             };
 
             if !date.is_empty() {
-                date_hours.push(DateHours { date, opens, closes });
+                date_hours.push(DateHours {
+                    date,
+                    opens,
+                    closes,
+                });
             }
         }
 
@@ -1031,7 +1061,6 @@ impl DiningLocation {
         out
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1141,8 +1170,16 @@ mod tests {
         assert_eq!(entrees.items.len(), 1);
         assert_eq!(entrees.items[0].name, "Scrambled Eggs");
         assert_eq!(entrees.items[0].recipe_id, Some("061002*3".to_string()));
-        assert!(entrees.items[0].dietary_tags.contains(&"vegetarian".to_string()));
-        assert!(entrees.items[0].dietary_tags.contains(&"contains_eggs".to_string()));
+        assert!(
+            entrees.items[0]
+                .dietary_tags
+                .contains(&"vegetarian".to_string())
+        );
+        assert!(
+            entrees.items[0]
+                .dietary_tags
+                .contains(&"contains_eggs".to_string())
+        );
 
         let bakery = &meal.categories[1];
         assert_eq!(bakery.items[0].name, "Waffle");
@@ -1192,7 +1229,9 @@ mod tests {
         assert_eq!(entrees.items[0].name, "Scrambled Eggs");
         assert_eq!(entrees.items[0].recipe_id, None);
         assert!(
-            entrees.items[0].dietary_tags.contains(&"vegetarian".to_string()),
+            entrees.items[0]
+                .dietary_tags
+                .contains(&"vegetarian".to_string()),
             "Expected vegetarian tag, got: {:?}",
             entrees.items[0].dietary_tags
         );

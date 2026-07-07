@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use crate::util::now_pacific;
+use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -53,20 +53,14 @@ impl AirQualityService {
         }
     }
 
-    pub async fn get_current(
-        &self,
-        zip: Option<&str>,
-        distance: Option<u32>,
-    ) -> Result<String> {
+    pub async fn get_current(&self, zip: Option<&str>, distance: Option<u32>) -> Result<String> {
         let key = match &self.api_key {
             Some(k) if !k.is_empty() => k.clone(),
             _ => {
-                return Ok(
-                    "AirNow API key not configured.\n\
+                return Ok("AirNow API key not configured.\n\
                      Get a free key at https://docs.airnowapi.org/ and set \
                      the `AIRNOW_API_KEY` environment variable."
-                        .to_string(),
-                );
+                    .to_string());
             }
         };
 

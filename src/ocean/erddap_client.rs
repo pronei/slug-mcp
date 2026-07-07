@@ -189,11 +189,7 @@ impl ErddapClient {
         }
 
         let response: ErddapResponse = serde_json::from_slice(&bytes).map_err(|e| {
-            anyhow::anyhow!(
-                "failed to parse ERDDAP JSON from '{}': {}",
-                dataset_id,
-                e
-            )
+            anyhow::anyhow!("failed to parse ERDDAP JSON from '{}': {}", dataset_id, e)
         })?;
 
         if response.table.rows.len() > MAX_TABLEDAP_ROWS {
@@ -229,18 +225,27 @@ impl ErddapClient {
             selector_str,
         );
 
-        let resp = self.http.get(&url).send().await
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| anyhow::anyhow!("ERDDAP griddap request failed: {}", e))?;
 
         let status = resp.status();
 
-        if status == reqwest::StatusCode::FOUND || status == reqwest::StatusCode::MOVED_PERMANENTLY {
+        if status == reqwest::StatusCode::FOUND || status == reqwest::StatusCode::MOVED_PERMANENTLY
+        {
             let location = resp
                 .headers()
                 .get("location")
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("unknown");
-            let redirect_resp = self.http.get(location).send().await
+            let redirect_resp = self
+                .http
+                .get(location)
+                .send()
+                .await
                 .map_err(|e| anyhow::anyhow!("ERDDAP redirect failed: {}", e))?;
             return self.parse_griddap_response(redirect_resp, dataset_id).await;
         }
@@ -284,7 +289,11 @@ impl ErddapClient {
         }
 
         let response: ErddapResponse = serde_json::from_slice(&bytes).map_err(|e| {
-            anyhow::anyhow!("failed to parse ERDDAP griddap JSON from '{}': {}", dataset_id, e)
+            anyhow::anyhow!(
+                "failed to parse ERDDAP griddap JSON from '{}': {}",
+                dataset_id,
+                e
+            )
         })?;
 
         if response.table.rows.len() > MAX_GRIDDAP_ROWS {

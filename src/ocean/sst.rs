@@ -57,7 +57,8 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &SstRequest) -> Result
     );
     let stride = req.stride.unwrap_or(DEFAULT_STRIDE).max(1);
 
-    let sel_sst = grid_selector_stride("analysed_sst", "last", lat_range, stride, lon_range, stride);
+    let sel_sst =
+        grid_selector_stride("analysed_sst", "last", lat_range, stride, lon_range, stride);
     let sel_anom = grid_selector_stride("sstAnom", "last", lat_range, stride, lon_range, stride);
 
     let sst_sels = vec![sel_sst];
@@ -79,12 +80,18 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &SstRequest) -> Result
     let i_lon = sst.table.col_index("longitude").unwrap_or(2);
     let i_sst = sst.table.col_index("analysed_sst").unwrap_or(3);
 
-    let timestamp = sst.table.rows.first()
+    let timestamp = sst
+        .table
+        .rows
+        .first()
         .and_then(|r| r.get(i_time)?.as_str())
         .unwrap_or("unknown")
         .to_string();
 
-    let sst_vals: Vec<f64> = sst.table.rows.iter()
+    let sst_vals: Vec<f64> = sst
+        .table
+        .rows
+        .iter()
         .filter_map(|r| r.get(i_sst)?.as_f64())
         .collect();
 
@@ -100,7 +107,10 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &SstRequest) -> Result
 
     let mean_anom = if let Some(ref a) = anom {
         let i_a = a.table.col_index("sstAnom").unwrap_or(3);
-        let anom_vals: Vec<f64> = a.table.rows.iter()
+        let anom_vals: Vec<f64> = a
+            .table
+            .rows
+            .iter()
             .filter_map(|r| r.get(i_a)?.as_f64())
             .collect();
         if anom_vals.is_empty() {
@@ -134,7 +144,8 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &SstRequest) -> Result
     );
     let stride = req.stride.unwrap_or(DEFAULT_STRIDE).max(1);
 
-    let sel_sst = grid_selector_stride("analysed_sst", "last", lat_range, stride, lon_range, stride);
+    let sel_sst =
+        grid_selector_stride("analysed_sst", "last", lat_range, stride, lon_range, stride);
     let sel_anom = grid_selector_stride("sstAnom", "last", lat_range, stride, lon_range, stride);
 
     let sst_sels = vec![sel_sst];
@@ -156,12 +167,18 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &SstRequest) -> Result
     let i_lon = sst.table.col_index("longitude").unwrap_or(2);
     let i_sst = sst.table.col_index("analysed_sst").unwrap_or(3);
 
-    let timestamp = sst.table.rows.first()
+    let timestamp = sst
+        .table
+        .rows
+        .first()
         .and_then(|r| r.get(i_time)?.as_str())
         .unwrap_or("unknown")
         .to_string();
 
-    let sst_vals: Vec<f64> = sst.table.rows.iter()
+    let sst_vals: Vec<f64> = sst
+        .table
+        .rows
+        .iter()
         .filter_map(|r| r.get(i_sst)?.as_f64())
         .collect();
 
@@ -177,7 +194,10 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &SstRequest) -> Result
 
     let (mean_anom, anom_count) = if let Some(ref a) = anom {
         let i_a = a.table.col_index("sstAnom").unwrap_or(3);
-        let anom_vals: Vec<f64> = a.table.rows.iter()
+        let anom_vals: Vec<f64> = a
+            .table
+            .rows
+            .iter()
             .filter_map(|r| r.get(i_a)?.as_f64())
             .collect();
         if anom_vals.is_empty() {
@@ -242,8 +262,12 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &SstRequest) -> Result
          MUR L4 is gap-filled (no NaN). Anomaly base: 2003–2014. \
          Source: CoastWatch ERDDAP (`{}`). \
          Last updated: {}._\n",
-        lat_range.0, lat_range.1, lon_range.0.abs(), lon_range.1.abs(),
-        stride, SST_DATASET,
+        lat_range.0,
+        lat_range.1,
+        lon_range.0.abs(),
+        lon_range.1.abs(),
+        stride,
+        SST_DATASET,
         now_pacific().format("%-I:%M %p %Z"),
     ));
 
@@ -269,10 +293,10 @@ fn compute_max_gradient(
         let lon_i = rows[i].get(i_lon).and_then(|v| v.as_f64())?;
         let sst_i = rows[i].get(i_sst).and_then(|v| v.as_f64())?;
 
-        for j in (i + 1)..rows.len().min(i + 200) {
-            let lat_j = rows[j].get(i_lat).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let lon_j = rows[j].get(i_lon).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let sst_j = match rows[j].get(i_sst).and_then(|v| v.as_f64()) {
+        for row_j in rows.iter().take(rows.len().min(i + 200)).skip(i + 1) {
+            let lat_j = row_j.get(i_lat).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let lon_j = row_j.get(i_lon).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let sst_j = match row_j.get(i_sst).and_then(|v| v.as_f64()) {
                 Some(v) => v,
                 None => continue,
             };

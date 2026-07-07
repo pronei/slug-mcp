@@ -6,7 +6,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -100,9 +100,10 @@ impl OutdoorsService {
         let lon = req.lon.unwrap_or(DEFAULT_LON);
 
         if let Some(r) = req.radius_m
-            && r > MAX_RADIUS {
-                bail!("radius_m must be at most {} meters", MAX_RADIUS);
-            }
+            && r > MAX_RADIUS
+        {
+            bail!("radius_m must be at most {} meters", MAX_RADIUS);
+        }
         let radius = req.radius_m.unwrap_or(DEFAULT_RADIUS).min(MAX_RADIUS);
         let limit = req.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
 
@@ -141,7 +142,13 @@ impl OutdoorsService {
 
 // ─── Validation ───
 
-const VALID_CATEGORIES: &[&str] = &["trails", "peaks", "viewpoints", "water_restrooms", "parking"];
+const VALID_CATEGORIES: &[&str] = &[
+    "trails",
+    "peaks",
+    "viewpoints",
+    "water_restrooms",
+    "parking",
+];
 
 fn validate_category(category: &str) -> Result<()> {
     if VALID_CATEGORIES.contains(&category) {
@@ -238,7 +245,9 @@ async fn fetch_and_parse(
 
     // Overpass sometimes returns 200 with an error message in the body
     if body.contains("runtime error:") || body.contains("Dispatcher_Client") {
-        bail!("Overpass API server is busy or timed out. Try again shortly or reduce the search radius.");
+        bail!(
+            "Overpass API server is busy or timed out. Try again shortly or reduce the search radius."
+        );
     }
 
     let parsed: OverpassResponse = serde_json::from_str(&body)?;
@@ -310,7 +319,9 @@ fn element_to_feature(el: &OverpassElement, category: &str) -> Option<Feature> {
     };
 
     // Collect other interesting tags
-    let skip_tags = ["name", "ele", "highway", "amenity", "natural", "tourism", "type"];
+    let skip_tags = [
+        "name", "ele", "highway", "amenity", "natural", "tourism", "type",
+    ];
     let extra_tags: Vec<(String, String)> = tags
         .map(|t| {
             t.iter()
@@ -378,10 +389,7 @@ fn format_output(
             let dist = haversine_km(query_lat, query_lon, feature.lat, feature.lon);
             let bearing = bearing_label(query_lat, query_lon, feature.lat, feature.lon);
 
-            let name_str = feature
-                .name
-                .as_deref()
-                .unwrap_or("(unnamed)");
+            let name_str = feature.name.as_deref().unwrap_or("(unnamed)");
 
             let mut line = format!("{}. **{}**", i + 1, name_str);
 
@@ -410,8 +418,15 @@ fn format_output(
                 .filter(|(k, _)| {
                     matches!(
                         k.as_str(),
-                        "surface" | "access" | "fee" | "capacity" | "wheelchair" | "operator"
-                            | "opening_hours" | "description" | "route"
+                        "surface"
+                            | "access"
+                            | "fee"
+                            | "capacity"
+                            | "wheelchair"
+                            | "operator"
+                            | "opening_hours"
+                            | "description"
+                            | "route"
                     )
                 })
                 .map(|(k, v)| format!("{}: {}", k, v))
@@ -445,8 +460,7 @@ fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let lat1_r = lat1.to_radians();
     let lat2_r = lat2.to_radians();
 
-    let a = (d_lat / 2.0).sin().powi(2)
-        + lat1_r.cos() * lat2_r.cos() * (d_lon / 2.0).sin().powi(2);
+    let a = (d_lat / 2.0).sin().powi(2) + lat1_r.cos() * lat2_r.cos() * (d_lon / 2.0).sin().powi(2);
     let c = 2.0 * a.sqrt().asin();
 
     R * c
@@ -459,8 +473,7 @@ fn bearing_label(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> &'st
     let d_lon_r = (to_lon - from_lon).to_radians();
 
     let x = d_lon_r.sin() * to_lat_r.cos();
-    let y = from_lat_r.cos() * to_lat_r.sin()
-        - from_lat_r.sin() * to_lat_r.cos() * d_lon_r.cos();
+    let y = from_lat_r.cos() * to_lat_r.sin() - from_lat_r.sin() * to_lat_r.cos() * d_lon_r.cos();
 
     let bearing_deg = x.atan2(y).to_degrees();
     // Normalize to 0..360

@@ -84,13 +84,14 @@ impl ClimbingService {
 
         // Handle GraphQL-level errors
         if let Some(errors) = &response.errors
-            && !errors.is_empty() {
-                let mut out = String::from("# Climbing Search Error\n\n");
-                for e in errors {
-                    let _ = writeln!(out, "- {}", e.message);
-                }
-                return Ok(out);
+            && !errors.is_empty()
+        {
+            let mut out = String::from("# Climbing Search Error\n\n");
+            for e in errors {
+                let _ = writeln!(out, "- {}", e.message);
             }
+            return Ok(out);
+        }
 
         let areas = match &response.data {
             Some(d) => &d.areas,
@@ -114,9 +115,10 @@ impl ClimbingService {
                 meta_parts.push(format!("{} routes", tc));
             }
             if let Some(md) = &area.metadata
-                && let (Some(lat), Some(lng)) = (md.lat, md.lng) {
-                    meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
-                }
+                && let (Some(lat), Some(lng)) = (md.lat, md.lng)
+            {
+                meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
+            }
             if !meta_parts.is_empty() {
                 let _ = writeln!(out, "_{}_", meta_parts.join(" \u{00b7} "));
                 out.push('\n');
@@ -124,17 +126,18 @@ impl ClimbingService {
 
             // Sub-areas
             if let Some(children) = &area.children
-                && !children.is_empty() {
-                    let _ = writeln!(out, "## Sub-areas");
-                    for child in children {
-                        let count = child
-                            .total_climbs
-                            .map(|c| format!(" \u{2014} {} routes", c))
-                            .unwrap_or_default();
-                        let _ = writeln!(out, "- **{}**{}", child.area_name, count);
-                    }
-                    out.push('\n');
+                && !children.is_empty()
+            {
+                let _ = writeln!(out, "## Sub-areas");
+                for child in children {
+                    let count = child
+                        .total_climbs
+                        .map(|c| format!(" \u{2014} {} routes", c))
+                        .unwrap_or_default();
+                    let _ = writeln!(out, "- **{}**{}", child.area_name, count);
                 }
+                out.push('\n');
+            }
 
             // Routes
             if let Some(climbs) = &area.climbs {
@@ -172,13 +175,15 @@ impl ClimbingService {
                             parts.push(ctype);
                         }
                         if let Some(fa) = &climb.fa
-                            && !fa.is_empty() {
-                                parts.push(format!("FA: {}", fa));
-                            }
+                            && !fa.is_empty()
+                        {
+                            parts.push(format!("FA: {}", fa));
+                        }
                         if let Some(len) = climb.length
-                            && len > 0 {
-                                parts.push(format!("{} ft", len));
-                            }
+                            && len > 0
+                        {
+                            parts.push(format!("{} ft", len));
+                        }
 
                         let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
                     }
@@ -225,11 +230,7 @@ fn climb_type_label(ct: &GqlClimbType) -> String {
 fn no_results_message(area: Option<&str>) -> String {
     let mut out = String::from("# Climbing Search \u{2014} No Results\n\n");
     if let Some(a) = area {
-        let _ = writeln!(
-            out,
-            "No climbing areas found matching \"{}\".\n",
-            a
-        );
+        let _ = writeln!(out, "No climbing areas found matching \"{}\".\n", a);
     } else {
         out.push_str("No climbing data found for the Santa Cruz area.\n\n");
     }
@@ -411,7 +412,10 @@ mod tests {
         let climbs = area.climbs.as_ref().unwrap();
         assert_eq!(climbs.len(), 1);
         assert_eq!(climbs[0].name, "The Oracle");
-        assert_eq!(climbs[0].grades.as_ref().unwrap().yds, Some("5.11a".to_string()));
+        assert_eq!(
+            climbs[0].grades.as_ref().unwrap().yds,
+            Some("5.11a".to_string())
+        );
         assert_eq!(climbs[0].climb_type.as_ref().unwrap().sport, Some(true));
         assert_eq!(climbs[0].climb_type.as_ref().unwrap().trad, Some(false));
         assert_eq!(climbs[0].fa, Some("John Bachar".to_string()));
@@ -459,9 +463,7 @@ mod tests {
         };
 
         let response = GqlResponse {
-            data: Some(GqlData {
-                areas: vec![area],
-            }),
+            data: Some(GqlData { areas: vec![area] }),
             errors: None,
         };
 
@@ -476,28 +478,28 @@ mod tests {
             if let Some(tc) = a.total_climbs {
                 meta_parts.push(format!("{} routes", tc));
             }
-            if let Some(md) = &a.metadata {
-                if let (Some(lat), Some(lng)) = (md.lat, md.lng) {
-                    meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
-                }
+            if let Some(md) = &a.metadata
+                && let (Some(lat), Some(lng)) = (md.lat, md.lng)
+            {
+                meta_parts.push(format!("{:.2}\u{00b0}N, {:.2}\u{00b0}W", lat, lng.abs()));
             }
             if !meta_parts.is_empty() {
                 let _ = writeln!(out, "_{}_", meta_parts.join(" \u{00b7} "));
                 out.push('\n');
             }
 
-            if let Some(children) = &a.children {
-                if !children.is_empty() {
-                    let _ = writeln!(out, "## Sub-areas");
-                    for child in children {
-                        let count = child
-                            .total_climbs
-                            .map(|c| format!(" \u{2014} {} routes", c))
-                            .unwrap_or_default();
-                        let _ = writeln!(out, "- **{}**{}", child.area_name, count);
-                    }
-                    out.push('\n');
+            if let Some(children) = &a.children
+                && !children.is_empty()
+            {
+                let _ = writeln!(out, "## Sub-areas");
+                for child in children {
+                    let count = child
+                        .total_climbs
+                        .map(|c| format!(" \u{2014} {} routes", c))
+                        .unwrap_or_default();
+                    let _ = writeln!(out, "- **{}**{}", child.area_name, count);
                 }
+                out.push('\n');
             }
 
             if let Some(climbs) = &a.climbs {
@@ -511,21 +513,21 @@ mod tests {
                     let ctype = climb
                         .climb_type
                         .as_ref()
-                        .map(|ct| climb_type_label(ct))
+                        .map(climb_type_label)
                         .unwrap_or_default();
                     let mut parts = vec![format!("**{}**", climb.name), grade.to_string()];
                     if !ctype.is_empty() {
                         parts.push(ctype);
                     }
-                    if let Some(fa) = &climb.fa {
-                        if !fa.is_empty() {
-                            parts.push(format!("FA: {}", fa));
-                        }
+                    if let Some(fa) = &climb.fa
+                        && !fa.is_empty()
+                    {
+                        parts.push(format!("FA: {}", fa));
                     }
-                    if let Some(len) = climb.length {
-                        if len > 0 {
-                            parts.push(format!("{} ft", len));
-                        }
+                    if let Some(len) = climb.length
+                        && len > 0
+                    {
+                        parts.push(format!("{} ft", len));
                     }
                     let _ = writeln!(out, "{}. {}", i + 1, parts.join(" \u{00b7} "));
                 }
@@ -539,7 +541,9 @@ mod tests {
         assert!(out.contains("**East Side** \u{2014} 166 routes"));
         assert!(out.contains("**West Side** \u{2014} 116 routes"));
         assert!(out.contains("## Routes"));
-        assert!(out.contains("**The Oracle** \u{00b7} 5.11a \u{00b7} Sport \u{00b7} FA: John Bachar \u{00b7} 30 ft"));
+        assert!(out.contains(
+            "**The Oracle** \u{00b7} 5.11a \u{00b7} Sport \u{00b7} FA: John Bachar \u{00b7} 30 ft"
+        ));
     }
 
     #[test]
@@ -586,7 +590,10 @@ mod tests {
         assert!(kinds.contains(&"TR".to_string()));
 
         // The boulder has no YDS grade → renders as "?" in the routes list.
-        let boulder = climbs.iter().find(|c| c.name == "Sad Boulder Problem").unwrap();
+        let boulder = climbs
+            .iter()
+            .find(|c| c.name == "Sad Boulder Problem")
+            .unwrap();
         assert!(boulder.grades.as_ref().unwrap().yds.is_none());
         assert_eq!(boulder.climb_type.as_ref().unwrap().boulder, Some(true));
     }

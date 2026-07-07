@@ -5,7 +5,7 @@ use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
 use rmcp::service::RequestContext;
-use rmcp::{tool, tool_router, RoleServer, ServerHandler};
+use rmcp::{RoleServer, ServerHandler, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 #[cfg(feature = "auth")]
@@ -15,42 +15,44 @@ use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRe
 use crate::air_forecast::{AirForecastRequest, AirForecastService};
 use crate::air_quality::{AirQualityRequest, AirQualityService};
 use crate::astronomy::{AstronomyService, SunMoonRequest};
+#[cfg(feature = "auth")]
+use crate::auth::AuthManager;
+#[cfg(feature = "auth")]
+use crate::auth::session::SessionData;
 use crate::beach_water::{BeachWaterQualityRequest, BeachWaterService};
-use crate::climbing::{ClimbingRequest, ClimbingService};
-use crate::earthquakes::{EarthquakeRequest, EarthquakeService};
-use crate::nps::{NationalParkRequest, NpsService};
-use crate::outdoors::{OutdoorsRequest, OutdoorsService};
-use crate::space_weather::{SpaceWeatherRequest, SpaceWeatherService};
-use crate::summer::{SummerDeadlinesRequest, SummerService};
 use crate::biodiversity::{
     BiodiversityService, BirdRequest, HistoricBirdRequest, HotspotRequest, NearestBirdRequest,
     SpeciesRequest,
 };
 use crate::buoy::{BuoyRequest, BuoyService};
-#[cfg(feature = "auth")]
-use crate::auth::session::SessionData;
-#[cfg(feature = "auth")]
-use crate::auth::AuthManager;
 use crate::cache::CacheStore;
 use crate::classrooms::{ClassroomService, SearchClassroomsRequest};
+use crate::climbing::{ClimbingRequest, ClimbingService};
 use crate::degrees::{DegreeProgressRequest, DegreeRequirementsRequest, DegreeService};
 use crate::dining::{DiningHoursRequest, DiningMenuRequest, DiningService, NutritionRequest};
-use crate::events::{EventsService, SearchEventbriteRequest, SearchEventsRequest, UpcomingEventsRequest};
+use crate::earthquakes::{EarthquakeRequest, EarthquakeService};
+use crate::events::{
+    EventsService, SearchEventbriteRequest, SearchEventsRequest, UpcomingEventsRequest,
+};
 use crate::fire::{FireDetectionsRequest, FireService};
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
 use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest};
+use crate::nps::{NationalParkRequest, NpsService};
 use crate::ocean::{
     HabRequest, HabRiskRequest, HfrRequest, M1Request, OceanService, ResearchSnapshotRequest,
     SstRequest, UpwellingRequest, UpwellingStateRequest, WharfRequest,
 };
+use crate::outdoors::{OutdoorsRequest, OutdoorsService};
 use crate::recreation::{
     FacilityOccupancyRequest, FacilityScheduleRequest, GroupExerciseRequest, RecreationService,
 };
+use crate::space_weather::{SpaceWeatherRequest, SpaceWeatherService};
+use crate::summer::{SummerDeadlinesRequest, SummerService};
 use crate::tides::{TidesRequest, TidesService};
 use crate::traffic::{TrafficRequest, TrafficService};
+use crate::transit::TransitService;
 use crate::usgs_water::{StreamConditionsRequest, UsgsWaterService};
 use crate::wave_buoy::{WaveBuoyRequest, WaveBuoyService};
-use crate::transit::TransitService;
 use crate::weather::{WeatherForecastRequest, WeatherService};
 
 fn internal_err(e: impl std::fmt::Display) -> ErrorData {
@@ -175,9 +177,10 @@ impl SlugMcpServer {
     async fn get_active_session(&self) -> Option<SessionData> {
         // 1. Check per-session token (set via `authenticate` tool)
         if let Some(data) = self.session_auth.read().await.as_ref()
-            && !data.is_expired() {
-                return Some(data.clone());
-            }
+            && !data.is_expired()
+        {
+            return Some(data.clone());
+        }
         // 2. Fall back to disk-based session (set via `login` tool)
         self.auth.get_session().ok().flatten()
     }
@@ -1124,7 +1127,9 @@ macro_rules! define_tools {
 define_tools!({
     // ─── Auth Tools ───
 
-    #[tool(description = "Login to UCSC SSO. This opens a Chrome window on your machine for CruzID + Duo MFA authentication — use this tool directly, it works from any MCP client including Claude Desktop. After you complete login in the browser, the session is captured automatically.")]
+    #[tool(
+        description = "Login to UCSC SSO. This opens a Chrome window on your machine for CruzID + Duo MFA authentication — use this tool directly, it works from any MCP client including Claude Desktop. After you complete login in the browser, the session is captured automatically."
+    )]
     async fn login(&self) -> Result<CallToolResult, ErrorData> {
         match self.auth.login().await {
             Ok(username) => Ok(CallToolResult::success(vec![Content::text(format!(
@@ -1139,15 +1144,15 @@ define_tools!({
         }
     }
 
-    #[tool(description = "Authenticate using a portable session token. Only needed when the MCP server is running on a remote or headless machine where a browser cannot open. Run `slug-mcp export-token` on a machine with a browser to get a token, then pass it here.")]
+    #[tool(
+        description = "Authenticate using a portable session token. Only needed when the MCP server is running on a remote or headless machine where a browser cannot open. Run `slug-mcp export-token` on a machine with a browser to get a token, then pass it here."
+    )]
     async fn authenticate(
         &self,
         Parameters(req): Parameters<AuthenticateRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        let session_data =
-            crate::auth::token::decode_token(&req.token).map_err(|e| {
-                ErrorData::new(ErrorCode::INVALID_PARAMS, e.to_string(), None)
-            })?;
+        let session_data = crate::auth::token::decode_token(&req.token)
+            .map_err(|e| ErrorData::new(ErrorCode::INVALID_PARAMS, e.to_string(), None))?;
 
         let username = session_data.username.clone();
         let remaining_secs = (session_data.expires_at
@@ -1171,28 +1176,33 @@ define_tools!({
     async fn check_auth(&self) -> Result<CallToolResult, ErrorData> {
         // Check per-session token first (SSE mode)
         if let Some(data) = self.session_auth.read().await.as_ref()
-            && !data.is_expired() {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-                let remaining = (data.expires_at - now).max(0) as u64;
-                let hours = remaining / 3600;
-                let mins = (remaining % 3600) / 60;
+            && !data.is_expired()
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            let remaining = (data.expires_at - now).max(0) as u64;
+            let hours = remaining / 3600;
+            let mins = (remaining % 3600) / 60;
 
-                return Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Authenticated as **{}** (expires in {}h {}m) — via token",
-                    data.username, hours, mins
-                ))]));
-            }
+            return Ok(CallToolResult::success(vec![Content::text(format!(
+                "Authenticated as **{}** (expires in {}h {}m) — via token",
+                data.username, hours, mins
+            ))]));
+        }
 
         // Fall back to disk-based session (stdio mode)
         let status = self.auth.check_auth().map_err(internal_err)?;
 
-        Ok(CallToolResult::success(vec![Content::text(status.format())]))
+        Ok(CallToolResult::success(vec![Content::text(
+            status.format(),
+        )]))
     }
 
-    #[tool(description = "Get your UCSC meal plan balance (Slug Points, Banana Bucks). Requires authentication — call 'login' first if not already logged in.")]
+    #[tool(
+        description = "Get your UCSC meal plan balance (Slug Points, Banana Bucks). Requires authentication — call 'login' first if not already logged in."
+    )]
     async fn get_meal_balance(&self) -> Result<CallToolResult, ErrorData> {
         let session = match self.get_active_session().await {
             Some(s) => s,

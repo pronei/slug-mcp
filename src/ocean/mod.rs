@@ -1,10 +1,10 @@
-pub mod erddap_client;
-pub mod types;
 mod charm;
+pub mod erddap_client;
 pub mod fusion;
 mod hfr;
 mod m1;
 mod sst;
+pub mod types;
 mod upwelling;
 mod wharf;
 
@@ -177,19 +177,38 @@ impl OceanService {
         &self,
         req: &fusion::UpwellingStateRequest,
     ) -> Result<String> {
-        fusion::upwelling_state(&self.http, &self.cache, &self.erddap, &self.biodiversity, req)
-            .await
+        fusion::upwelling_state(
+            &self.http,
+            &self.cache,
+            &self.erddap,
+            &self.biodiversity,
+            req,
+        )
+        .await
     }
 
     pub async fn monterey_bay_hab_risk(&self, req: &fusion::HabRiskRequest) -> Result<String> {
-        fusion::hab_risk(&self.http, &self.cache, &self.erddap, &self.biodiversity, req).await
+        fusion::hab_risk(
+            &self.http,
+            &self.cache,
+            &self.erddap,
+            &self.biodiversity,
+            req,
+        )
+        .await
     }
 
     pub async fn monterey_bay_research_snapshot(
         &self,
         req: &fusion::ResearchSnapshotRequest,
     ) -> Result<String> {
-        fusion::research_snapshot(&self.http, &self.cache, &self.erddap, &self.biodiversity, req)
-            .await
+        fusion::research_snapshot(
+            &self.http,
+            &self.cache,
+            &self.erddap,
+            &self.biodiversity,
+            req,
+        )
+        .await
     }
 }

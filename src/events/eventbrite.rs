@@ -37,8 +37,17 @@ fn build_discover_url(location_slug: &str, query: Option<&str>) -> String {
     // Sanitize to [a-z0-9-]: spaces become dashes, other chars are dropped so
     // a malicious query can't inject extra URL path segments.
     let q_slug = sanitize_slug(q);
-    let q_slug = if q_slug.is_empty() { "events".to_string() } else { q_slug };
-    format!("{}/d/{}/{}/", EVENTBRITE_BASE, sanitize_slug(location_slug), q_slug)
+    let q_slug = if q_slug.is_empty() {
+        "events".to_string()
+    } else {
+        q_slug
+    };
+    format!(
+        "{}/d/{}/{}/",
+        EVENTBRITE_BASE,
+        sanitize_slug(location_slug),
+        q_slug
+    )
 }
 
 /// Convert a location string like "Santa Cruz, CA" to a slug like "ca--santa-cruz".
@@ -76,9 +85,11 @@ fn extract_event_ids(html: &str) -> Vec<String> {
     // Primary: data-event-id on links
     for el in document.select(&SEL_EVENT_ID) {
         if let Some(id) = el.value().attr("data-event-id")
-            && !id.is_empty() && !ids.contains(&id.to_string()) {
-                ids.push(id.to_string());
-            }
+            && !id.is_empty()
+            && !ids.contains(&id.to_string())
+        {
+            ids.push(id.to_string());
+        }
     }
 
     // Fallback: parse event IDs from href patterns like /e/...-tickets-1234567890
@@ -86,9 +97,10 @@ fn extract_event_ids(html: &str) -> Vec<String> {
         for el in document.select(&SEL_EVENT_HREF) {
             if let Some(href) = el.value().attr("href")
                 && let Some(id) = extract_id_from_href(href)
-                    && !ids.contains(&id) {
-                        ids.push(id);
-                    }
+                && !ids.contains(&id)
+            {
+                ids.push(id);
+            }
         }
     }
 
@@ -227,7 +239,10 @@ impl EventbriteClient {
         let html = self
             .http
             .get(&discover_url)
-            .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+            )
             .send()
             .await
             .context("failed to fetch Eventbrite discover page")?
@@ -265,7 +280,11 @@ impl EventbriteClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Eventbrite detail API returned {}: {}", status, crate::util::truncate(&body, 200));
+            anyhow::bail!(
+                "Eventbrite detail API returned {}: {}",
+                status,
+                crate::util::truncate(&body, 200)
+            );
         }
 
         let data: DestinationResponse = resp
@@ -305,9 +324,10 @@ impl Event {
             let name = venue.name.as_deref().unwrap_or("TBD");
             out.push_str(&format!("- **Where**: {}", name));
             if let Some(addr) = &venue.address
-                && let Some(display) = &addr.localized_address_display {
-                    out.push_str(&format!(" ({})", display));
-                }
+                && let Some(display) = &addr.localized_address_display
+            {
+                out.push_str(&format!(" ({})", display));
+            }
             out.push('\n');
         }
 
@@ -316,15 +336,16 @@ impl Event {
             if ta.is_free == Some(true) {
                 out.push_str("- **Cost**: Free\n");
             } else if let Some(min) = &ta.minimum_ticket_price
-                && let Some(max) = &ta.maximum_ticket_price {
-                    let min_d = min.display.as_deref().unwrap_or("?");
-                    let max_d = max.display.as_deref().unwrap_or("?");
-                    if min_d == max_d {
-                        out.push_str(&format!("- **Cost**: {}\n", min_d));
-                    } else {
-                        out.push_str(&format!("- **Cost**: {} – {}\n", min_d, max_d));
-                    }
+                && let Some(max) = &ta.maximum_ticket_price
+            {
+                let min_d = min.display.as_deref().unwrap_or("?");
+                let max_d = max.display.as_deref().unwrap_or("?");
+                if min_d == max_d {
+                    out.push_str(&format!("- **Cost**: {}\n", min_d));
+                } else {
+                    out.push_str(&format!("- **Cost**: {} – {}\n", min_d, max_d));
                 }
+            }
             if ta.is_sold_out == Some(true) {
                 out.push_str("- **Status**: SOLD OUT\n");
             }
@@ -332,9 +353,10 @@ impl Event {
 
         // Organizer
         if let Some(org) = &self.primary_organizer
-            && let Some(name) = &org.name {
-                out.push_str(&format!("- **Organizer**: {}\n", name));
-            }
+            && let Some(name) = &org.name
+        {
+            out.push_str(&format!("- **Organizer**: {}\n", name));
+        }
 
         // Tags/categories
         if let Some(tags) = &self.tags {
@@ -527,7 +549,9 @@ mod tests {
 
         let summary = event.format_summary();
         assert!(summary.contains("## Rust Meetup"));
-        assert!(summary.contains("Register**: https://www.eventbrite.com/e/rust-meetup-tickets-123"));
+        assert!(
+            summary.contains("Register**: https://www.eventbrite.com/e/rust-meetup-tickets-123")
+        );
         assert!(summary.contains("Santa Cruz Tech Hub"));
         assert!(summary.contains("**Cost**: Free"));
         assert!(summary.contains("**Source**: Eventbrite"));

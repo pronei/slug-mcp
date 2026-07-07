@@ -49,7 +49,10 @@ pub async fn fetch_feed(
     url: &'static str,
 ) -> Result<Arc<gtfs_realtime::FeedMessage>> {
     let cache_key = format!("transit:gtfsrt:{}", feed_name);
-    if let Some(msg) = cache.get_arc::<gtfs_realtime::FeedMessage>(&cache_key).await {
+    if let Some(msg) = cache
+        .get_arc::<gtfs_realtime::FeedMessage>(&cache_key)
+        .await
+    {
         return Ok(msg);
     }
 
@@ -72,7 +75,11 @@ pub async fn fetch_feed(
     );
 
     cache
-        .set_arc(&cache_key, Arc::clone(&msg), Duration::from_secs(FEED_TTL_SECS))
+        .set_arc(
+            &cache_key,
+            Arc::clone(&msg),
+            Duration::from_secs(FEED_TTL_SECS),
+        )
         .await;
 
     Ok(msg)
@@ -112,7 +119,10 @@ pub async fn get_predictions_for_stop(
     let vehicles_lookup = match vehicles_res {
         Ok(v) => build_vehicle_lookup(&v),
         Err(e) => {
-            tracing::warn!("GTFS-RT vehicles feed failed (rendering without occupancy): {}", e);
+            tracing::warn!(
+                "GTFS-RT vehicles feed failed (rendering without occupancy): {}",
+                e
+            );
             HashMap::new()
         }
     };
@@ -125,15 +135,12 @@ pub async fn get_predictions_for_stop(
         let Some(trip_update) = &entity.trip_update else {
             continue;
         };
-        let route_id = trip_update
-            .trip
-            .route_id
-            .clone()
-            .unwrap_or_default();
+        let route_id = trip_update.trip.route_id.clone().unwrap_or_default();
         if let Some(filter) = route_filter
-            && !route_id.eq_ignore_ascii_case(filter) {
-                continue;
-            }
+            && !route_id.eq_ignore_ascii_case(filter)
+        {
+            continue;
+        }
 
         for stu in &trip_update.stop_time_update {
             if stu.stop_id.as_deref() != Some(stop_id) {
@@ -220,7 +227,9 @@ fn build_vehicle_lookup(feed: &gtfs_realtime::FeedMessage) -> HashMap<String, Ve
         let Some(vehicle) = &vp.vehicle else { continue };
         let Some(id) = &vehicle.id else { continue };
 
-        let occupancy = vp.occupancy_status.map(|code| occupancy_label(code).to_string());
+        let occupancy = vp
+            .occupancy_status
+            .map(|code| occupancy_label(code).to_string());
 
         out.insert(id.clone(), VehicleInfo { occupancy });
     }
@@ -378,9 +387,10 @@ pub async fn fetch_vehicle_positions(
             .unwrap_or_default();
 
         if let Some(filter) = route_filter
-            && !route.eq_ignore_ascii_case(filter) {
-                continue;
-            }
+            && !route.eq_ignore_ascii_case(filter)
+        {
+            continue;
+        }
 
         let vehicle_desc = vp.vehicle.as_ref();
         out.push(VehicleSnapshot {
@@ -424,12 +434,15 @@ pub async fn fetch_route_delays(
 
     let mut by_route: HashMap<String, Vec<i32>> = HashMap::new();
     for entity in &feed.entity {
-        let Some(tu) = &entity.trip_update else { continue };
+        let Some(tu) = &entity.trip_update else {
+            continue;
+        };
         let route = tu.trip.route_id.clone().unwrap_or_default();
         if let Some(filter) = route_filter
-            && !route.eq_ignore_ascii_case(filter) {
-                continue;
-            }
+            && !route.eq_ignore_ascii_case(filter)
+        {
+            continue;
+        }
 
         // Pick the most-forward stop_time_update delay that we have, or the
         // overall `delay` field if present.
@@ -569,10 +582,7 @@ pub fn format_system_alerts(alerts: &[SystemAlert]) -> String {
             out.push_str(&format!("{}\n", a.description));
         }
         if !a.routes_affected.is_empty() {
-            out.push_str(&format!(
-                "- Routes: {}\n",
-                a.routes_affected.join(", ")
-            ));
+            out.push_str(&format!("- Routes: {}\n", a.routes_affected.join(", ")));
         }
         if !a.stops_affected.is_empty() && a.stops_affected.len() <= 8 {
             out.push_str(&format!("- Stops: {}\n", a.stops_affected.join(", ")));
@@ -584,9 +594,10 @@ pub fn format_system_alerts(alerts: &[SystemAlert]) -> String {
             out.push_str(&format!("- Effect: {}\n", a.effect));
         }
         if let Some(url) = &a.url
-            && !url.is_empty() {
-                out.push_str(&format!("- More info: {}\n", url));
-            }
+            && !url.is_empty()
+        {
+            out.push_str(&format!("- More info: {}\n", url));
+        }
         out.push('\n');
     }
     out.push_str(&format!(
@@ -622,7 +633,10 @@ pub fn format_vehicle_positions(
                 .as_ref()
                 .map(|o| format!(" · {}", o))
                 .unwrap_or_default();
-            let speed = v.speed.map(|s| format!(" · {:.0} m/s", s)).unwrap_or_default();
+            let speed = v
+                .speed
+                .map(|s| format!(" · {:.0} m/s", s))
+                .unwrap_or_default();
             out.push_str(&format!(
                 "- **Route {}** bus #{} @ {:.4}, {:.4}{}{}\n",
                 v.route, v.vehicle_id, v.latitude, v.longitude, speed, occ
@@ -643,10 +657,7 @@ pub fn format_vehicle_positions(
     out
 }
 
-pub fn format_route_delays(
-    stats: &[RouteDelayStats],
-    route_filter: Option<&str>,
-) -> String {
+pub fn format_route_delays(stats: &[RouteDelayStats], route_filter: Option<&str>) -> String {
     let mut out = if let Some(r) = route_filter {
         format!("# Santa Cruz Metro — Delay stats for route {}\n\n", r)
     } else {
@@ -690,10 +701,7 @@ mod tests {
         );
         // Assert at least one entity has a TripUpdate
         let has_trip_update = msg.entity.iter().any(|e| e.trip_update.is_some());
-        assert!(
-            has_trip_update,
-            "trips feed should contain trip updates"
-        );
+        assert!(has_trip_update, "trips feed should contain trip updates");
     }
 
     #[test]

@@ -205,10 +205,7 @@ mod tests {
         let parsed: ForecastPeriod = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.name, "Tonight");
         assert_eq!(parsed.temperature, 48);
-        assert_eq!(
-            parsed.probability_of_precipitation.unwrap().value,
-            Some(20)
-        );
+        assert_eq!(parsed.probability_of_precipitation.unwrap().value, Some(20));
     }
 
     #[test]

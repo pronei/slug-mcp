@@ -174,10 +174,7 @@ pub async fn fetch_sc_closures(http: &reqwest::Client) -> Result<Vec<LaneClosure
     if !resp.status().is_success() {
         anyhow::bail!("Caltrans LCS returned HTTP {}", resp.status());
     }
-    let body = resp
-        .text()
-        .await
-        .context("reading Caltrans LCS body")?;
+    let body = resp.text().await.context("reading Caltrans LCS body")?;
     parse_sc_closures(&body)
 }
 

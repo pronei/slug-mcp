@@ -244,7 +244,13 @@ impl BiodiversityService {
             })
             .await?;
 
-        Ok(inaturalist::format_species(&observations, lat, lon, radius, days))
+        Ok(inaturalist::format_species(
+            &observations,
+            lat,
+            lon,
+            radius,
+            days,
+        ))
     }
 
     pub async fn fetch_species_typed(
@@ -300,7 +306,8 @@ impl BiodiversityService {
         let use_region = req.region.is_some() || (req.lat.is_none() && req.lon.is_none());
 
         // Resolve species name → code if requested.
-        let species_code = if let Some(q) = req.species.as_deref().filter(|s| !s.trim().is_empty()) {
+        let species_code = if let Some(q) = req.species.as_deref().filter(|s| !s.trim().is_empty())
+        {
             match self.resolve_species(&key, q).await? {
                 SpeciesResolved::Code(c) => Some(c),
                 SpeciesResolved::Message(m) => return Ok(m),
@@ -316,10 +323,10 @@ impl BiodiversityService {
 
             let observations = if let Some(code) = species_code {
                 let title = format!("{title} · species `{code}`");
-                let empty = format!("for species `{code}` in region `{region}` in the last {back} days");
-                let cache_key = format!(
-                    "bio:ebird:recent:region:{region}:species:{code}:{back}:{max_results}"
-                );
+                let empty =
+                    format!("for species `{code}` in region `{region}` in the last {back} days");
+                let cache_key =
+                    format!("bio:ebird:recent:region:{region}:species:{code}:{back}:{max_results}");
                 let http = self.http.clone();
                 let key2 = key.clone();
                 let region2 = region.clone();
@@ -328,28 +335,38 @@ impl BiodiversityService {
                     .cache
                     .get_or_fetch::<Vec<Observation>, _, _>(&cache_key, 1800, move || async move {
                         ebird::fetch_recent_region_species(
-                            &http, &key2, &region2, &code2, back, max_results,
+                            &http,
+                            &key2,
+                            &region2,
+                            &code2,
+                            back,
+                            max_results,
                         )
                         .await
                     })
                     .await?;
                 return Ok(ebird::format_recent(&obs, &title, &empty));
             } else if notable {
-                let cache_key = format!(
-                    "bio:ebird:recent:region:{region}:notable:{back}:{max_results}"
-                );
+                let cache_key =
+                    format!("bio:ebird:recent:region:{region}:notable:{back}:{max_results}");
                 let http = self.http.clone();
                 let key2 = key.clone();
                 let region2 = region.clone();
                 self.cache
                     .get_or_fetch::<Vec<Observation>, _, _>(&cache_key, 1800, move || async move {
-                        ebird::fetch_recent_region_notable(&http, &key2, &region2, back, max_results).await
+                        ebird::fetch_recent_region_notable(
+                            &http,
+                            &key2,
+                            &region2,
+                            back,
+                            max_results,
+                        )
+                        .await
                     })
                     .await?
             } else {
-                let cache_key = format!(
-                    "bio:ebird:recent:region:{region}:all:{back}:{max_results}"
-                );
+                let cache_key =
+                    format!("bio:ebird:recent:region:{region}:all:{back}:{max_results}");
                 let http = self.http.clone();
                 let key2 = key.clone();
                 let region2 = region.clone();
@@ -417,7 +434,13 @@ impl BiodiversityService {
                 self.cache
                     .get_or_fetch::<Vec<Observation>, _, _>(&cache_key, 1800, move || async move {
                         ebird::fetch_recent_geo_notable(
-                            &http, &key2, lat, lon, radius, back, max_results,
+                            &http,
+                            &key2,
+                            lat,
+                            lon,
+                            radius,
+                            back,
+                            max_results,
                         )
                         .await
                     })
@@ -431,7 +454,8 @@ impl BiodiversityService {
                 let key2 = key.clone();
                 self.cache
                     .get_or_fetch::<Vec<Observation>, _, _>(&cache_key, 1800, move || async move {
-                        ebird::fetch_recent_geo(&http, &key2, lat, lon, radius, back, max_results).await
+                        ebird::fetch_recent_geo(&http, &key2, lat, lon, radius, back, max_results)
+                            .await
                     })
                     .await?
             };
@@ -503,13 +527,26 @@ impl BiodiversityService {
             .cache
             .get_or_fetch::<Vec<Observation>, _, _>(&cache_key, 86400, move || async move {
                 ebird::fetch_historic_region(
-                    &http, &key2, &region2, year, month, day, &rank2, max_results,
+                    &http,
+                    &key2,
+                    &region2,
+                    year,
+                    month,
+                    day,
+                    &rank2,
+                    max_results,
                 )
                 .await
             })
             .await?;
 
-        Ok(ebird::format_historic(&observations, &region, year, month, day))
+        Ok(ebird::format_historic(
+            &observations,
+            &region,
+            year,
+            month,
+            day,
+        ))
     }
 
     // ─── eBird: hotspots ───
@@ -615,7 +652,14 @@ impl BiodiversityService {
             .cache
             .get_or_fetch::<Vec<Observation>, _, _>(&cache_key, 900, move || async move {
                 ebird::fetch_nearest_species(
-                    &http, &key2, &code2, lat, lon, radius, back, max_results,
+                    &http,
+                    &key2,
+                    &code2,
+                    lat,
+                    lon,
+                    radius,
+                    back,
+                    max_results,
                 )
                 .await
             })
@@ -659,7 +703,11 @@ enum SpeciesResolved {
 }
 
 fn validate_date(year: u32, month: u32, day: u32) -> std::result::Result<(), String> {
-    let current_year = chrono::Utc::now().format("%Y").to_string().parse::<u32>().unwrap_or(2026);
+    let current_year = chrono::Utc::now()
+        .format("%Y")
+        .to_string()
+        .parse::<u32>()
+        .unwrap_or(2026);
     if year < 1900 || year > current_year + 1 {
         return Err(format!(
             "Invalid year `{year}` — eBird historic data starts in 1900."

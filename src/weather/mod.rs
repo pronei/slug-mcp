@@ -170,20 +170,14 @@ fn format_alerts(coastal: &AlertsResponse, mountains: &AlertsResponse) -> String
     }
 
     if !coastal.features.is_empty() {
-        out.push_str(&format!(
-            "## Coastal ({})\n\n",
-            nws::ZONE_COASTAL
-        ));
+        out.push_str(&format!("## Coastal ({})\n\n", nws::ZONE_COASTAL));
         for feature in &coastal.features {
             write_alert(&mut out, &feature.properties);
         }
     }
 
     if !mountains.features.is_empty() {
-        out.push_str(&format!(
-            "## Mountains ({})\n\n",
-            nws::ZONE_MOUNTAINS
-        ));
+        out.push_str(&format!("## Mountains ({})\n\n", nws::ZONE_MOUNTAINS));
         for feature in &mountains.features {
             write_alert(&mut out, &feature.properties);
         }
@@ -213,9 +207,10 @@ fn write_alert(out: &mut String, a: &nws::AlertProperties) {
         out.push_str(&format!("{}\n", trimmed));
     }
     if let Some(instruction) = &a.instruction
-        && !instruction.is_empty() {
-            out.push_str(&format!("_Instructions:_ {}\n", instruction));
-        }
+        && !instruction.is_empty()
+    {
+        out.push_str(&format!("_Instructions:_ {}\n", instruction));
+    }
     if !a.expires.is_empty() {
         out.push_str(&format!("_Expires: {}_\n", a.expires));
     }

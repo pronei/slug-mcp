@@ -24,7 +24,7 @@ pub struct SearchClassroomsRequest {
 }
 
 use crate::cache::CacheStore;
-use scraper::{filter_classrooms, scrape_classrooms, Classroom};
+use scraper::{Classroom, filter_classrooms, scrape_classrooms};
 
 pub struct ClassroomService {
     http: reqwest::Client,
@@ -47,7 +47,15 @@ impl ClassroomService {
     ) -> Result<String> {
         let all = self.get_all().await?;
 
-        let filtered = filter_classrooms(&all, name, min_capacity, max_capacity, building, technology, feature);
+        let filtered = filter_classrooms(
+            &all,
+            name,
+            min_capacity,
+            max_capacity,
+            building,
+            technology,
+            feature,
+        );
 
         if filtered.is_empty() {
             return Ok("No classrooms found matching your criteria.".to_string());
@@ -57,10 +65,7 @@ impl ClassroomService {
         let body: Vec<String> = filtered
             .iter()
             .map(|c| {
-                let loc = c
-                    .area
-                    .as_deref()
-                    .and_then(locations::lookup_by_area);
+                let loc = c.area.as_deref().and_then(locations::lookup_by_area);
                 c.format_with_location(loc)
             })
             .collect();

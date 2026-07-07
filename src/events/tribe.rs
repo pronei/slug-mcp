@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::util;
 
-const EVENTS_API_URL: &str =
-    "https://events.ucsc.edu/wp-json/tribe/events/v1/events";
+const EVENTS_API_URL: &str = "https://events.ucsc.edu/wp-json/tribe/events/v1/events";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeEventsResponse {
@@ -72,10 +71,7 @@ impl TribeClient {
         Self { http }
     }
 
-    pub async fn fetch_events(
-        &self,
-        params: &[(&str, &str)],
-    ) -> Result<TribeEventsResponse> {
+    pub async fn fetch_events(&self, params: &[(&str, &str)]) -> Result<TribeEventsResponse> {
         let resp = self
             .http
             .get(EVENTS_API_URL)
@@ -117,7 +113,10 @@ impl TribeEvent {
 
     pub fn format_summary(&self) -> String {
         let mut out = format!("## {}\n", self.title);
-        out.push_str(&format!("- **When**: {} to {}\n", self.start_date, self.end_date));
+        out.push_str(&format!(
+            "- **When**: {} to {}\n",
+            self.start_date, self.end_date
+        ));
 
         if let Some(venue) = self.venue_name() {
             out.push_str(&format!("- **Where**: {}", venue));
@@ -128,9 +127,10 @@ impl TribeEvent {
         }
 
         if let Some(cost) = &self.cost
-            && !cost.is_empty() {
-                out.push_str(&format!("- **Cost**: {}\n", cost));
-            }
+            && !cost.is_empty()
+        {
+            out.push_str(&format!("- **Cost**: {}\n", cost));
+        }
 
         if !self.categories.is_empty() {
             let cats: Vec<&str> = self.categories.iter().map(|c| c.name.as_str()).collect();
@@ -138,7 +138,11 @@ impl TribeEvent {
         }
 
         if !self.organizer.is_empty() {
-            let orgs: Vec<&str> = self.organizer.iter().map(|o| o.organizer.as_str()).collect();
+            let orgs: Vec<&str> = self
+                .organizer
+                .iter()
+                .map(|o| o.organizer.as_str())
+                .collect();
             out.push_str(&format!("- **Organizer**: {}\n", orgs.join(", ")));
         }
 
@@ -186,7 +190,10 @@ mod tests {
 
         let summary = ev.format_summary();
         // venue line includes name + (address, city)
-        assert!(summary.contains("**Where**: Lick Observatory (7281 Mount Hamilton Rd, Mount Hamilton)"));
+        assert!(
+            summary
+                .contains("**Where**: Lick Observatory (7281 Mount Hamilton Rd, Mount Hamilton)")
+        );
         // multiple organizers are comma-joined
         assert!(summary.contains(
             "**Organizer**: Department of Astronomy & Astrophysics, UCSC Public Programs"

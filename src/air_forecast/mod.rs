@@ -255,13 +255,18 @@ fn format_output(resp: &AirQualityResponse) -> String {
             let pm25 = fmt_val(hourly.pm2_5.get(i).copied().flatten());
             let pm10 = fmt_val(hourly.pm10.get(i).copied().flatten());
 
-            writeln!(out, "| {} | {} | {} | {} |", time_label, aqi_cell, pm25, pm10).unwrap();
+            writeln!(
+                out,
+                "| {} | {} | {} | {} |",
+                time_label, aqi_cell, pm25, pm10
+            )
+            .unwrap();
         }
         writeln!(out).unwrap();
 
         // Pollen (only if data exists)
-        let show_pollen = has_pollen_data(hourly)
-            || resp.current.as_ref().is_some_and(has_current_pollen);
+        let show_pollen =
+            has_pollen_data(hourly) || resp.current.as_ref().is_some_and(has_current_pollen);
 
         if show_pollen {
             writeln!(out, "## Pollen Forecast").unwrap();

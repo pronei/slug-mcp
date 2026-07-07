@@ -30,23 +30,22 @@ reserved for MCP framing on stdio transport, and for the token on `export-token`
 src/
 ├── main.rs        # CLI parsing, service wiring, transport setup
 ├── server.rs      # All MCP tool handlers (one big file by design — single source
-│                  # of truth for the tool surface). ~1100 lines.
+│                  # of truth for the tool surface). ~1300 lines.
 ├── cache.rs       # Type-erased TTL cache (moka). No JSON round-trip.
 ├── config.rs      # Env var → Config struct. Optional API keys.
-├── progress.rs    # Progress notification helper for long-running tools.
 ├── util.rs        # `now_pacific()`, `strip_html_tags`, `truncate`,
 │                  # `degrees_to_compass`, `selectors!` macro.
 ├── util/fuzzy.rs  # FuzzyMatcher — case/whitespace-insensitive name matching.
 ├── auth/          # CDP-driven CruzID+Duo login; AES-256-GCM session storage;
 │                  # portable token codec. All gated on `feature = "auth"`.
-└── <service>/     # 26 service modules — see "The pattern" below.
+└── <service>/     # 28 service modules — see "The pattern" below.
 ```
 
 Service modules: `academics`, `air_forecast`, `air_quality`, `astronomy`,
 `beach_water`, `biodiversity`, `buoy`, `classrooms`, `climbing`, `degrees`,
-`dining`, `earthquakes`, `events`, `fire`, `library`, `marine`, `nps`, `outdoors`,
-`recreation`, `space_weather`, `tides`, `traffic`, `transit`, `usgs_water`,
-`wave_buoy`, `weather`.
+`dining`, `earthquakes`, `events`, `fire`, `library`, `marine`, `nps`, `ocean`,
+`outdoors`, `recreation`, `space_weather`, `summer`, `tides`, `traffic`,
+`transit`, `usgs_water`, `wave_buoy`, `weather`.
 
 ## The pattern
 
@@ -93,9 +92,11 @@ Then wire it in three places:
 
 ## Conventions
 
-- **rmcp v1.2 API.** Tool handler params use `Parameters<T>` wrapping the request
-  struct — *not* `#[tool(aggr)]` (older API). `ServerInfo::new(...)` is a builder;
-  the underlying struct is `#[non_exhaustive]`, so don't construct it directly.
+- **rmcp 2.x API.** Tool handler params use `Parameters<T>` wrapping the request
+  struct — *not* `#[tool(aggr)]` (older API). Tool results wrap
+  `ContentBlock::text(...)` (renamed from `Content` in rmcp 2.0).
+  `ServerInfo::new(...)` is a builder; the underlying struct is
+  `#[non_exhaustive]`, so don't construct it directly.
 
 - **Optional API keys degrade, never error.** If a key is `None`, return a friendly
   string explaining the env var to set. Don't return `Err`. The exception is

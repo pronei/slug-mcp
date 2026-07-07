@@ -93,9 +93,31 @@ async fn fetch_air_quality(
         anyhow::bail!("Open-Meteo air quality returned HTTP {}", resp.status());
     }
 
-    resp.json::<AirQualityResponse>()
+    let body = resp
+        .text()
         .await
-        .context("parsing Open-Meteo air quality JSON")
+        .context("reading Open-Meteo air quality response")?;
+    parse_air_quality_body(&body)
+}
+
+fn parse_air_quality_body(body: &str) -> Result<AirQualityResponse> {
+    // Open-Meteo signals errors as {"error":true,"reason":"..."} — sometimes
+    // with HTTP 200 — which would otherwise surface as a bare serde error.
+    #[derive(Deserialize)]
+    struct Envelope {
+        error: bool,
+        #[serde(default)]
+        reason: Option<String>,
+    }
+    if let Ok(e) = serde_json::from_str::<Envelope>(body)
+        && e.error
+    {
+        anyhow::bail!(
+            "Open-Meteo air quality error: {}",
+            e.reason.unwrap_or_else(|| "no reason given".to_string())
+        );
+    }
+    serde_json::from_str(body).context("parsing Open-Meteo air quality JSON")
 }
 
 // ───── serde types ─────
@@ -503,5 +525,87 @@ mod tests {
         assert_eq!(format_hour("2026-04-27T00:00"), "12 AM");
         assert_eq!(format_hour("2026-04-27T09:00"), "9 AM");
         assert_eq!(format_hour("bad-input"), "bad-input");
+    }
+
+    #[test]
+    fn fixture_parses_and_renders() {
+        let fixture = include_str!("fixtures/air_quality.json");
+        let resp = parse_air_quality_body(fixture).unwrap();
+
+        let current = resp.current.as_ref().expect("current block");
+        assert!(current.us_aqi.is_some());
+        assert!(current.pm2_5.is_some());
+        let hourly = resp.hourly.as_ref().expect("hourly block");
+        assert_eq!(hourly.time.len(), 6);
+        assert_eq!(hourly.us_aqi.len(), 6);
+
+        let out = format_output(&resp);
+        assert!(out.contains("## Current Conditions"));
+        assert!(out.contains("**US AQI**"));
+        assert!(out.contains("## Hourly Forecast"));
+        // Santa Cruz capture had all-null pollen — section must stay hidden.
+        assert!(!out.contains("## Pollen Forecast"));
+    }
+
+    // Open-Meteo can return its error envelope with HTTP 200 — the reason
+    // must reach the user instead of a bare serde error.
+    #[test]
+    fn error_envelope_surfaces_reason() {
+        let body = r#"{"error":true,"reason":"Parameter 'forecast_days' must be between 0 and 7"}"#;
+        let err = parse_air_quality_body(body).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("forecast_days"), "got: {}", msg);
+    }
+
+    #[test]
+    fn empty_hourly_arrays_render_gracefully() {
+        let body = r#"{
+            "latitude": 37.0, "longitude": -122.0,
+            "current": null,
+            "hourly": {
+                "time": [], "us_aqi": [], "pm2_5": [], "pm10": [],
+                "alder_pollen": [], "birch_pollen": [], "grass_pollen": [],
+                "mugwort_pollen": [], "olive_pollen": [], "ragweed_pollen": []
+            }
+        }"#;
+        let resp = parse_air_quality_body(body).unwrap();
+        let out = format_output(&resp);
+        assert!(out.contains("## Hourly Forecast"));
+        assert!(out.contains("Open-Meteo Air Quality API"));
+    }
+
+    #[test]
+    fn truncated_json_is_err_not_panic() {
+        let body = r#"{"latitude":37.0,"longitude":-122.0,"hourly":{"time":["2026-"#;
+        let err = parse_air_quality_body(body).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing Open-Meteo air quality"));
+    }
+
+    // Schema drift: pm2_5 dropped from the hourly block → placeholder cells.
+    #[test]
+    fn missing_pm25_field_renders_placeholder() {
+        let body = r#"{
+            "latitude": 37.0, "longitude": -122.0,
+            "hourly": {
+                "time": ["2026-04-27T14:00"],
+                "us_aqi": [62],
+                "pm10": [17.8]
+            }
+        }"#;
+        let resp = parse_air_quality_body(body).unwrap();
+        let out = format_output(&resp);
+        assert!(out.contains("| 2 PM | \u{1f7e1} 62 | \u{2014} | 17.8 |"));
+    }
+
+    // Schema drift: a number field turning into a string is a parse error,
+    // not a panic.
+    #[test]
+    fn string_aqi_is_err_not_panic() {
+        let body = r#"{
+            "latitude": 37.0, "longitude": -122.0,
+            "current": { "time": "2026-04-27T14:00", "us_aqi": "62" }
+        }"#;
+        let err = parse_air_quality_body(body).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing Open-Meteo air quality"));
     }
 }

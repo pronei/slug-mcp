@@ -112,10 +112,17 @@ pub struct OpenMeteoCurrent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenMeteoDaily {
+    // All defaulted: partial outages can drop any of these parallel arrays,
+    // and rendering placeholders beats failing the whole tool.
+    #[serde(default)]
     pub time: Vec<String>,
+    #[serde(default)]
     pub sunrise: Vec<String>,
+    #[serde(default)]
     pub sunset: Vec<String>,
+    #[serde(default)]
     pub uv_index_max: Vec<f64>,
+    #[serde(default)]
     pub uv_index_clear_sky_max: Vec<f64>,
 }
 
@@ -141,9 +148,28 @@ async fn fetch_open_meteo(
     if !resp.status().is_success() {
         anyhow::bail!("Open-Meteo returned HTTP {}", resp.status());
     }
-    resp.json::<OpenMeteoResponse>()
-        .await
-        .context("parsing Open-Meteo JSON")
+    let body = resp.text().await.context("reading Open-Meteo response")?;
+    parse_open_meteo_body(&body)
+}
+
+fn parse_open_meteo_body(body: &str) -> Result<OpenMeteoResponse> {
+    // Open-Meteo signals errors as {"error":true,"reason":"..."} — sometimes
+    // with HTTP 200 — which would otherwise parse as an all-None response.
+    #[derive(Deserialize)]
+    struct Envelope {
+        error: bool,
+        #[serde(default)]
+        reason: Option<String>,
+    }
+    if let Ok(e) = serde_json::from_str::<Envelope>(body)
+        && e.error
+    {
+        anyhow::bail!(
+            "Open-Meteo error: {}",
+            e.reason.unwrap_or_else(|| "no reason given".to_string())
+        );
+    }
+    serde_json::from_str(body).context("parsing Open-Meteo JSON")
 }
 
 // ─── sunrise-sunset.org types ───
@@ -151,7 +177,6 @@ async fn fetch_open_meteo(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SunriseSunsetResponse {
     results: SunriseSunsetResults,
-    status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,12 +211,26 @@ async fn fetch_twilight(http: &reqwest::Client, lat: f64, lon: f64) -> Result<Tw
         anyhow::bail!("sunrise-sunset.org returned HTTP {}", resp.status());
     }
     let body = resp
-        .json::<SunriseSunsetResponse>()
+        .text()
         .await
-        .context("parsing sunrise-sunset.org JSON")?;
-    if body.status != "OK" {
-        anyhow::bail!("sunrise-sunset.org status: {}", body.status);
+        .context("reading sunrise-sunset.org response")?;
+    parse_twilight_body(&body)
+}
+
+fn parse_twilight_body(body: &str) -> Result<TwilightData> {
+    // Error responses carry a bare "" string in `results`, so the status must
+    // be checked before deserializing the full results struct.
+    #[derive(Deserialize)]
+    struct StatusOnly {
+        status: String,
     }
+    let probe: StatusOnly =
+        serde_json::from_str(body).context("parsing sunrise-sunset.org JSON")?;
+    if probe.status != "OK" {
+        anyhow::bail!("sunrise-sunset.org status: {}", probe.status);
+    }
+    let body: SunriseSunsetResponse =
+        serde_json::from_str(body).context("parsing sunrise-sunset.org JSON")?;
     let r = &body.results;
     Ok(TwilightData {
         civil_begin: utc_to_pacific_display(&r.civil_twilight_begin)?,
@@ -305,10 +344,16 @@ fn format_output(
         let day_label = today_date.format("%a, %b %-d").to_string();
         writeln!(out, "## Today — {}", day_label).unwrap();
 
-        // Sunrise / sunset / day length
-        let sunrise_str = format_local_time(&daily.sunrise[0]);
-        let sunset_str = format_local_time(&daily.sunset[0]);
-        let day_length = compute_day_length(&daily.sunrise[0], &daily.sunset[0]);
+        // Sunrise / sunset / day length. Parallel arrays can be shorter than
+        // `time` during partial upstream outages — never index past them.
+        let sunrise = daily.sunrise.first();
+        let sunset = daily.sunset.first();
+        let sunrise_str = sunrise.map_or_else(|| "—".to_string(), |s| format_local_time(s));
+        let sunset_str = sunset.map_or_else(|| "—".to_string(), |s| format_local_time(s));
+        let day_length = match (sunrise, sunset) {
+            (Some(sr), Some(ss)) => compute_day_length(sr, ss),
+            _ => None,
+        };
 
         write!(
             out,
@@ -410,8 +455,14 @@ fn format_output(
             writeln!(out).unwrap();
             writeln!(out, "## {}", label).unwrap();
 
-            let sunrise_str = format_local_time(&daily.sunrise[i]);
-            let sunset_str = format_local_time(&daily.sunset[i]);
+            let sunrise_str = daily
+                .sunrise
+                .get(i)
+                .map_or_else(|| "—".to_string(), |s| format_local_time(s));
+            let sunset_str = daily
+                .sunset
+                .get(i)
+                .map_or_else(|| "—".to_string(), |s| format_local_time(s));
             writeln!(
                 out,
                 "- **Sunrise**: {} · **Sunset**: {}",
@@ -594,6 +645,57 @@ mod tests {
     }
 
     #[test]
+    fn format_output_partial_daily_arrays() {
+        // Real-world Open-Meteo partial outage: daily.time has more entries
+        // than sunrise/sunset. Must degrade with placeholders, never panic.
+        let om = OpenMeteoResponse {
+            current: None,
+            daily: Some(OpenMeteoDaily {
+                time: vec![
+                    "2026-04-27".to_string(),
+                    "2026-04-28".to_string(),
+                    "2026-04-29".to_string(),
+                ],
+                sunrise: vec!["2026-04-27T06:17".to_string()],
+                sunset: vec!["2026-04-27T19:53".to_string()],
+                uv_index_max: vec![4.25],
+                uv_index_clear_sky_max: vec![7.50],
+            }),
+        };
+
+        let output = format_output(&om, None, DEFAULT_LAT, DEFAULT_LON, 3);
+
+        // Today has real data.
+        assert!(output.contains("**Sunrise**: 6:17 AM"));
+        // Later days fall back to a placeholder instead of panicking.
+        assert!(output.contains("**Sunrise**: —"));
+        assert!(output.contains("**Sunset**: —"));
+        assert!(output.contains("2026") || output.contains("Apr"));
+    }
+
+    #[test]
+    fn format_output_empty_parallel_arrays() {
+        // Even today's entry can be missing from sunrise/sunset.
+        let om = OpenMeteoResponse {
+            current: None,
+            daily: Some(OpenMeteoDaily {
+                time: vec!["2026-04-27".to_string()],
+                sunrise: vec![],
+                sunset: vec![],
+                uv_index_max: vec![],
+                uv_index_clear_sky_max: vec![],
+            }),
+        };
+
+        let output = format_output(&om, None, DEFAULT_LAT, DEFAULT_LON, 1);
+
+        assert!(output.contains("## Today"));
+        assert!(output.contains("**Sunrise**: —"));
+        // No UV values available — section header may render but no bogus numbers.
+        assert!(!output.contains("Today max"));
+    }
+
+    #[test]
     fn moon_emoji_mapping() {
         assert_eq!(moon_emoji("New Moon"), "🌑");
         assert_eq!(moon_emoji("Full Moon"), "🌕");
@@ -620,5 +722,90 @@ mod tests {
         // 2026-04-27T12:50:18+00:00 => Pacific is UTC-7 (PDT in April) => 5:50 AM
         let result = utc_to_pacific_display("2026-04-27T12:50:18+00:00").unwrap();
         assert_eq!(result, "5:50 AM");
+    }
+
+    #[test]
+    fn fixture_open_meteo_parses_and_renders() {
+        let fixture = include_str!("fixtures/open_meteo_forecast.json");
+        let om = parse_open_meteo_body(fixture).unwrap();
+
+        let daily = om.daily.as_ref().expect("daily block");
+        assert_eq!(daily.time.len(), 3);
+        assert_eq!(daily.sunrise.len(), 3);
+        assert_eq!(daily.sunset.len(), 3);
+        assert!(om.current.as_ref().unwrap().uv_index.is_some());
+
+        let out = format_output(&om, None, DEFAULT_LAT, DEFAULT_LON, 3);
+        assert!(out.contains("**Sunrise**: 5:55 AM"));
+        assert!(out.contains("**Sunset**: 8:30 PM"));
+        assert!(out.contains("## UV Index"));
+        assert!(out.contains("(Very High)"));
+    }
+
+    #[test]
+    fn fixture_twilight_parses() {
+        let fixture = include_str!("fixtures/sunrise_sunset.json");
+        let tw = parse_twilight_body(fixture).unwrap();
+        // July capture — Pacific is UTC-7 (PDT).
+        assert_eq!(tw.civil_begin, "5:25 AM");
+        assert_eq!(tw.civil_end, "9:01 PM");
+        assert_eq!(tw.nautical_begin, "4:47 AM");
+        assert_eq!(tw.astro_end, "10:20 PM");
+    }
+
+    // Open-Meteo can return its error envelope with HTTP 200 — the reason
+    // must reach the user, not vanish into an empty "no data" response.
+    #[test]
+    fn open_meteo_error_envelope_surfaces_reason() {
+        let body = r#"{"error":true,"reason":"Latitude must be in range of -90 to 90"}"#;
+        let err = parse_open_meteo_body(body).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("Latitude must be in range"), "got: {}", msg);
+    }
+
+    // Documented sunrise-sunset.org error shape: results is an empty STRING,
+    // so the status check must run before the full struct parse.
+    #[test]
+    fn twilight_error_status_is_surfaced() {
+        let body = r#"{"results":"","status":"INVALID_REQUEST"}"#;
+        let err = parse_twilight_body(body).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("INVALID_REQUEST"), "got: {}", msg);
+    }
+
+    #[test]
+    fn empty_daily_renders_friendly_message() {
+        let body = r#"{"current":null,"daily":{"time":[],"sunrise":[],"sunset":[],"uv_index_max":[],"uv_index_clear_sky_max":[]}}"#;
+        let om = parse_open_meteo_body(body).unwrap();
+        let out = format_output(&om, None, DEFAULT_LAT, DEFAULT_LON, 3);
+        assert!(out.contains("No forecast data available"));
+    }
+
+    #[test]
+    fn truncated_json_is_err_not_panic() {
+        let body = r#"{"daily":{"time":["2026-07-"#;
+        let err = parse_open_meteo_body(body).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing Open-Meteo"));
+
+        let err = parse_twilight_body(r#"{"results":{"civil_twi"#).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing sunrise-sunset.org"));
+    }
+
+    // Schema drift: sunrise dropped from the daily block entirely — degrade
+    // to placeholders instead of failing the whole tool.
+    #[test]
+    fn daily_missing_sunrise_field_degrades() {
+        let body = r#"{
+            "daily": {
+                "time": ["2026-04-27"],
+                "sunset": ["2026-04-27T19:53"],
+                "uv_index_max": [4.25],
+                "uv_index_clear_sky_max": [7.5]
+            }
+        }"#;
+        let om = parse_open_meteo_body(body).unwrap();
+        let out = format_output(&om, None, DEFAULT_LAT, DEFAULT_LON, 1);
+        assert!(out.contains("**Sunrise**: —"));
+        assert!(out.contains("**Sunset**: 7:53 PM"));
     }
 }

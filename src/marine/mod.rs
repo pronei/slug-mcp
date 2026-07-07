@@ -410,10 +410,99 @@ fn format_marine_detail(label: &str, notes: Option<&str>, m: &MarineResponse) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use open_meteo::{ForecastCurrent, MarineCurrent, MarineHourly};
 
     #[test]
     fn meters_to_feet() {
         assert!((m_to_ft(1.0) - 3.28084).abs() < 0.001);
         assert!((m_to_ft(2.0) - 6.56168).abs() < 0.001);
+    }
+
+    // Schema drift: hourly value arrays shorter than `time` must render
+    // placeholders, never index out of bounds.
+    #[test]
+    fn marine_detail_short_parallel_arrays() {
+        let m = MarineResponse {
+            latitude: 36.9519,
+            longitude: -122.0264,
+            current_units: None,
+            current: None,
+            hourly_units: None,
+            hourly: Some(MarineHourly {
+                time: vec![
+                    "2026-04-10T00:00".to_string(),
+                    "2026-04-10T01:00".to_string(),
+                    "2026-04-10T02:00".to_string(),
+                ],
+                wave_height: vec![Some(1.0)],
+                wave_direction: vec![],
+                wave_period: vec![Some(10.0), None],
+                swell_wave_height: vec![],
+                swell_wave_direction: vec![],
+                swell_wave_period: vec![],
+                wind_wave_height: vec![],
+            }),
+        };
+        let out = format_marine_detail("Drift Test", None, &m);
+        assert!(out.contains("## Next 12 hours"));
+        assert!(out.contains("| 2026-04-10T00:00 | 3.3 | 10s |"));
+        // Missing entries degrade to em-dash cells.
+        assert!(out.contains("| 2026-04-10T02:00 | — | — | — | — | — |"));
+    }
+
+    #[test]
+    fn spot_body_without_current_marine_data() {
+        let c = SpotConditions {
+            marine: MarineResponse {
+                latitude: 36.9519,
+                longitude: -122.0264,
+                current_units: None,
+                current: None,
+                hourly_units: None,
+                hourly: None,
+            },
+            wind: ForecastResponse {
+                current: Some(ForecastCurrent {
+                    time: "2026-04-10T17:00".to_string(),
+                    temperature_2m: Some(61.0),
+                    wind_speed_10m: Some(8.0),
+                    wind_direction_10m: Some(290.0),
+                    wind_gusts_10m: None,
+                }),
+            },
+        };
+        let mut out = String::new();
+        write_spot_body(&mut out, &c);
+        assert!(out.contains("No current marine data"));
+        assert!(out.contains("**Wind**: 8 mph"));
+    }
+
+    #[test]
+    fn spot_body_current_with_all_null_values() {
+        let c = SpotConditions {
+            marine: MarineResponse {
+                latitude: 36.9519,
+                longitude: -122.0264,
+                current_units: None,
+                current: Some(MarineCurrent {
+                    time: "2026-04-10T17:00".to_string(),
+                    wave_height: None,
+                    wave_direction: None,
+                    wave_period: None,
+                    swell_wave_height: None,
+                    swell_wave_direction: None,
+                    swell_wave_period: None,
+                    wind_wave_height: None,
+                }),
+                hourly_units: None,
+                hourly: None,
+            },
+            wind: ForecastResponse { current: None },
+        };
+        let mut out = String::new();
+        write_spot_body(&mut out, &c);
+        // Nothing to report, but no panic and no bogus numbers.
+        assert!(!out.contains("NaN"));
+        assert!(!out.contains("ft"));
     }
 }

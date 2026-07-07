@@ -15,6 +15,21 @@ use serde::{Deserialize, Serialize};
 pub const MARINE_BASE: &str = "https://marine-api.open-meteo.com/v1/marine";
 pub const FORECAST_BASE: &str = "https://api.open-meteo.com/v1/forecast";
 
+/// Open-Meteo signals errors as `{"error":true,"reason":"..."}` — sometimes
+/// with HTTP 200 — which would otherwise parse as an empty/invalid response.
+fn open_meteo_error_reason(body: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Envelope {
+        error: bool,
+        #[serde(default)]
+        reason: Option<String>,
+    }
+    match serde_json::from_str::<Envelope>(body) {
+        Ok(e) if e.error => Some(e.reason.unwrap_or_else(|| "no reason given".to_string())),
+        _ => None,
+    }
+}
+
 // ───── marine ─────
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -69,6 +84,13 @@ pub struct MarineHourly {
     pub wind_wave_height: Vec<Option<f64>>,
 }
 
+fn parse_marine_body(body: &str) -> Result<MarineResponse> {
+    if let Some(reason) = open_meteo_error_reason(body) {
+        anyhow::bail!("Open-Meteo marine error: {}", reason);
+    }
+    serde_json::from_str(body).context("parsing Open-Meteo marine response")
+}
+
 pub async fn get_marine(http: &reqwest::Client, lat: f64, lon: f64) -> Result<MarineResponse> {
     let url = format!(
         "{base}?latitude={lat:.4}&longitude={lon:.4}\
@@ -87,9 +109,11 @@ pub async fn get_marine(http: &reqwest::Client, lat: f64, lon: f64) -> Result<Ma
     if !resp.status().is_success() {
         anyhow::bail!("Open-Meteo marine returned HTTP {}", resp.status());
     }
-    resp.json::<MarineResponse>()
+    let body = resp
+        .text()
         .await
-        .context("parsing Open-Meteo marine response")
+        .context("reading Open-Meteo marine response")?;
+    parse_marine_body(&body)
 }
 
 // ───── atmospheric forecast (wind, temp) ─────
@@ -113,6 +137,13 @@ pub struct ForecastCurrent {
     pub wind_gusts_10m: Option<f64>,
 }
 
+fn parse_forecast_body(body: &str) -> Result<ForecastResponse> {
+    if let Some(reason) = open_meteo_error_reason(body) {
+        anyhow::bail!("Open-Meteo forecast error: {}", reason);
+    }
+    serde_json::from_str(body).context("parsing Open-Meteo forecast response")
+}
+
 pub async fn get_forecast(http: &reqwest::Client, lat: f64, lon: f64) -> Result<ForecastResponse> {
     let url = format!(
         "{base}?latitude={lat:.4}&longitude={lon:.4}\
@@ -130,49 +161,123 @@ pub async fn get_forecast(http: &reqwest::Client, lat: f64, lon: f64) -> Result<
     if !resp.status().is_success() {
         anyhow::bail!("Open-Meteo forecast returned HTTP {}", resp.status());
     }
-    resp.json::<ForecastResponse>()
+    let body = resp
+        .text()
         .await
-        .context("parsing Open-Meteo forecast response")
+        .context("reading Open-Meteo forecast response")?;
+    parse_forecast_body(&body)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const MARINE_FIXTURE: &str = include_str!("fixtures/marine_steamer_lane.json");
+    const FORECAST_FIXTURE: &str = include_str!("fixtures/forecast_current.json");
+
     #[test]
-    fn parse_marine_current() {
-        let json = r#"{
-            "latitude": 36.96,
-            "longitude": -122.04,
-            "current": {
-                "time": "2026-04-10T17:00",
-                "wave_height": 1.32,
-                "wave_direction": 225.0,
-                "wave_period": 10.1,
-                "swell_wave_height": 0.78,
-                "swell_wave_period": 13.7
-            }
-        }"#;
-        let parsed: MarineResponse = serde_json::from_str(json).unwrap();
-        let current = parsed.current.unwrap();
-        assert_eq!(current.wave_height, Some(1.32));
-        assert_eq!(current.swell_wave_period, Some(13.7));
+    fn parse_marine_fixture() {
+        let parsed = parse_marine_body(MARINE_FIXTURE).unwrap();
+        assert!((parsed.latitude - 36.95).abs() < 0.5);
+        let current = parsed.current.expect("current block");
+        assert!(current.wave_height.is_some());
+        assert!(current.swell_wave_period.is_some());
+        assert!(current.wind_wave_height.is_some());
+        let hourly = parsed.hourly.expect("hourly block");
+        assert_eq!(hourly.time.len(), 6);
+        assert_eq!(hourly.wave_height.len(), 6);
+        assert!(hourly.wave_height[0].is_some());
+        assert_eq!(hourly.swell_wave_direction.len(), 6);
     }
 
     #[test]
-    fn parse_forecast_current_wind() {
-        let json = r#"{
-            "current": {
-                "time": "2026-04-10T17:00",
-                "temperature_2m": 62.3,
-                "wind_speed_10m": 9.1,
-                "wind_direction_10m": 280.0,
-                "wind_gusts_10m": 14.2
+    fn parse_forecast_fixture() {
+        let parsed = parse_forecast_body(FORECAST_FIXTURE).unwrap();
+        let current = parsed.current.expect("current block");
+        assert!(current.temperature_2m.is_some());
+        assert!(current.wind_speed_10m.is_some());
+        assert!(current.wind_direction_10m.is_some());
+        assert!(current.wind_gusts_10m.is_some());
+    }
+
+    // Open-Meteo can return its error envelope with HTTP 200 — the reason
+    // must reach the user instead of a bare serde error.
+    #[test]
+    fn marine_error_envelope_surfaces_reason() {
+        let body = r#"{"error":true,"reason":"Latitude must be in range of -90 to 90"}"#;
+        let err = parse_marine_body(body).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("Latitude must be in range"), "got: {}", msg);
+    }
+
+    #[test]
+    fn forecast_error_envelope_surfaces_reason() {
+        let body = r#"{"error":true,"reason":"Cannot initialize WeatherVariable"}"#;
+        let err = parse_forecast_body(body).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("Cannot initialize"), "got: {}", msg);
+    }
+
+    #[test]
+    fn marine_error_envelope_without_reason() {
+        let body = r#"{"error":true}"#;
+        let err = parse_marine_body(body).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("Open-Meteo"), "got: {}", msg);
+    }
+
+    #[test]
+    fn marine_empty_hourly_arrays_parse_ok() {
+        let body = r#"{
+            "latitude": 36.96, "longitude": -122.04,
+            "current": null,
+            "hourly": {
+                "time": [], "wave_height": [], "wave_direction": [],
+                "wave_period": [], "swell_wave_height": [],
+                "swell_wave_direction": [], "swell_wave_period": [],
+                "wind_wave_height": []
             }
         }"#;
-        let parsed: ForecastResponse = serde_json::from_str(json).unwrap();
-        let current = parsed.current.unwrap();
-        assert_eq!(current.wind_speed_10m, Some(9.1));
-        assert_eq!(current.wind_direction_10m, Some(280.0));
+        let parsed = parse_marine_body(body).unwrap();
+        assert!(parsed.current.is_none());
+        assert!(parsed.hourly.unwrap().time.is_empty());
+    }
+
+    #[test]
+    fn marine_truncated_json_is_err_not_panic() {
+        let body = r#"{"latitude":36.96,"longitude":-122.04,"current":{"time":"2026-"#;
+        let err = parse_marine_body(body).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing Open-Meteo marine"));
+    }
+
+    #[test]
+    fn forecast_malformed_json_is_err_not_panic() {
+        let err = parse_forecast_body("<html>Bad Gateway</html>").unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing Open-Meteo forecast"));
+    }
+
+    // Schema drift: value arrays dropped from the hourly block entirely.
+    #[test]
+    fn marine_hourly_missing_value_arrays_defaults_empty() {
+        let body = r#"{
+            "latitude": 36.96, "longitude": -122.04,
+            "hourly": { "time": ["2026-04-10T00:00", "2026-04-10T01:00"] }
+        }"#;
+        let parsed = parse_marine_body(body).unwrap();
+        let hourly = parsed.hourly.unwrap();
+        assert_eq!(hourly.time.len(), 2);
+        assert!(hourly.wave_height.is_empty());
+    }
+
+    // Schema drift: a number field turning into a string is a parse error,
+    // not a panic, and keeps the endpoint context.
+    #[test]
+    fn marine_string_wave_height_is_err_not_panic() {
+        let body = r#"{
+            "latitude": 36.96, "longitude": -122.04,
+            "current": { "time": "2026-04-10T17:00", "wave_height": "1.32" }
+        }"#;
+        let err = parse_marine_body(body).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing Open-Meteo marine"));
     }
 }

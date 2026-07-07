@@ -1,0 +1,25 @@
+{
+  "latitude": 36.95258,
+  "longitude": -122.02655,
+  "generationtime_ms": 0.06389617919921875,
+  "utc_offset_seconds": -25200,
+  "timezone": "America/Los_Angeles",
+  "timezone_abbreviation": "GMT-7",
+  "elevation": 11.0,
+  "current_units": {
+    "time": "iso8601",
+    "interval": "seconds",
+    "temperature_2m": "°F",
+    "wind_speed_10m": "mp/h",
+    "wind_direction_10m": "°",
+    "wind_gusts_10m": "mp/h"
+  },
+  "current": {
+    "time": "2026-07-07T06:45",
+    "interval": 900,
+    "temperature_2m": 55.9,
+    "wind_speed_10m": 7.0,
+    "wind_direction_10m": 292,
+    "wind_gusts_10m": 8.5
+  }
+}

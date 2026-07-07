@@ -1,0 +1,55 @@
+{
+  "latitude": 36.978592,
+  "longitude": -122.035446,
+  "generationtime_ms": 230.36670684814453,
+  "utc_offset_seconds": -25200,
+  "timezone": "America/Los_Angeles",
+  "timezone_abbreviation": "GMT-7",
+  "elevation": 8.0,
+  "current_units": {
+    "time": "iso8601",
+    "interval": "seconds",
+    "uv_index": "",
+    "uv_index_clear_sky": ""
+  },
+  "current": {
+    "time": "2026-07-07T06:45",
+    "interval": 900,
+    "uv_index": 0.35,
+    "uv_index_clear_sky": 0.35
+  },
+  "daily_units": {
+    "time": "iso8601",
+    "sunrise": "iso8601",
+    "sunset": "iso8601",
+    "uv_index_max": "",
+    "uv_index_clear_sky_max": ""
+  },
+  "daily": {
+    "time": [
+      "2026-07-07",
+      "2026-07-08",
+      "2026-07-09"
+    ],
+    "sunrise": [
+      "2026-07-07T05:55",
+      "2026-07-08T05:56",
+      "2026-07-09T05:56"
+    ],
+    "sunset": [
+      "2026-07-07T20:30",
+      "2026-07-08T20:30",
+      "2026-07-09T20:30"
+    ],
+    "uv_index_max": [
+      8.35,
+      8.35,
+      8.35
+    ],
+    "uv_index_clear_sky_max": [
+      8.35,
+      8.35,
+      8.35
+    ]
+  }
+}

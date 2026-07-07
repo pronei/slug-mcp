@@ -111,9 +111,14 @@ async fn fetch_airnow(
     if !resp.status().is_success() {
         anyhow::bail!("AirNow returned HTTP {}", resp.status());
     }
-    let body: Vec<AirNowObs> = resp.json().await.context("parsing AirNow JSON")?;
+    let body = resp.text().await.context("reading AirNow response")?;
+    parse_airnow_body(&body)
+}
 
-    Ok(body
+fn parse_airnow_body(body: &str) -> Result<Vec<AirReading>> {
+    let observations: Vec<AirNowObs> = serde_json::from_str(body).context("parsing AirNow JSON")?;
+
+    Ok(observations
         .into_iter()
         .map(|o| AirReading {
             date_observed: o.date_observed.trim().to_string(),
@@ -187,6 +192,14 @@ fn format_readings(zip: &str, readings: &[AirReading]) -> String {
     );
 
     for r in readings {
+        // AirNow reports missing data as negative AQI (typically -999).
+        if r.aqi < 0 {
+            out.push_str(&format!(
+                "- **{}**: no valid reading reported\n",
+                r.parameter_name
+            ));
+            continue;
+        }
         out.push_str(&format!(
             "- {} **{}**: AQI {} ({})\n",
             aqi_icon(r.aqi),
@@ -253,5 +266,87 @@ mod tests {
     fn format_empty() {
         let out = format_readings("00000", &[]);
         assert!(out.contains("No AirNow"));
+    }
+
+    #[test]
+    fn fixture_airnow_parses() {
+        let fixture = include_str!("fixtures/airnow_current.json");
+        let readings = parse_airnow_body(fixture).unwrap();
+        assert_eq!(readings.len(), 2);
+        // AirNow pads DateObserved with a trailing space — must be trimmed.
+        assert_eq!(readings[0].date_observed, "2026-07-07");
+        assert_eq!(readings[0].parameter_name, "O3");
+        assert_eq!(readings[0].aqi, 34);
+        assert_eq!(readings[0].category, "Good");
+        assert_eq!(readings[1].parameter_name, "PM2.5");
+        assert_eq!(readings[1].category, "Moderate");
+
+        let out = format_readings("95064", &readings);
+        assert!(out.contains("Santa Cruz County Central Coast"));
+        assert!(out.contains("AQI 34"));
+        assert!(out.contains("🟡"));
+    }
+
+    #[test]
+    fn zero_observations_parse_ok() {
+        let readings = parse_airnow_body("[]").unwrap();
+        assert!(readings.is_empty());
+    }
+
+    #[test]
+    fn truncated_json_is_err_not_panic() {
+        let err = parse_airnow_body(r#"[{"DateObserved":"2026-07-07","Hour"#).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing AirNow"));
+    }
+
+    // AirNow reports auth/param problems as a JSON object, not an array.
+    #[test]
+    fn error_object_instead_of_array_is_err() {
+        let body = r#"{"WebServiceError":[{"Message":"Invalid API key"}]}"#;
+        let err = parse_airnow_body(body).unwrap_err();
+        assert!(format!("{:#}", err).contains("parsing AirNow"));
+    }
+
+    #[test]
+    fn category_missing_name_becomes_unknown() {
+        let body = r#"[{
+            "DateObserved": "2026-07-07 ", "HourObserved": 6,
+            "LocalTimeZone": "PST", "ReportingArea": "Santa Cruz",
+            "StateCode": "CA", "ParameterName": "O3", "AQI": 34,
+            "Category": {"Number": 7}
+        }]"#;
+        let readings = parse_airnow_body(body).unwrap();
+        assert_eq!(readings[0].category, "Unknown");
+    }
+
+    #[test]
+    fn category_absent_becomes_unknown() {
+        let body = r#"[{
+            "DateObserved": "2026-07-07 ", "HourObserved": 6,
+            "LocalTimeZone": "PST", "ReportingArea": "Santa Cruz",
+            "StateCode": "CA", "ParameterName": "O3", "AQI": 34
+        }]"#;
+        let readings = parse_airnow_body(body).unwrap();
+        assert_eq!(readings[0].category, "Unknown");
+    }
+
+    // AirNow uses -999 as a missing-data sentinel — it must not be presented
+    // as a real (green, "Good") reading.
+    #[test]
+    fn negative_aqi_not_reported_as_good() {
+        let readings = vec![AirReading {
+            date_observed: "2026-07-07".to_string(),
+            hour_observed: 6,
+            local_time_zone: "PST".to_string(),
+            reporting_area: "Santa Cruz".to_string(),
+            state: "CA".to_string(),
+            parameter_name: "PM2.5".to_string(),
+            aqi: -999,
+            category: "Unknown".to_string(),
+        }];
+        let out = format_readings("95064", &readings);
+        assert!(!out.contains("🟢"), "sentinel must not look Good: {}", out);
+        assert!(!out.contains("-999"), "sentinel must not be shown: {}", out);
+        assert!(out.contains("PM2.5"));
     }
 }

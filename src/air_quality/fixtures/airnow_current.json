@@ -1,0 +1,32 @@
+[
+  {
+    "DateObserved": "2026-07-07 ",
+    "HourObserved": 6,
+    "LocalTimeZone": "PST",
+    "ReportingArea": "Santa Cruz County Central Coast",
+    "StateCode": "CA",
+    "Latitude": 36.982,
+    "Longitude": -122.009,
+    "ParameterName": "O3",
+    "AQI": 34,
+    "Category": {
+      "Number": 1,
+      "Name": "Good"
+    }
+  },
+  {
+    "DateObserved": "2026-07-07 ",
+    "HourObserved": 6,
+    "LocalTimeZone": "PST",
+    "ReportingArea": "Santa Cruz County Central Coast",
+    "StateCode": "CA",
+    "Latitude": 36.982,
+    "Longitude": -122.009,
+    "ParameterName": "PM2.5",
+    "AQI": 52,
+    "Category": {
+      "Number": 2,
+      "Name": "Moderate"
+    }
+  }
+]

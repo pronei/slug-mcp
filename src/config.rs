@@ -5,6 +5,9 @@ use directories::ProjectDirs;
 
 #[derive(Debug, Clone)]
 pub struct Config {
+    // Read only by the auth feature's session_path(); the public
+    // (--no-default-features) build still creates the directory on load.
+    #[cfg_attr(not(feature = "auth"), allow(dead_code))]
     pub data_dir: PathBuf,
     pub bustime_api_key: Option<String>,
     pub firms_map_key: Option<String>,

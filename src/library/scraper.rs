@@ -262,20 +262,29 @@ fn decode_js_unicode(s: &str) -> String {
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if c == '\\' {
-            if let Some('u') = chars.next() {
-                let hex: String = chars.by_ref().take(4).collect();
-                if let Ok(code) = u32::from_str_radix(&hex, 16)
-                    && let Some(ch) = char::from_u32(code)
-                {
-                    result.push(ch);
-                    continue;
+            match chars.next() {
+                Some('u') => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    // Exactly 4 hex digits required — a truncated "\u00" must
+                    // not decode (radix("00") would fabricate a NUL).
+                    if hex.len() == 4
+                        && let Ok(code) = u32::from_str_radix(&hex, 16)
+                        && let Some(ch) = char::from_u32(code)
+                    {
+                        result.push(ch);
+                        continue;
+                    }
+                    // Malformed escape — keep raw
+                    result.push('\\');
+                    result.push('u');
+                    result.push_str(&hex);
                 }
-                // Malformed escape — keep raw
-                result.push('\\');
-                result.push('u');
-                result.push_str(&hex);
-            } else {
-                result.push('\\');
+                // Other escape (e.g. \/): keep both chars, don't swallow one.
+                Some(other) => {
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
             }
         } else {
             result.push(c);
@@ -578,5 +587,104 @@ mod tests {
         assert_eq!(rooms[1].name, "Room 200");
         assert_eq!(rooms[1].capacity, Some(6));
         assert_eq!(rooms[1].lid, 16578);
+    }
+
+    // ── error paths ──
+
+    #[test]
+    fn decode_js_unicode_truncated_escape_kept_raw() {
+        // Fewer than 4 hex digits after \u must not decode — "\u00" would
+        // otherwise fabricate a NUL character in the room name.
+        assert_eq!(decode_js_unicode(r"Room\u00"), r"Room\u00");
+        assert_eq!(decode_js_unicode(r"Room\u0"), r"Room\u0");
+        assert_eq!(decode_js_unicode(r"Room\u"), r"Room\u");
+    }
+
+    #[test]
+    fn decode_js_unicode_invalid_escapes_kept_raw() {
+        assert_eq!(decode_js_unicode(r"Room\uZZZZ2"), r"Room\uZZZZ2");
+        // Unpaired surrogate — char::from_u32 rejects it.
+        assert_eq!(decode_js_unicode(r"Bad\uD800Name"), r"Bad\uD800Name");
+    }
+
+    #[test]
+    fn decode_js_unicode_non_u_escape_preserves_escaped_char() {
+        // A JS-escaped slash must not swallow the escaped character.
+        assert_eq!(decode_js_unicode(r"Room\/Annex"), r"Room\/Annex");
+        // Lone trailing backslash survives.
+        assert_eq!(decode_js_unicode("Room\\"), "Room\\");
+    }
+
+    #[test]
+    fn extract_room_metadata_skips_malformed_entries() {
+        // Live spaces pages contain resource blocks with an EMPTY lid
+        // ("lid: ,") — observed July 2026 — plus assorted garbling we
+        // synthesize here. Only the well-formed room may survive.
+        let html = r#"
+            resources.push({ eid: 139536, gid: 34977, lid: 16577, capacity: 10 });
+            resources.push({ eid: 140000, gid: 34977, lid: , capacity: 4 });
+            resources.push({ eid: 99999999999999, gid: 1, lid: 16577, capacity: 2 });
+            resources.push({ eid: nope, gid: 1, lid: 16577, capacity: 1 });
+            resourceNameIdMap["eid_139536"] = "Room A";
+            resourceNameIdMap["eid_garbled"] = "Ghost Room";
+        "#;
+        let rooms = extract_room_metadata(html);
+        assert_eq!(rooms.len(), 1, "only the valid room: {:?}", rooms.len());
+        assert_eq!(rooms[0].eid, 139536);
+        assert_eq!(rooms[0].name, "Room A");
+        assert_eq!(rooms[0].capacity, Some(10));
+    }
+
+    #[test]
+    fn extract_room_metadata_empty_or_hostile_page_yields_empty() {
+        assert!(extract_room_metadata("").is_empty());
+        assert!(extract_room_metadata("<html><body>Maintenance</body></html>").is_empty());
+        // Truncated mid-declaration (digits run to EOF).
+        assert!(extract_room_metadata("resources.push({ eid: 1395").is_empty());
+    }
+
+    #[test]
+    fn grid_response_schema_drift_yields_err_not_panic() {
+        // Top-level field renamed.
+        assert!(serde_json::from_str::<GridResponse>(r#"{"bookings": []}"#).is_err());
+        // Slot field renamed.
+        assert!(
+            serde_json::from_str::<GridResponse>(
+                r#"{"slots":[{"begin":"x","end":"y","itemId":1,"checksum":"c"}]}"#
+            )
+            .is_err()
+        );
+        // itemId type drift (string instead of number).
+        assert!(
+            serde_json::from_str::<GridResponse>(
+                r#"{"slots":[{"start":"x","end":"y","itemId":"139536","checksum":"c"}]}"#
+            )
+            .is_err()
+        );
+        // Not JSON at all (LibCal maintenance page HTML).
+        assert!(serde_json::from_str::<GridResponse>("<html>Maintenance</html>").is_err());
+    }
+
+    #[test]
+    fn empty_grid_and_roomless_availability_render_friendly() {
+        let grid: GridResponse = serde_json::from_str(r#"{"slots": []}"#).unwrap();
+        assert!(grid.slots.is_empty());
+
+        let avail = RoomAvailability {
+            library_name: "McHenry Library".to_string(),
+            lid: 16577,
+            date: "2026-07-07".to_string(),
+            rooms: vec![],
+        };
+        let out = avail.format();
+        assert!(out.contains("No open rooms parsed"));
+        assert!(out.contains("https://calendar.library.ucsc.edu/spaces?lid=16577&d=2026-07-07"));
+    }
+
+    #[test]
+    fn format_time_unexpected_shapes_pass_through() {
+        // LibCal switching to ISO "T" separators must not corrupt output.
+        assert_eq!(format_time("2026-07-07T08:00:00"), "2026-07-07T08:00:00");
+        assert_eq!(format_time(""), "");
     }
 }

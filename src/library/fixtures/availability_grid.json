@@ -1,11 +1,14 @@
 {
   "slots": [
-    { "start": "2026-06-12 09:00:00", "end": "2026-06-12 09:30:00", "itemId": 139536, "checksum": "c0900", "className": "" },
+    { "start": "2026-06-12 09:00:00", "end": "2026-06-12 09:30:00", "itemId": 139536, "checksum": "c0900" },
     { "start": "2026-06-12 09:30:00", "end": "2026-06-12 10:00:00", "itemId": 139536, "checksum": "c0930", "className": "s-lc-eq-checkout" },
     { "start": "2026-06-12 10:00:00", "end": "2026-06-12 10:30:00", "itemId": 139536, "checksum": "c1000", "className": "s-lc-eq-checkout" },
-    { "start": "2026-06-12 10:30:00", "end": "2026-06-12 11:00:00", "itemId": 139536, "checksum": "c1030", "className": "" },
-    { "start": "2026-06-12 11:00:00", "end": "2026-06-12 11:30:00", "itemId": 139536, "checksum": "c1100", "className": "" },
-    { "start": "2026-06-12 09:00:00", "end": "2026-06-12 09:30:00", "itemId": 139537, "checksum": "d0900", "className": "" },
-    { "start": "2026-06-12 09:30:00", "end": "2026-06-12 10:00:00", "itemId": 139537, "checksum": "d0930", "className": "" }
-  ]
+    { "start": "2026-06-12 10:30:00", "end": "2026-06-12 11:00:00", "itemId": 139536, "checksum": "c1030" },
+    { "start": "2026-06-12 11:00:00", "end": "2026-06-12 11:30:00", "itemId": 139536, "checksum": "c1100" },
+    { "start": "2026-06-12 09:00:00", "end": "2026-06-12 09:30:00", "itemId": 139537, "checksum": "d0900" },
+    { "start": "2026-06-12 09:30:00", "end": "2026-06-12 10:00:00", "itemId": 139537, "checksum": "d0930" }
+  ],
+  "bookings": [],
+  "isPreCreatedBooking": false,
+  "windowEnd": false
 }

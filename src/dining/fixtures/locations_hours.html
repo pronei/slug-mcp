@@ -1,0 +1,215 @@
+<!--
+  Trimmed real capture of https://dining.ucsc.edu/locations-hours/ (July 2026).
+  Microdata blocks the parser reads: div[itemtype] (Restaurant / FoodEstablishment /
+  CafeOrCoffeeShop / LocalBusiness / WholesaleStore), meta[itemprop=name/openingHours],
+  openingHoursSpecification divs. Real page wraps blocks in <details>/<summary>
+  (stripped by parse_hours to dodge html5ever foster-parenting); duplicate blocks
+  (each location appears twice on the page) exercise dedupe. Spec shapes captured:
+  1 <time> = single-date closure, 2 <time> = validFrom/validThrough range (not a
+  closure), 3 <time> = date + opens + closes.
+-->
+<html><body><main>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 0</summary>
+<div itemtype="http://schema.org/Restaurant" itemscope>
+	<meta itemprop="name" content="College Nine⁄JRL Dining Hall - Summer Hours">
+    	<meta itemprop="openingHours" content="Mo 1:00-13:00">            <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-17"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-18"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-19"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-20"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-03"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-04"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom" datetime="2026-06-21"></time>
+                                    <time itemprop="validThrough" datetime="2026-09-17"></time>
+                            </div>
+            </div>
+</details>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 1</summary>
+<div itemtype="http://schema.org/Restaurant" itemscope>
+	<meta itemprop="name" content="College Nine⁄JRL Dining Hall - Summer Hours">
+    	<meta itemprop="openingHours" content="Mo 1:00-13:00">            <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-17"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-18"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-19"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-20"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-03"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-04"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom" datetime="2026-06-21"></time>
+                                    <time itemprop="validThrough" datetime="2026-09-17"></time>
+                            </div>
+            </div>
+</details>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 2</summary>
+<div itemtype="http://schema.org/FoodEstablishment" itemscope>
+	<meta itemprop="name" content="Cowell/Stevenson Dining Hall - Summer Hours">
+    	<meta itemprop="openingHours" content="Mo-Su 7:00-19:00">            <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-17"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-18"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-19"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-20"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-03"></time>
+                                    <time itemprop="opens" datetime="07:00:00"></time>
+                                    <time itemprop="closes" datetime="19:00:00"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-04"></time>
+                                    <time itemprop="opens" datetime="07:00:00"></time>
+                                    <time itemprop="closes" datetime="19:00:00"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom" datetime="2026-08-29"></time>
+                                    <time itemprop="validThrough" datetime="2026-09-09"></time>
+                            </div>
+            </div>
+</details>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 3</summary>
+<div itemtype="http://schema.org/CafeOrCoffeeShop" itemscope>
+	<meta itemprop="name" content="Stevenson Coffee House - Summer Hours">
+    	<meta itemprop="openingHours" content="Mo-Fr 8:00-20:00">            <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-17"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-18"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-19"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-20"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-03"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-04"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-10"></time>
+                                    <time itemprop="opens" datetime="08:00:00"></time>
+                                    <time itemprop="closes" datetime="15:00:00"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom" datetime="2026-08-29"></time>
+                                    <time itemprop="validThrough" datetime="2026-09-18"></time>
+                            </div>
+            </div>
+</details>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 4</summary>
+<div itemtype="http://schema.org/CafeOrCoffeeShop" itemscope>
+	<meta itemprop="name" content="Oakes Cafe - Summer Hours">
+    	<meta itemprop="openingHours" content="Mo 1:00-13:00">            <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-17"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-18"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-19"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-20"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-03"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-04"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom" datetime="2026-06-21"></time>
+                                    <time itemprop="validThrough" datetime="2026-09-17"></time>
+                            </div>
+            </div>
+</details>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 5</summary>
+<div itemtype="http://schema.org/WholesaleStore" itemscope>
+	<meta itemprop="name" content="Porter Market - Summer Hours">
+    	<meta itemprop="openingHours" content="Mo 1:00-13:00">            <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-17"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-18"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-19"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-20"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-03"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-04"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom" datetime="2026-06-21"></time>
+                                    <time itemprop="validThrough" datetime="2026-09-17"></time>
+                            </div>
+            </div>
+</details>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 6</summary>
+<div itemtype="http://schema.org/LocalBusiness" itemscope>
+	<meta itemprop="name" content="Merrill Market - Summer Hours">
+    	<meta itemprop="openingHours" content="Mo-Fr 8:00-14:30">            <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-17"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-18"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-19"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-06-20"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-03"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom validThrough" datetime="2026-07-04"></time>
+                            </div>
+                        <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
+                                    <time itemprop="validFrom" datetime="2026-08-08"></time>
+                                    <time itemprop="validThrough" datetime="2026-09-18"></time>
+                            </div>
+            </div>
+</details>
+<details class="wp-block-ucsc-gutenberg-blocks-accordion"><summary>Location 7</summary>
+<div itemtype="http://schema.org/LocalBusiness" itemscope>
+	<meta itemprop="name" content="Slug Stop">
+    	</div>
+</details>
+</main></body></html>

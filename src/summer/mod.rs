@@ -404,4 +404,99 @@ mod tests {
         assert!(out.contains("Drop"));
         assert!(out.contains("tuition reversed"));
     }
+
+    // ── error paths ──
+
+    #[test]
+    fn parse_calendar_maintenance_page_yields_empty() {
+        assert!(parse_calendar("<html><body>Maintenance</body></html>").is_empty());
+        assert!(parse_calendar("").is_empty());
+    }
+
+    #[test]
+    fn parse_calendar_renamed_section_ids_yield_empty() {
+        // Structure drift: WordPress anchors renamed → no sessions, no panic.
+        let html = FIXTURE
+            .replace("id=\"session-", "id=\"term-")
+            .replace("id=\"8-week\"", "id=\"eight-week\"")
+            .replace("id=\"10-week\"", "id=\"ten-week\"");
+        assert!(parse_calendar(&html).is_empty());
+    }
+
+    #[test]
+    fn parse_calendar_section_without_h3_still_parses_deadlines() {
+        // Date-range header missing → year falls back to the current Pacific
+        // year; month/day still extracted from each <li>.
+        let html = r#"<h2 id="session-1">Session 1</h2>
+            <ul><li>Add/Swap &#8211; Thursday, June 25</li></ul>"#;
+        let sessions = parse_calendar(html);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].date_range, "");
+        let d = &sessions[0].deadlines[0];
+        assert_eq!(d.label, "Add/Swap");
+        let date = d.date.expect("date parsed with fallback year");
+        assert_eq!((date.month(), date.day()), (6, 25));
+    }
+
+    #[test]
+    fn parse_deadline_unclosed_parenthesis_no_note() {
+        let d = parse_deadline("Drop – Monday, June 29 (tuition reversed", Some(2026));
+        assert_eq!(d.label, "Drop");
+        assert_eq!(d.note, None);
+        assert_eq!(d.date, NaiveDate::from_ymd_opt(2026, 6, 29));
+    }
+
+    #[test]
+    fn parse_deadline_undated_info_line() {
+        let d = parse_deadline(
+            "Final examinations are scheduled by instructors",
+            Some(2026),
+        );
+        assert_eq!(d.date, None);
+        assert_eq!(d.label, d.date_text);
+        // Undated lines render as plain bullets with the "•" marker.
+        let s = SummerSession {
+            id: "session-1".into(),
+            name: "Session 1".into(),
+            date_range: "June 22 – July 24, 2026".into(),
+            deadlines: vec![d],
+        };
+        let out = format_deadlines(&[s], None, false);
+        assert!(out.contains("- • Final examinations"));
+    }
+
+    #[test]
+    fn parse_calendar_multibyte_between_sections_no_panic() {
+        // Multibyte chars flush against the sliced boundaries (h2 lookups and
+        // block ends) must not split char boundaries.
+        let html = "🎓émoji <h2 id=\"session-1\">Session 1 ☀️</h2>\
+                    <h3>June 22 \u{2013} July 24, 2026</h3>\
+                    <ul><li>Drop \u{2013} Montag, Juni 29 (Studiengebühr erstattet)</li>\
+                    <li>Add/Swap \u{2013} Thursday, June 25 🗓</li></ul>\
+                    <h2 id=\"session-2\">🌙</h2><ul><li>Drop – June 30</li></ul>";
+        let sessions = parse_calendar(html);
+        assert_eq!(sessions.len(), 2);
+        let s1 = &sessions[0];
+        assert_eq!(s1.deadlines.len(), 2);
+        // German month name doesn't match MONTH_DAY_RE → date None, note intact.
+        assert_eq!(s1.deadlines[0].date, None);
+        assert_eq!(
+            s1.deadlines[0].note.as_deref(),
+            Some("Studiengebühr erstattet")
+        );
+        assert_eq!(s1.deadlines[1].date, NaiveDate::from_ymd_opt(2026, 6, 25));
+    }
+
+    #[test]
+    fn format_zero_deadline_session_notes_nothing_upcoming() {
+        let s = SummerSession {
+            id: "8-week".into(),
+            name: "8-Week Session".into(),
+            date_range: "June 22 – August 14, 2026".into(),
+            deadlines: vec![],
+        };
+        let out = format_deadlines(&[s], None, false);
+        assert!(out.contains("## 8-Week Session"));
+        assert!(out.contains("_No upcoming deadlines._"));
+    }
 }

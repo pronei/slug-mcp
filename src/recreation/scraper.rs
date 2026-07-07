@@ -265,6 +265,10 @@ fn parse_schedule(html: &str, facility_id: &str) -> FacilitySchedule {
 
 // ───── Group Exercise Classes ─────
 
+// Term-pinned URL: goslugs.com posts each term's schedule at a new dated path
+// and had published no Summer/Fall 2026 edition as of 2026-07 — this Spring
+// 2026 page is still the newest (it 200s and links only fall25/winter26/
+// spring26 siblings). Bump the path when a new term page appears.
 const GROUP_EXERCISE_URL: &str =
     "https://goslugs.com/sports/2026/2/26/groupexercise_schedules_spring26";
 
@@ -540,6 +544,60 @@ CYCLING</span></strong></a><br />
         assert_eq!(piyo.location, "MAS");
         assert_eq!(piyo.location_full, "Martial Arts Studio");
     }
+
+    // ── error paths ──
+
+    fn cell(inner: &str) -> String {
+        format!(
+            r#"<html><body><table>
+            <tr><td>MONDAYS</td><td>TUESDAYS</td><td>WEDNESDAYS</td></tr>
+            <tr><td>{inner}</td><td></td><td></td></tr>
+            </table></body></html>"#
+        )
+    }
+
+    #[test]
+    fn parse_group_exercise_multibyte_after_markers_no_panic() {
+        // Multibyte chars immediately after the "w/" and "@" byte anchors.
+        let html = cell(
+            r#"7:30a <a href="https://campusrec.ucsc.edu/Program/GetProgramDetails?courseId=x">ΖΟΥΜΠΑ</a> w/Ольга @ Στούντιο"#,
+        );
+        let classes = parse_group_exercise(&html);
+        assert_eq!(classes.len(), 1, "got: {:#?}", classes);
+        assert_eq!(classes[0].name, "ΖΟΥΜΠΑ");
+        assert_eq!(classes[0].instructor, "Ольга");
+        assert_eq!(classes[0].location, "Στούντιο");
+        // Unknown abbreviation passes through unexpanded.
+        assert_eq!(classes[0].location_full, "Στούντιο");
+    }
+
+    #[test]
+    fn parse_group_exercise_cell_missing_markers_degrades() {
+        // A class link with no time / "w/" / "@" text yields empty fields, not a panic.
+        let html = cell(
+            r#"<a href="https://campusrec.ucsc.edu/Program/GetProgramDetails?courseId=y">MYSTERY MOVES</a>"#,
+        );
+        let classes = parse_group_exercise(&html);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].time, "");
+        assert_eq!(classes[0].instructor, "");
+        assert_eq!(classes[0].location, "");
+    }
+
+    #[test]
+    fn parse_group_exercise_two_day_header_not_recognized() {
+        // Fewer than 3 day columns → header row not identified → no classes.
+        let html = r#"<html><body><table>
+            <tr><td>MONDAYS</td><td>TUESDAYS</td></tr>
+            <tr><td><a href="https://campusrec.ucsc.edu/Program/GetProgramDetails?courseId=z">YOGA</a></td><td></td></tr>
+            </table></body></html>"#;
+        assert!(parse_group_exercise(html).is_empty());
+    }
+
+    #[test]
+    fn parse_group_exercise_maintenance_page_yields_empty() {
+        assert!(parse_group_exercise("<html><body>Maintenance</body></html>").is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -597,6 +655,35 @@ mod occupancy_tests {
         assert_eq!(wall.max_capacity, 44);
         assert!(wall.format().contains("100%"));
     }
+
+    // ── error paths ──
+
+    #[test]
+    fn parse_occupancy_maintenance_page_yields_empty() {
+        assert!(parse_occupancy("<html><body>Maintenance</body></html>").is_empty());
+        assert!(parse_occupancy("").is_empty());
+    }
+
+    #[test]
+    fn parse_occupancy_canvas_without_id_skipped() {
+        let html =
+            r#"<canvas class="occupancy-chart" data-occupancy="5" data-remaining="5"></canvas>"#;
+        assert!(parse_occupancy(html).is_empty());
+    }
+
+    #[test]
+    fn parse_occupancy_all_attrs_garbage_yields_zeroes() {
+        let html = r#"<div><strong>Mystery Gym</strong>
+            <canvas class="occupancy-chart" id="occupancyChart-abc123"
+                    data-occupancy="NaN" data-remaining="—"></canvas></div>"#;
+        let facilities = parse_occupancy(html);
+        assert_eq!(facilities.len(), 1);
+        assert_eq!(facilities[0].current_occupancy, 0);
+        assert_eq!(facilities[0].max_capacity, 0);
+        // format() divides by max_capacity — zero must not panic.
+        assert!(facilities[0].format().contains("0 / 0"));
+        assert!(facilities[0].format().contains("0%"));
+    }
 }
 
 #[cfg(test)]
@@ -631,5 +718,37 @@ mod schedule_tests {
         );
 
         assert_eq!(schedule.entries[2].event, "Open Rec Swim");
+    }
+
+    // ── error paths ──
+
+    #[test]
+    fn parse_schedule_maintenance_page_falls_back_to_id_name() {
+        let schedule = parse_schedule(
+            "<html><body>Maintenance</body></html>",
+            "6337894d-9b88-4872-add3-c29f783055c2",
+        );
+        assert!(schedule.entries.is_empty());
+        // No title/h2 anywhere → name falls back to the id prefix.
+        assert_eq!(schedule.facility_name, "Facility 6337894d");
+        assert!(schedule.format().contains("No scheduled events."));
+    }
+
+    #[test]
+    fn parse_schedule_js_shell_page_degrades_to_empty() {
+        // Characterization of the 2026 live page: the portal now renders the
+        // schedule client-side (FullCalendar fed by XHR), so the HTML has a
+        // page <title> but zero table rows — the tool reports no events
+        // rather than erroring.
+        let html = r#"<html><head>
+            <title>Facility Schedule - UC Santa Cruz Athletics &amp; Recreation Registration Portal</title>
+            </head><body>
+            <div id="calendar"></div>
+            <script>var InnosoftConstants = {};</script>
+            </body></html>"#;
+        let schedule = parse_schedule(html, "6337894d-9b88-4872-add3-c29f783055c2");
+        assert!(schedule.entries.is_empty());
+        assert_eq!(schedule.facility_name, "Facility Schedule");
+        assert!(schedule.format().contains("No scheduled events."));
     }
 }

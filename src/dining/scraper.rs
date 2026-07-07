@@ -274,11 +274,17 @@ async fn fetch_with_cookies(client: &reqwest::Client, url: &str) -> Result<Strin
         .await
         .context("Failed to read nutrition page body")?;
 
-    if !status.is_success() || html.contains("Runtime Error") || html.contains("Server Error") {
+    if !status.is_success() || is_foodpro_error_body(&html) {
         anyhow::bail!("Nutrition site returned error (status {})", status);
     }
 
     Ok(html)
+}
+
+/// FoodPro's intermittent failure mode is an HTTP 200 with an ASP.NET error
+/// page ("Runtime Error" / "Server Error in '/' Application") as the body.
+fn is_foodpro_error_body(html: &str) -> bool {
+    html.contains("Runtime Error") || html.contains("Server Error")
 }
 
 pub async fn scrape_menu(
@@ -957,12 +963,22 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
 
     for schema_div in document.select(&SEL_SCHEMA) {
         let itemtype = schema_div.value().attr("itemtype").unwrap_or("");
-        if !itemtype.contains("schema.org/Restaurant")
-            && !itemtype.contains("schema.org/FoodEstablishment")
-            && !itemtype.contains("schema.org/LocalBusiness")
+        // Category by schema type. The page mixes several types (cafes moved to
+        // CafeOrCoffeeShop and Porter Market to WholesaleStore in summer 2026).
+        let category = if itemtype.contains("schema.org/Restaurant")
+            || itemtype.contains("schema.org/FoodEstablishment")
         {
+            "Dining"
+        } else if itemtype.contains("schema.org/CafeOrCoffeeShop") {
+            "Cafe"
+        } else if itemtype.contains("schema.org/LocalBusiness")
+            || itemtype.contains("schema.org/WholesaleStore")
+        {
+            "Market"
+        } else {
             continue;
         }
+        .to_string();
 
         let name = match schema_div.select(&SEL_NAME).next() {
             Some(el) => el.value().attr("content").unwrap_or("").to_string(),
@@ -974,13 +990,6 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
         }
         seen.insert(name.clone());
 
-        let category = if itemtype.contains("LocalBusiness") {
-            "Market"
-        } else {
-            "Dining"
-        }
-        .to_string();
-
         let regular_hours: Vec<String> = schema_div
             .select(&SEL_HOURS)
             .filter_map(|el| el.value().attr("content").map(|s| s.to_string()))
@@ -990,6 +999,15 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
         for spec in schema_div.select(&SEL_SPEC) {
             let times: Vec<_> = spec.select(&SEL_TIME).collect();
             if times.is_empty() {
+                continue;
+            }
+
+            // Dated specs lead with a combined `validFrom validThrough` time.
+            // A spec whose first time is validFrom-only is the schedule's
+            // overall validity range (paired with a separate validThrough) —
+            // not a closure/exception, so skip it.
+            let first_props = times[0].value().attr("itemprop").unwrap_or("");
+            if !(first_props.contains("validFrom") && first_props.contains("validThrough")) {
                 continue;
             }
 
@@ -1186,175 +1204,286 @@ mod tests {
         assert!(bakery.items[0].dietary_tags.contains(&"vegan".to_string()));
     }
 
-    const MOCK_SHORTMENU_HTML: &str = r#"<html><body>
-    <table>
-      <tr><td>
-        <div class="shortmenumeals">Breakfast</div>
-      </td></tr>
-      <tr><td colspan="4">
-        <div class="shortmenucats"><span style="color: #000000">-- Entrees --</span></div>
-      </td></tr>
-      <tr>
-        <td><table><tr>
-          <td><div class='shortmenurecipes'><span style='color: #585858'>Scrambled Eggs&nbsp;</span></div></td>
-          <td width="10%"><img src="LegendImages/veggie.gif" alt="" width="25px" height="25px"></td>
-          <td width="10%"><img src="LegendImages/eggs.gif" alt="" width="25px" height="25px"></td>
-        </tr></table></td>
-      </tr>
-      <tr><td colspan="4">
-        <div class="shortmenucats"><span style="color: #000000">-- Bakery --</span></div>
-      </td></tr>
-      <tr>
-        <td><table><tr>
-          <td><div class='shortmenurecipes'><span style='color: #585858'>Waffle&nbsp;</span></div></td>
-          <td width="10%"><img src="LegendImages/vegan.gif" alt="" width="25px" height="25px"></td>
-        </tr></table></td>
-      </tr>
-    </table>
-    </body></html>"#;
+    const SHORTMENU_FIXTURE: &str = include_str!("fixtures/shortmenu.html");
 
     #[test]
-    fn test_parse_shortmenu() {
-        let menu = parse_shortmenu(MOCK_SHORTMENU_HTML, "Test Hall");
-        assert_eq!(menu.hall_name, "Test Hall");
-        assert_eq!(menu.meals.len(), 1);
+    fn test_parse_shortmenu_real_capture() {
+        let menu = parse_shortmenu(
+            SHORTMENU_FIXTURE,
+            "John R. Lewis & College Nine Dining Hall",
+        );
+        assert_eq!(menu.hall_name, "John R. Lewis & College Nine Dining Hall");
+        assert_eq!(menu.meals.len(), 2, "got: {:#?}", menu.meals);
 
-        let meal = &menu.meals[0];
-        assert_eq!(meal.name, "Breakfast");
-        assert_eq!(meal.categories.len(), 2);
+        let breakfast = &menu.meals[0];
+        assert_eq!(breakfast.name, "Breakfast");
+        assert_eq!(breakfast.categories.len(), 2, "got: {:#?}", breakfast);
+        assert_eq!(breakfast.categories[0].name, "Breakfast");
+        assert_eq!(breakfast.categories[1].name, "Clean Plate");
 
-        let entrees = &meal.categories[0];
-        assert_eq!(entrees.name, "Entrees");
-        assert_eq!(entrees.items.len(), 1);
-        assert_eq!(entrees.items[0].name, "Scrambled Eggs");
-        assert_eq!(entrees.items[0].recipe_id, None);
-        assert!(
-            entrees.items[0]
-                .dietary_tags
-                .contains(&"vegetarian".to_string()),
-            "Expected vegetarian tag, got: {:?}",
-            entrees.items[0].dietary_tags
+        let eggs = &breakfast.categories[0].items[0];
+        assert_eq!(eggs.name, "Cage-Free Scrambled Eggs");
+        assert_eq!(eggs.recipe_id, None);
+        // Sibling-<td> LegendImages icons, in DOM order.
+        assert_eq!(
+            eggs.dietary_tags,
+            ["vegetarian", "contains_eggs", "gluten_free"],
+            "got: {:?}",
+            eggs.dietary_tags
+        );
+        // &nbsp; suffix stripped from names.
+        assert_eq!(
+            breakfast.categories[0].items[1].name,
+            "Hard-boiled Cage Free Egg (1)"
         );
 
-        let bakery = &meal.categories[1];
-        assert_eq!(bakery.items[0].name, "Waffle");
-        assert!(
-            bakery.items[0].dietary_tags.contains(&"vegan".to_string()),
-            "Expected vegan tag, got: {:?}",
-            bakery.items[0].dietary_tags
-        );
+        let lunch = &menu.meals[1];
+        assert_eq!(lunch.name, "Lunch");
+        assert_eq!(lunch.categories[0].name, "Soups");
+        let chili = &lunch.categories[0].items[0];
+        assert_eq!(chili.name, "Hearty Beef Chili");
+        assert!(chili.dietary_tags.contains(&"contains_beef".to_string()));
+        assert!(chili.dietary_tags.contains(&"halal".to_string()));
+        let soup = &lunch.categories[0].items[1];
+        assert_eq!(soup.name, "House Made Vegan Tomato Soup");
+        assert!(soup.dietary_tags.contains(&"vegan".to_string()));
+    }
+
+    fn menu_of(items: &[(&str, Option<&str>)]) -> DiningMenu {
+        DiningMenu {
+            hall_name: "Test".into(),
+            date: None,
+            meals: vec![Meal {
+                name: "Breakfast".into(),
+                categories: vec![Category {
+                    name: "Entrees".into(),
+                    items: items
+                        .iter()
+                        .map(|(n, rid)| MenuItem {
+                            name: (*n).into(),
+                            dietary_tags: vec![],
+                            recipe_id: rid.map(String::from),
+                        })
+                        .collect(),
+                }],
+            }],
+        }
     }
 
     #[test]
     fn test_enrich_recipe_ids() {
-        let mut short_menu = parse_shortmenu(MOCK_SHORTMENU_HTML, "Test");
+        // Case-insensitive name match copies ids; existing ids are kept.
+        let mut short_menu = menu_of(&[
+            ("SCRAMBLED EGGS", None),
+            ("Waffle", None),
+            ("Oatmeal", Some("already*1")),
+        ]);
         let long_menu = parse_longmenu(MOCK_LONGMENU_HTML, "Test");
         enrich_recipe_ids(&mut short_menu, &long_menu);
 
-        let eggs = &short_menu.meals[0].categories[0].items[0];
-        assert_eq!(eggs.name, "Scrambled Eggs");
-        assert_eq!(eggs.recipe_id, Some("061002*3".to_string()));
-
-        let waffle = &short_menu.meals[0].categories[1].items[0];
-        assert_eq!(waffle.name, "Waffle");
-        assert_eq!(waffle.recipe_id, Some("217044*1".to_string()));
+        let items = &short_menu.meals[0].categories[0].items;
+        assert_eq!(items[0].recipe_id, Some("061002*3".to_string()));
+        assert_eq!(items[1].recipe_id, Some("217044*1".to_string()));
+        assert_eq!(items[2].recipe_id, Some("already*1".to_string()));
     }
 
-    const MOCK_LABEL_HTML: &str = r#"<html><body>
-    <div class="labelrecipe">Belgian Waffle Squares</div>
-    <table>
-      <tr><td>
-        <font size="5" face="arial">Serving Size&nbsp;</font><font size="5" face="arial">1 ea</font>
-        <font size="5" face="arial"><b>Calories&nbsp;180</b></font>
-      </td></tr>
-      <tr>
-        <td><font size="4" face="arial"><b>Total Fat&nbsp;</b></font><font size="4" face="arial">6g</font></td>
-        <td><font size="4" face="arial"><b>Tot. Carb.&nbsp;</b></font><font size="4" face="arial">27g</font></td>
-      </tr>
-      <tr>
-        <td><font size="4" face="arial">&nbsp;&nbsp;Sat. Fat&nbsp;</font><font size="4" face="arial">1g</font></td>
-        <td><font size="4" face="arial">&nbsp;&nbsp;Dietary Fiber&nbsp;</font><font size="4" face="arial">1g</font></td>
-      </tr>
-      <tr>
-        <td><font size="4" face="arial">&nbsp;&nbsp;Trans Fat&nbsp;</font><font size="4" face="arial">0g</font></td>
-        <td><font size="4" face="arial">&nbsp;&nbsp;Sugars&nbsp;</font><font size="4" face="arial">6g</font></td>
-      </tr>
-      <tr>
-        <td><font size="4" face="arial"><b>Cholesterol&nbsp;</b></font><font size="4" face="arial">30mg</font></td>
-        <td><font size="4" face="arial"><b>Protein&nbsp;</b></font><font size="4" face="arial">3g</font></td>
-      </tr>
-      <tr>
-        <td><font size="4" face="arial"><b>Sodium&nbsp;</b></font><font size="4" face="arial">370mg</font></td>
-      </tr>
-    </table>
-    <span class="labelingredientscaption">INGREDIENTS:&nbsp;&nbsp;</span>
-    <span class="labelingredientsvalue">Enriched Wheat Flour, Sugar, Eggs</span>
-    <span class="labelallergenscaption">ALLERGENS:&nbsp;&nbsp;</span>
-    <span class="labelallergensvalue">Milk, Egg, Wheat, Soy</span>
-    </body></html>"#;
+    const LABEL_FIXTURE: &str = include_str!("fixtures/label.html");
 
     #[test]
-    fn test_parse_nutrition_label() {
-        let info = parse_nutrition_label(MOCK_LABEL_HTML);
-        assert_eq!(info.item_name, "Belgian Waffle Squares");
-        assert_eq!(info.ingredients, "Enriched Wheat Flour, Sugar, Eggs");
-        assert_eq!(info.allergens, "Milk, Egg, Wheat, Soy");
-        assert!(info.calories.as_ref().unwrap().contains("180"));
+    fn test_parse_nutrition_label_real_capture() {
+        let info = parse_nutrition_label(LABEL_FIXTURE);
+        assert_eq!(info.item_name, "Cage-Free Scrambled Eggs");
+        assert_eq!(info.serving_size, "3 oz");
+        assert_eq!(info.calories.as_deref(), Some("133"));
+        assert_eq!(info.total_fat.as_deref(), Some("9.4g"));
+        assert_eq!(info.total_carbs.as_deref(), Some("0.9g"));
+        assert_eq!(info.protein.as_deref(), Some("10.5g"));
+        assert_eq!(
+            info.ingredients,
+            "Eggs (Cage Free Whole Eggs, Citric Acid), Rice Bran Oil (Rice Bran Oil)"
+        );
+        assert_eq!(info.allergens, "Egg");
+        let rendered = info.format();
+        assert!(rendered.contains("# Cage-Free Scrambled Eggs"));
+        assert!(rendered.contains("| Protein | 10.5g |"));
     }
 
-    const MOCK_HOURS_HTML: &str = r#"<html><body>
-    <div itemtype="http://schema.org/Restaurant" itemscope>
-      <meta itemprop="name" content="Crown/Merrill Dining Hall">
-      <meta itemprop="openingHours" content="Mo-Fr 7:00-20:00">
-      <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
-        <time itemprop="validFrom validThrough" datetime="2026-03-20"></time>
-        <time itemprop="opens" datetime="07:00:00"></time>
-        <time itemprop="closes" datetime="20:00:00"></time>
-      </div>
-      <div itemprop="openingHoursSpecification" itemscope itemtype="http://schema.org/OpeningHoursSpecification">
-        <time itemprop="validFrom validThrough" datetime="2026-03-21"></time>
-      </div>
-    </div>
-    <div itemtype="http://schema.org/LocalBusiness" itemscope>
-      <meta itemprop="name" content="Merrill Market">
-      <meta itemprop="openingHours" content="Mo-Fr 9:00-20:00">
-    </div>
-    </body></html>"#;
+    const HOURS_FIXTURE: &str = include_str!("fixtures/locations_hours.html");
 
     #[test]
-    fn test_parse_hours() {
-        let locations = parse_hours(MOCK_HOURS_HTML);
-        assert_eq!(locations.len(), 2);
+    fn test_parse_hours_real_capture_all_itemtypes() {
+        let locations = parse_hours(HOURS_FIXTURE);
+        let names: Vec<&str> = locations.iter().map(|l| l.name.as_str()).collect();
+        // 8 blocks, 1 duplicate (each location appears twice on the live page).
+        assert_eq!(locations.len(), 7, "got: {:?}", names);
+        assert_eq!(
+            names.iter().filter(|n| n.contains("College Nine")).count(),
+            1,
+            "duplicate blocks must be deduped"
+        );
 
-        let crown = &locations[0];
-        assert_eq!(crown.name, "Crown/Merrill Dining Hall");
-        assert_eq!(crown.category, "Dining");
-        assert_eq!(crown.regular_hours, vec!["Mo-Fr 7:00-20:00"]);
-        assert_eq!(crown.date_hours.len(), 2);
-        assert_eq!(crown.date_hours[0].date, "2026-03-20");
-        assert_eq!(crown.date_hours[0].opens, Some("07:00:00".to_string()));
-        assert_eq!(crown.date_hours[1].date, "2026-03-21");
-        assert_eq!(crown.date_hours[1].opens, None);
+        let by_name = |frag: &str| {
+            locations
+                .iter()
+                .find(|l| l.name.contains(frag))
+                .unwrap_or_else(|| panic!("{frag} missing from {names:?}"))
+        };
 
-        let market = &locations[1];
-        assert_eq!(market.name, "Merrill Market");
-        assert_eq!(market.category, "Market");
+        // 2026 drift: cafes are CafeOrCoffeeShop, Porter Market is WholesaleStore.
+        assert_eq!(by_name("Stevenson Coffee House").category, "Cafe");
+        assert_eq!(by_name("Oakes Cafe").category, "Cafe");
+        assert_eq!(by_name("Porter Market").category, "Market");
+        assert_eq!(by_name("Merrill Market").category, "Market");
+        assert_eq!(by_name("Cowell/Stevenson").category, "Dining");
+        assert_eq!(by_name("College Nine").category, "Dining");
+
+        let cowell = by_name("Cowell/Stevenson");
+        assert_eq!(cowell.regular_hours, vec!["Mo-Su 7:00-19:00"]);
+        // 1-time spec = dated closure.
+        let jun17 = cowell
+            .date_hours
+            .iter()
+            .find(|d| d.date == "2026-06-17")
+            .expect("closure date");
+        assert_eq!(jun17.opens, None);
+        // 3-time spec = special hours with opens/closes.
+        let jul3 = cowell
+            .date_hours
+            .iter()
+            .find(|d| d.date == "2026-07-03")
+            .expect("special-hours date");
+        assert_eq!(jul3.opens.as_deref(), Some("07:00:00"));
+        assert_eq!(jul3.closes.as_deref(), Some("19:00:00"));
+        // 2-time spec = validFrom/validThrough range, NOT a closure — must be skipped.
+        assert!(
+            cowell.date_hours.iter().all(|d| d.date != "2026-08-29"),
+            "validity-range spec misread as a dated closure: {:#?}",
+            cowell.date_hours
+        );
+
+        // A block with a name but no hours markup at all parses as hours-less.
+        let slug_stop = by_name("Slug Stop");
+        assert!(slug_stop.regular_hours.is_empty());
+        assert!(slug_stop.date_hours.is_empty());
     }
 
     #[test]
     fn test_format_hours_with_date() {
-        let locations = parse_hours(MOCK_HOURS_HTML);
-        let crown = &locations[0];
+        let locations = parse_hours(HOURS_FIXTURE);
+        let cowell = locations
+            .iter()
+            .find(|l| l.name.contains("Cowell/Stevenson"))
+            .unwrap();
 
-        // With a date before the special hours
-        let output = crown.format_with_date("2026-03-19");
-        assert!(output.contains("Crown/Merrill Dining Hall"));
-        assert!(output.contains("Mo-Fr 7:00-20:00"));
-        assert!(output.contains("2026-03-20"));
-        assert!(output.contains("CLOSED")); // 2026-03-21 has no opens/closes
+        // Before the June closures: CLOSED bullets plus the July 3 special hours.
+        let output = cowell.format_with_date("2026-06-16");
+        assert!(output.contains("Cowell/Stevenson"));
+        assert!(output.contains("Mo-Su 7:00-19:00"));
+        assert!(output.contains("2026-06-17: CLOSED"));
+        assert!(output.contains("2026-07-03: 07:00:00 - 19:00:00"));
 
-        // With a date after the special hours
-        let output = crown.format_with_date("2026-03-22");
-        assert!(!output.contains("Upcoming Special Hours"));
+        // After the last dated exception (July 4): nothing upcoming — the
+        // validity-range spec (Aug 29) must not resurface as a bogus closure.
+        let output = cowell.format_with_date("2026-07-05");
+        assert!(!output.contains("Upcoming Special Hours"), "got: {output}");
+    }
+
+    // ── error paths ──
+
+    #[test]
+    fn foodpro_error_body_detected() {
+        // FoodPro's intermittent failure mode: HTTP 200 with an ASP.NET error page.
+        assert!(is_foodpro_error_body(
+            "<html><body><h1>Runtime Error</h1><p>Server Error in '/' Application.</p></body></html>"
+        ));
+        assert!(is_foodpro_error_body(
+            "<html><body>Server Error in '/' Application.</body></html>"
+        ));
+        assert!(!is_foodpro_error_body(SHORTMENU_FIXTURE));
+        assert!(!is_foodpro_error_body(LABEL_FIXTURE));
+    }
+
+    #[test]
+    fn parse_shortmenu_maintenance_page_yields_empty_menu() {
+        let menu = parse_shortmenu(
+            "<html><body><h1>Maintenance</h1><p>Back soon.</p></body></html>",
+            "Hall",
+        );
+        assert!(menu.meals.is_empty());
+        assert!(menu.format().contains("No menu items available."));
+    }
+
+    #[test]
+    fn parse_shortmenu_meal_without_items_dropped() {
+        // Meal + category headers but zero recipes: nothing to show.
+        let html = r#"<div class="shortmenumeals">Breakfast</div>
+                      <div class="shortmenucats">-- Entrees --</div>"#;
+        let menu = parse_shortmenu(html, "Hall");
+        assert!(menu.meals.is_empty(), "got: {:#?}", menu.meals);
+    }
+
+    #[test]
+    fn parse_shortmenu_truncated_html_no_panic() {
+        // Cut the real capture mid-tag (on a char boundary) — parser must not panic.
+        let mut cut = SHORTMENU_FIXTURE.len() / 2;
+        while !SHORTMENU_FIXTURE.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let menu = parse_shortmenu(&SHORTMENU_FIXTURE[..cut], "Hall");
+        // Whatever survived the cut, it must be structurally sound.
+        for meal in &menu.meals {
+            assert!(!meal.name.is_empty());
+        }
+    }
+
+    #[test]
+    fn parse_longmenu_maintenance_page_yields_empty_menu() {
+        let menu = parse_longmenu("<html><body>Maintenance</body></html>", "Hall");
+        assert!(menu.meals.is_empty());
+    }
+
+    #[test]
+    fn parse_hours_page_without_microdata_yields_empty() {
+        let locations = parse_hours("<html><body><p>Hours coming soon!</p></body></html>");
+        assert!(locations.is_empty());
+    }
+
+    #[test]
+    fn parse_hours_spec_without_times_skipped() {
+        let html = r#"<div itemtype="http://schema.org/Restaurant" itemscope>
+          <meta itemprop="name" content="Test Hall">
+          <div itemprop="openingHoursSpecification" itemscope></div>
+        </div>"#;
+        let locations = parse_hours(html);
+        assert_eq!(locations.len(), 1);
+        assert!(locations[0].date_hours.is_empty());
+    }
+
+    #[test]
+    fn parse_nutrition_label_error_page_yields_empty_fields() {
+        let info =
+            parse_nutrition_label("<html><body><h1>Object moved to here.</h1></body></html>");
+        assert!(info.item_name.is_empty());
+        assert!(info.calories.is_none());
+        assert!(info.ingredients.is_empty());
+        // format() must still render without panicking.
+        assert!(info.format().contains("N/A"));
+    }
+
+    #[test]
+    fn extract_after_multibyte_boundaries_no_panic() {
+        // Multibyte chars flush against the label must not split a char boundary.
+        assert_eq!(
+            extract_after("Protein\u{a0}émincé\ntail", "Protein"),
+            Some("émincé".to_string())
+        );
+        assert_eq!(
+            extract_after("Calories☃42\n", "Calories"),
+            Some("☃42".into())
+        );
+        // Label at end of text → nothing after it.
+        assert_eq!(extract_after("Sodium", "Sodium"), None);
+        // Label absent entirely.
+        assert_eq!(extract_after("nothing here", "Protein"), None);
     }
 }

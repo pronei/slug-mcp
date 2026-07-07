@@ -285,4 +285,51 @@ mod tests {
         let projector = filter_classrooms(&rooms, None, None, None, None, Some("projector"), None);
         assert_eq!(projector.len(), 3);
     }
+
+    // ── error paths ──
+
+    #[test]
+    fn parse_classrooms_maintenance_page_yields_empty() {
+        assert!(parse_classrooms("<html><body>Maintenance</body></html>").is_empty());
+        assert!(parse_classrooms("").is_empty());
+    }
+
+    #[test]
+    fn parse_classrooms_renamed_post_class_yields_empty() {
+        // Structure drift: WordPress theme drops the wp-block-post class.
+        let html = CLASSROOM_LIST_FIXTURE.replace("wp-block-post ", "wp-card ");
+        assert!(parse_classrooms(&html).is_empty());
+    }
+
+    #[test]
+    fn parse_classrooms_item_without_title_link_skipped() {
+        let html = r#"<ul>
+            <li class="wp-block-post seating-capacity-30 technology-projector">
+                <div>No title heading here</div>
+            </li>
+        </ul>"#;
+        assert!(parse_classrooms(html).is_empty());
+    }
+
+    #[test]
+    fn parse_classrooms_unparseable_capacity_slug_is_none() {
+        let html = r#"<li class="wp-block-post seating-capacity-tba seating-style-café">
+            <h2 class="wp-block-post-title"><a href="https://x/room">Room X</a></h2>
+        </li>"#;
+        let rooms = parse_classrooms(html);
+        assert_eq!(rooms.len(), 1);
+        assert_eq!(rooms[0].capacity, None);
+        // Multibyte slug value survives humanize() without panicking.
+        assert_eq!(rooms[0].seating_style.as_deref(), Some("café"));
+        assert!(rooms[0].format_with_location(None).contains("Café"));
+    }
+
+    #[test]
+    fn parse_classrooms_truncated_html_no_panic() {
+        let mut cut = CLASSROOM_LIST_FIXTURE.len() / 2;
+        while !CLASSROOM_LIST_FIXTURE.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let _ = parse_classrooms(&CLASSROOM_LIST_FIXTURE[..cut]);
+    }
 }

@@ -820,4 +820,126 @@ mod tests {
             Some("Molecular, Cell & Developmental Biology")
         );
     }
+
+    // ── error paths ──
+
+    #[test]
+    fn parse_class_results_maintenance_page_yields_empty() {
+        assert!(parse_class_results("<html><body>Maintenance</body></html>").is_empty());
+        assert!(parse_class_results("").is_empty());
+    }
+
+    #[test]
+    fn parse_class_results_renamed_panels_yield_empty() {
+        // Structure drift: result panels lose their rowpanel_ ids → no results,
+        // never a panic or garbage rows scraped from the search-form chrome.
+        let html = CLASS_RESULTS_FIXTURE.replace("rowpanel_", "resultcard_");
+        assert!(parse_class_results(&html).is_empty());
+    }
+
+    #[test]
+    fn parse_class_results_panel_without_course_link_skipped() {
+        let html = r#"<div class="panel panel-default row" id="rowpanel_0">
+            <p>Ad interstitial, no class link here</p>
+        </div>"#;
+        assert!(parse_class_results(html).is_empty());
+    }
+
+    #[test]
+    fn parse_class_results_truncated_html_no_panic() {
+        let mut cut = CLASS_RESULTS_FIXTURE.len() / 2;
+        while !CLASS_RESULTS_FIXTURE.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let _ = parse_class_results(&CLASS_RESULTS_FIXTURE[..cut]);
+    }
+
+    #[test]
+    fn parse_course_header_without_separator_degrades() {
+        assert_eq!(
+            parse_course_header("Independent Study"),
+            (
+                "Independent Study".into(),
+                String::new(),
+                String::new(),
+                String::new()
+            )
+        );
+    }
+
+    #[test]
+    fn extract_enrollment_ignores_malformed_counts() {
+        assert_eq!(extract_enrollment("out of luck Enrolled"), None);
+        assert_eq!(extract_enrollment("12 of many Enrolled"), None);
+        assert_eq!(extract_enrollment("Enrolled"), None);
+        assert_eq!(
+            extract_enrollment("blah 87 of 150 Enrolled blah"),
+            Some("87 of 150 Enrolled".to_string())
+        );
+    }
+
+    #[test]
+    fn term_code_to_name_passes_through_garbage() {
+        assert_eq!(term_code_to_name("abc"), "abc");
+        assert_eq!(term_code_to_name(""), "");
+    }
+
+    #[test]
+    fn parse_directory_maintenance_page_yields_empty() {
+        let result = parse_directory("<html><body>Maintenance</body></html>", "q");
+        assert!(result.entries.is_empty());
+        assert!(result.format().contains("0 results"));
+    }
+
+    #[test]
+    fn parse_directory_banner_row_becomes_name_only_entry() {
+        // Characterization: a single-cell banner row (e.g. colspan "no matches"
+        // text) currently parses as a name-only entry rather than being skipped.
+        let html = r#"<table><tbody><tr>
+            <td colspan="8">Too many entries found</td>
+        </tr></tbody></table>"#;
+        let result = parse_directory(html, "q");
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[0].name, "Too many entries found");
+        assert!(result.entries[0].email.is_none());
+        assert!(result.entries[0].uid.is_none());
+    }
+
+    #[test]
+    fn decode_email_cell_malformed_payloads_yield_none() {
+        // Not base64 at all.
+        assert_eq!(decode_email_cell("<td>plain text</td>"), None);
+        // Invalid base64 payload (bad padding).
+        assert_eq!(
+            decode_email_cell(r#"document.write(Base64.decode('@@@@'))"#),
+            None
+        );
+        // Valid base64 but not UTF-8.
+        assert_eq!(
+            decode_email_cell(r#"Base64.decode('/w==')"#), // 0xFF
+            None
+        );
+        // Valid UTF-8 but no mailto link inside.
+        assert_eq!(
+            decode_email_cell(r#"Base64.decode('PGI+aGk8L2I+')"#), // "<b>hi</b>"
+            None
+        );
+    }
+
+    #[test]
+    fn extract_csrf_for_missing_form_or_tokens_yields_none() {
+        assert_eq!(
+            extract_csrf_for("<html><body>Maintenance</body></html>", "cd_simple"),
+            None
+        );
+        // A form for a different action doesn't leak its tokens.
+        let other = r#"<form action="cd_advanced" method="post">
+            <input type='hidden' name='CSRFName' value='n' />
+            <input type='hidden' name='CSRFToken' value='t' />
+        </form>"#;
+        assert_eq!(extract_csrf_for(other, "cd_simple"), None);
+        // Right form, tokens missing.
+        let no_tokens = r#"<form action="cd_simple" method="post"><input name="keyword"></form>"#;
+        assert_eq!(extract_csrf_for(no_tokens, "cd_simple"), None);
+    }
 }

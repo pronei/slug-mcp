@@ -259,11 +259,10 @@ fn format_output(snap: &HabSnapshot) -> Result<String> {
         out.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} | {} |\n",
             label,
-            if f.date.len() > 10 {
-                &f.date[..10]
-            } else {
-                &f.date
-            },
+            // Char-safe date truncation: get(..10) yields None on a short or
+            // non-char-boundary string, degrading to the full date instead of
+            // panicking on a byte-slice.
+            f.date.get(..10).unwrap_or(&f.date),
             pn_str,
             risk,
             pd_str,
@@ -302,6 +301,113 @@ fn format_output(snap: &HabSnapshot) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ocean::erddap_client::ErddapResponse;
+    use crate::ocean::types::{HabDayForecast, HabSnapshot};
+
+    const CHARM_FIXTURE: &str = include_str!("fixtures/charm_grid.json");
+
+    fn charm_fixture_rows() -> Vec<Vec<serde_json::Value>> {
+        let resp: ErddapResponse = serde_json::from_str(CHARM_FIXTURE).expect("fixture parses");
+        resp.table.rows
+    }
+
+    #[test]
+    fn charm_fixture_has_expected_columns() {
+        let resp: ErddapResponse = serde_json::from_str(CHARM_FIXTURE).unwrap();
+        for col in [
+            "time",
+            "latitude",
+            "longitude",
+            "pseudo_nitzschia",
+            "particulate_domoic",
+            "cellular_domoic",
+            "chla_filled",
+        ] {
+            assert!(
+                resp.table.col_index(col).is_some(),
+                "column {col} missing (drift?)"
+            );
+        }
+    }
+
+    #[test]
+    fn find_nearest_valid_skips_masked_coastal_cells() {
+        // The fixture has many null (land-masked) cells and a few valid ones.
+        // find_nearest_valid must return a cell whose pseudo_nitzschia is finite.
+        let rows = charm_fixture_rows();
+        let idx = find_nearest_valid(&rows, 1, 2, Some(3), 36.96, 237.99).expect("a valid cell");
+        let pn = rows[idx].get(3).and_then(|v| v.as_f64());
+        assert!(
+            pn.is_some_and(|v| v.is_finite()),
+            "must pick a non-null cell"
+        );
+    }
+
+    #[test]
+    fn find_nearest_valid_all_null_returns_none() {
+        // Grid entirely masked → None, and the downstream (None,None,..) mapping
+        // used by fetch_one_day must not panic.
+        let rows = vec![
+            vec![
+                serde_json::json!("t"),
+                serde_json::json!(36.9),
+                serde_json::json!(238.0),
+                serde_json::Value::Null,
+            ],
+            vec![
+                serde_json::json!("t"),
+                serde_json::json!(36.95),
+                serde_json::json!(238.05),
+                serde_json::Value::Null,
+            ],
+        ];
+        assert_eq!(
+            find_nearest_valid(&rows, 1, 2, Some(3), 36.96, 238.03),
+            None
+        );
+    }
+
+    #[test]
+    fn format_output_short_date_does_not_panic() {
+        // A forecast date shorter than 10 bytes must not blow up the len()>10
+        // date-slice guard (it takes the else branch).
+        let snap = HabSnapshot {
+            query_lat: 36.96,
+            query_lon: -122.02,
+            forecasts: vec![HabDayForecast {
+                dataset: "wvcharmV3_0day".into(),
+                date: "2026".into(),
+                p_pseudo_nitzschia: Some(0.5),
+                p_particulate_domoic: None,
+                p_cellular_domoic: None,
+                chla_filled: Some(1.2),
+                risk_class: "Moderate".into(),
+            }],
+        };
+        let out = format_output(&snap).unwrap();
+        assert!(out.contains("2026"));
+    }
+
+    #[test]
+    fn format_output_non_ascii_date_does_not_panic() {
+        // RED: date byte-length > 10 but with a multibyte char straddling byte
+        // index 10 makes &f.date[..10] panic. Must degrade gracefully.
+        let snap = HabSnapshot {
+            query_lat: 36.96,
+            query_lon: -122.02,
+            forecasts: vec![HabDayForecast {
+                dataset: "wvcharmV3_0day".into(),
+                date: "2026-07-0é5T12:00:00Z".into(), // 'é' spans bytes 9..11
+                p_pseudo_nitzschia: Some(0.5),
+                p_particulate_domoic: None,
+                p_cellular_domoic: None,
+                chla_filled: None,
+                risk_class: "Moderate".into(),
+            }],
+        };
+        // Must not panic on the date slice.
+        let _ = format_output(&snap).unwrap();
+    }
 
     #[test]
     fn risk_class_thresholds() {

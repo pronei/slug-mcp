@@ -500,6 +500,8 @@ year,month,day,31N,32N,33N,34N,35N,36N,37N,38N,39N,40N,41N,42N,43N,44N,45N,46N,4
 1988,1,2,-0.248,-0.005,0.209,-0.371,-0.266,-0.28,-0.765,-0.825,-0.712,-0.977,-0.933,-0.789,-0.84,-0.659,0.035,0.057,0.011
 2026,4,28,1.444,0.699,0.987,1.235,0.825,0.664,0.799,0.698,0.999,1.08,0.736,0.982,1.058,0.642,0.547,0.291,-0.136";
 
+    const CUTI_HEAD_FIXTURE: &str = include_str!("fixtures/cuti_head.csv");
+
     #[test]
     fn parse_csv() {
         let data = parse_index_csv(SAMPLE_CSV).unwrap();
@@ -510,6 +512,81 @@ year,month,day,31N,32N,33N,34N,35N,36N,37N,38N,39N,40N,41N,42N,43N,44N,45N,46N,4
         let band_37n = lat_band_index("37N").unwrap();
         assert!((data.rows[0].values[band_37n] - (-0.316)).abs() < 0.001);
         assert!((data.rows[2].values[band_37n] - 0.799).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_cuti_head_fixture() {
+        // Real captured header + rows: 17 bands (31N..47N) intact.
+        let data = parse_index_csv(CUTI_HEAD_FIXTURE).unwrap();
+        assert!(data.rows.len() >= 10, "fixture should have ~10 rows");
+        for row in &data.rows {
+            assert_eq!(
+                row.values.len(),
+                LAT_BANDS.len(),
+                "each row must hold 17 bands"
+            );
+        }
+        let band_37n = lat_band_index("37N").unwrap();
+        assert!(data.rows[0].values[band_37n].is_finite());
+    }
+
+    #[test]
+    fn parse_bails_on_wrong_band_count() {
+        // Header truncated to fewer than the 17 bands → cols.len() < 20 → bail.
+        let csv = "year,month,day,31N,32N,33N\n2026,1,1,0.1,0.2,0.3";
+        let e = parse_index_csv(csv).err().unwrap().to_string();
+        assert!(e.contains("unexpected CSV header"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn parse_bails_on_empty_file() {
+        let e = parse_index_csv("").err().unwrap().to_string();
+        assert!(e.contains("unexpected CSV header"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn parse_bails_when_only_header_no_rows() {
+        let header =
+            "year,month,day,31N,32N,33N,34N,35N,36N,37N,38N,39N,40N,41N,42N,43N,44N,45N,46N,47N";
+        let e = parse_index_csv(header).err().unwrap().to_string();
+        assert!(e.contains("no data rows"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn parse_row_non_numeric_becomes_nan() {
+        let header =
+            "year,month,day,31N,32N,33N,34N,35N,36N,37N,38N,39N,40N,41N,42N,43N,44N,45N,46N,47N";
+        // 37N (band index 6, field index 9) is garbage text → NaN, others fine.
+        let row = "2026,1,1,0.1,0.2,0.3,0.4,0.5,0.6,oops,0.8,0.9,1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7";
+        let data = parse_index_csv(&format!("{header}\n{row}")).unwrap();
+        assert_eq!(data.rows.len(), 1);
+        let band_37n = lat_band_index("37N").unwrap();
+        assert!(data.rows[0].values[band_37n].is_nan(), "non-numeric → NaN");
+        assert_eq!(data.rows[0].values.len(), LAT_BANDS.len());
+    }
+
+    #[test]
+    fn parse_index_csv_never_emits_row_with_wrong_value_count() {
+        // Invariant guarding values[band_idx] indexing elsewhere: every emitted
+        // row holds exactly 17 values, regardless of trailing extra columns or
+        // short rows (short rows are dropped, not emitted with a wrong width).
+        let header =
+            "year,month,day,31N,32N,33N,34N,35N,36N,37N,38N,39N,40N,41N,42N,43N,44N,45N,46N,47N";
+        let normal = "2026,1,1,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7";
+        // 23 fields (extra trailing columns beyond the 20-wide schema).
+        let extra = "2026,1,2,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7,9.9,8.8,7.7";
+        // Too few fields — must be skipped entirely.
+        let short = "2026,1,3,0.1,0.2";
+        let csv = format!("{header}\n{normal}\n{extra}\n{short}");
+        let data = parse_index_csv(&csv).unwrap();
+        assert_eq!(data.rows.len(), 2, "short row must be dropped");
+        for row in &data.rows {
+            assert_eq!(
+                row.values.len(),
+                LAT_BANDS.len(),
+                "invariant: exactly 17 values per row"
+            );
+        }
     }
 
     #[test]

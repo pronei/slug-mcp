@@ -178,7 +178,14 @@ async fn fetch_surface(erddap: &ErddapClient, time_min: &str) -> Result<SurfaceD
     .with_qc(vec!["sea_water_temperature".into()]);
 
     let resp = erddap.tabledap(SERVER, DATASET, query).await?;
-    let t = &resp.table;
+    parse_surface(&resp.table)
+}
+
+/// Pure: extract surface rows from an already-fetched ERDDAP table. Split out of
+/// the fetch path so parse/QC logic is testable without network. Rows whose
+/// time/z/temp are missing or non-numeric are dropped (filter_map short-circuit);
+/// if that leaves nothing, bail friendly instead of returning an empty snapshot.
+fn parse_surface(t: &ErddapTable) -> Result<SurfaceData> {
     let (i_time, i_z, i_temp) = resolve_cols(t, "time", "z", "sea_water_temperature")?;
 
     let rows: Vec<SurfaceRow> = t
@@ -340,8 +347,8 @@ fn format_snapshot(
             "- **{}-hour trend**: {:+.2}°C ({} → {})\n",
             hours.min(surface.rows.len() as u32),
             delta,
-            &oldest.time[11..16],
-            &latest.time[11..16],
+            hhmm(&oldest.time),
+            hhmm(&latest.time),
         ));
     }
 
@@ -459,6 +466,14 @@ fn equatorward_component(speed_ms: f64, from_deg: f64) -> f64 {
     speed_ms * (wind_from_rad - coast_angle_rad).cos()
 }
 
+/// Extract HH:MM from an RFC3339-ish timestamp for compact trend display.
+/// Network-derived strings can be short or contain multi-byte chars, so this
+/// degrades to the raw string rather than byte-slicing (which would panic on a
+/// short or non-char-boundary input).
+fn hhmm(time: &str) -> &str {
+    time.get(11..16).unwrap_or(time)
+}
+
 fn compute_latency(timestamp: &str) -> f64 {
     chrono::DateTime::parse_from_rfc3339(timestamp)
         .map(|t| {
@@ -471,6 +486,93 @@ fn compute_latency(timestamp: &str) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ocean::erddap_client::{ErddapResponse, ErddapTable};
+
+    const M1_SURFACE_FIXTURE: &str = include_str!("fixtures/erddap_m1_surface.json");
+
+    fn m1_fixture_table() -> ErddapTable {
+        let resp: ErddapResponse =
+            serde_json::from_str(M1_SURFACE_FIXTURE).expect("fixture parses");
+        resp.table
+    }
+
+    fn table(cols: &[&str], rows: Vec<Vec<serde_json::Value>>) -> ErddapTable {
+        ErddapTable {
+            column_names: cols.iter().map(|c| c.to_string()).collect(),
+            column_types: cols.iter().map(|_| "double".to_string()).collect(),
+            column_units: cols.iter().map(|_| None).collect(),
+            rows,
+        }
+    }
+
+    #[test]
+    fn parse_surface_from_fixture() {
+        let t = m1_fixture_table();
+        for col in ["time", "z", "sea_water_temperature"] {
+            assert!(t.col_index(col).is_some(), "column {col} missing (drift?)");
+        }
+        let surface = parse_surface(&t).unwrap();
+        assert_eq!(surface.rows.len(), 6);
+        assert_eq!(surface.rows.first().unwrap().time, "2026-07-05T14:00:00Z");
+        assert_eq!(surface.rows.last().unwrap().time, "2026-07-07T11:00:00Z");
+        assert!((surface.rows.last().unwrap().temp_c - 15.496_101).abs() < 1e-4);
+    }
+
+    #[test]
+    fn parse_surface_then_format_renders_trend() {
+        let surface = parse_surface(&m1_fixture_table()).unwrap();
+        let out = format_snapshot(&surface, None, None, 72).unwrap();
+        assert!(out.contains("M1 Mooring"));
+        assert!(
+            out.contains("trend"),
+            "multi-row fixture should render a trend"
+        );
+        assert!(out.contains("14:00 → 11:00"), "hhmm window should render");
+    }
+
+    #[test]
+    fn parse_surface_empty_rows_bails() {
+        let t = table(&["time", "z", "sea_water_temperature"], vec![]);
+        let e = parse_surface(&t).err().unwrap().to_string();
+        assert!(e.contains("no surface temperature"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn parse_surface_all_qc_fail_bails() {
+        // Rows present but every temperature is null (QC-scrubbed). filter_map
+        // drops them all → friendly bail, not an empty/garbage snapshot.
+        let t = table(
+            &["time", "z", "sea_water_temperature"],
+            vec![
+                vec![
+                    serde_json::json!("2026-07-05T14:00:00Z"),
+                    serde_json::json!(-1.0),
+                    serde_json::Value::Null,
+                ],
+                vec![
+                    serde_json::json!("2026-07-05T15:00:00Z"),
+                    serde_json::json!(-1.0),
+                    serde_json::json!("NaN"),
+                ],
+            ],
+        );
+        let e = parse_surface(&t).err().unwrap().to_string();
+        assert!(e.contains("no surface temperature"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn parse_surface_missing_column_errors() {
+        // Simulated schema drift: temperature column renamed/absent.
+        let t = table(
+            &["time", "z"],
+            vec![vec![
+                serde_json::json!("2026-07-05T14:00:00Z"),
+                serde_json::json!(-1.0),
+            ]],
+        );
+        let e = parse_surface(&t).err().unwrap().to_string();
+        assert!(e.contains("missing column"), "unexpected: {e}");
+    }
 
     #[test]
     fn equatorward_nw_wind_is_positive() {
@@ -514,6 +616,73 @@ mod tests {
         assert!(out.contains("M1 Mooring"), "missing header");
         assert!(out.contains("13.50°C"), "missing temperature");
         assert!(out.contains("-0.50°C"), "missing trend");
+    }
+
+    #[test]
+    fn format_snapshot_short_time_does_not_panic() {
+        // RED: network-derived ERDDAP time strings are only length-checked by
+        // rows.len()>1, not by byte length. A short string like "2026" made the
+        // trend line's time[11..16] slice panic. Must degrade to the raw string.
+        let surface = SurfaceData {
+            rows: vec![
+                SurfaceRow {
+                    time: "2026".into(),
+                    z: -1.0,
+                    temp_c: 14.0,
+                },
+                SurfaceRow {
+                    time: "2026".into(),
+                    z: -1.0,
+                    temp_c: 13.5,
+                },
+            ],
+        };
+        let out = format_snapshot(&surface, None, None, 24).unwrap();
+        assert!(out.contains("trend"), "trend line should still render");
+        assert!(
+            out.contains("2026"),
+            "should degrade to the raw time string"
+        );
+    }
+
+    #[test]
+    fn format_snapshot_non_ascii_boundary_time_does_not_panic() {
+        // A multi-byte char straddling byte index 11..16 would make a naive
+        // slice panic on a non-char-boundary. get(..) returns None safely.
+        let surface = SurfaceData {
+            rows: vec![
+                SurfaceRow {
+                    time: "2026-04-28Tµµµµµ".into(),
+                    z: -1.0,
+                    temp_c: 14.0,
+                },
+                SurfaceRow {
+                    time: "2026-04-28Tµµµµµ".into(),
+                    z: -1.0,
+                    temp_c: 13.5,
+                },
+            ],
+        };
+        let out = format_snapshot(&surface, None, None, 24).unwrap();
+        assert!(out.contains("trend"), "trend line should still render");
+    }
+
+    #[test]
+    fn format_snapshot_single_row_has_no_trend() {
+        // Characterization: format_snapshot's latest/oldest .last()/.first()
+        // unwraps are safe because callers (fetch_surface) bail on empty rows.
+        // With exactly one row the len()>1 trend branch is skipped and first ==
+        // last — this locks that guard so a refactor can't reintroduce a panic.
+        let surface = SurfaceData {
+            rows: vec![SurfaceRow {
+                time: "2026-04-28T14:00:00Z".into(),
+                z: -1.0,
+                temp_c: 13.5,
+            }],
+        };
+        let out = format_snapshot(&surface, None, None, 24).unwrap();
+        assert!(out.contains("13.50°C"), "missing temperature");
+        assert!(!out.contains("trend"), "single row must not render a trend");
     }
 
     #[test]

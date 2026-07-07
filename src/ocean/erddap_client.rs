@@ -428,4 +428,56 @@ mod tests {
 }"#;
         assert!(extract_erddap_message(body).contains("Not Found"));
     }
+
+    // A real ERDDAP 404 body captured live from edu_ucsc_scwharf1 (station
+    // data-lagged past the query window). Locks the "no matching results"
+    // detection the tabledap error path keys on.
+    const REAL_404_BODY: &str = "Error {\n    code=404;\n    message=\"Not Found: Your query produced no matching results. (time>=2026-07-05T13:50:00Z is outside of the variable's actual_range: 2013-02-14T17:15:00Z to 2026-06-03T19:10:00Z)\";\n}";
+
+    #[test]
+    fn no_matching_results_body_is_detected() {
+        // These are the exact substrings tabledap() branches on to convert an
+        // HTTP error into the friendly "no data / dataset lag" message.
+        assert!(
+            REAL_404_BODY.contains("no matching results")
+                || REAL_404_BODY.contains("outside of the variable"),
+            "detection substrings drifted"
+        );
+        let msg = extract_erddap_message(REAL_404_BODY);
+        assert!(msg.contains("no matching results"), "got: {msg}");
+        assert!(
+            msg.contains("actual_range"),
+            "message should be extracted whole"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_missing_table_key() {
+        // A 200 body that is valid JSON but lacks the "table" object.
+        let err = serde_json::from_str::<ErddapResponse>(r#"{"notTable":{}}"#);
+        assert!(err.is_err(), "missing table key must fail to deserialize");
+    }
+
+    #[test]
+    fn parse_rejects_truncated_json() {
+        let truncated = r#"{"table":{"columnNames":["time"],"columnTypes":["String"],"#;
+        assert!(serde_json::from_str::<ErddapResponse>(truncated).is_err());
+    }
+
+    #[test]
+    fn accessors_out_of_bounds_return_none() {
+        let table = ErddapTable {
+            column_names: vec!["time".into(), "temp".into()],
+            column_types: vec!["String".into(), "double".into()],
+            column_units: vec![None, None],
+            rows: vec![vec![serde_json::json!("2026-07-05T00:00:00Z")]], // short row: 1 of 2
+        };
+        // Row exists but the column index is beyond the row's actual width.
+        assert_eq!(table.get_f64(0, 1), None, "short row must not panic");
+        assert_eq!(table.get_str(0, 5), None, "col out of range → None");
+        assert_eq!(table.get_f64(9, 0), None, "row out of range → None");
+        // Non-numeric where f64 expected degrades to None.
+        assert_eq!(table.get_f64(0, 0), None, "string cell as_f64 → None");
+        assert_eq!(table.get_str(0, 0), Some("2026-07-05T00:00:00Z"));
+    }
 }

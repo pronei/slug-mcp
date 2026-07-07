@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::util::now_pacific;
 
-use super::erddap_client::{ErddapClient, grid_selector_stride};
+use super::erddap_client::{ErddapClient, ErddapResponse, grid_selector_stride};
 use super::types::SstSnapshot;
 
 const SERVER: &str = "https://coastwatch.pfeg.noaa.gov/erddap";
@@ -71,6 +71,18 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &SstRequest) -> Result
     let sst = sst_res?;
     let anom = anom_res.ok();
 
+    sst_snapshot(&sst, anom.as_ref(), stride)
+}
+
+/// Pure: reduce already-fetched MUR SST (and optional anomaly) grid tables into
+/// a typed snapshot. Split out of the fetch path so aggregation, the NaN filter,
+/// the frontal-gradient integration, and the empty/all-NaN bails are testable
+/// without network.
+fn sst_snapshot(
+    sst: &ErddapResponse,
+    anom: Option<&ErddapResponse>,
+    stride: usize,
+) -> Result<SstSnapshot> {
     if sst.table.rows.is_empty() {
         bail!("MUR SST returned no data for the requested area");
     }
@@ -105,7 +117,7 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &SstRequest) -> Result
 
     let max_grad = compute_max_gradient(&sst.table.rows, i_lat, i_lon, i_sst, stride);
 
-    let mean_anom = if let Some(ref a) = anom {
+    let mean_anom = if let Some(a) = anom {
         let i_a = a.table.col_index("sstAnom").unwrap_or(3);
         let anom_vals: Vec<f64> = a
             .table
@@ -330,6 +342,89 @@ fn compute_max_gradient(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ocean::erddap_client::ErddapTable;
+
+    const SST_FIXTURE: &str = include_str!("fixtures/sst_grid_small.json");
+
+    fn sst_fixture() -> ErddapResponse {
+        serde_json::from_str(SST_FIXTURE).expect("fixture parses")
+    }
+
+    fn response(cols: &[&str], rows: Vec<Vec<serde_json::Value>>) -> ErddapResponse {
+        ErddapResponse {
+            table: ErddapTable {
+                column_names: cols.iter().map(|c| c.to_string()).collect(),
+                column_types: cols.iter().map(|_| "double".to_string()).collect(),
+                column_units: cols.iter().map(|_| None).collect(),
+                rows,
+            },
+        }
+    }
+
+    #[test]
+    fn sst_snapshot_from_fixture() {
+        let resp = sst_fixture();
+        for col in ["time", "latitude", "longitude", "analysed_sst"] {
+            assert!(
+                resp.table.col_index(col).is_some(),
+                "column {col} missing (drift?)"
+            );
+        }
+        let snap = sst_snapshot(&resp, None, 40).unwrap();
+        assert_eq!(snap.n_cells, 4);
+        assert_eq!(snap.timestamp_utc, "2026-07-06T09:00:00Z");
+        assert!(snap.mean_sst_c >= snap.min_sst_c && snap.mean_sst_c <= snap.max_sst_c);
+        assert!((snap.min_sst_c - 15.727).abs() < 1e-6);
+        assert!((snap.max_sst_c - 16.153).abs() < 1e-6);
+        assert!(snap.mean_anom_c.is_none(), "no anomaly table passed");
+    }
+
+    #[test]
+    fn sst_snapshot_with_anomaly() {
+        let sst = sst_fixture();
+        let anom = response(
+            &["time", "latitude", "longitude", "sstAnom"],
+            vec![
+                vec![
+                    serde_json::json!("2026-07-05T09:00:00Z"),
+                    serde_json::json!(36.5),
+                    serde_json::json!(-122.5),
+                    serde_json::json!(1.0),
+                ],
+                vec![
+                    serde_json::json!("2026-07-05T09:00:00Z"),
+                    serde_json::json!(36.9),
+                    serde_json::json!(-122.1),
+                    serde_json::json!(2.0),
+                ],
+            ],
+        );
+        let snap = sst_snapshot(&sst, Some(&anom), 40).unwrap();
+        assert!((snap.mean_anom_c.unwrap() - 1.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sst_snapshot_empty_bails() {
+        let resp = response(&["time", "latitude", "longitude", "analysed_sst"], vec![]);
+        let e = sst_snapshot(&resp, None, 2).unwrap_err().to_string();
+        assert!(e.contains("no data"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn sst_snapshot_all_nan_bails() {
+        // analysed_sst present but non-numeric on every row → no finite cells.
+        let resp = response(
+            &["time", "latitude", "longitude", "analysed_sst"],
+            vec![vec![
+                serde_json::json!("2026-07-06T09:00:00Z"),
+                serde_json::json!(36.5),
+                serde_json::json!(-122.5),
+                serde_json::Value::Null,
+            ]],
+        );
+        let e = sst_snapshot(&resp, None, 2).unwrap_err().to_string();
+        assert!(e.contains("all cells were NaN"), "unexpected: {e}");
+    }
 
     #[test]
     fn gradient_computation() {

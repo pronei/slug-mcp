@@ -1,0 +1,48 @@
+{
+  "table": {
+    "columnNames": [
+      "time",
+      "latitude",
+      "longitude",
+      "analysed_sst"
+    ],
+    "columnTypes": [
+      "String",
+      "float",
+      "float",
+      "double"
+    ],
+    "columnUnits": [
+      "UTC",
+      "degrees_north",
+      "degrees_east",
+      "degree_C"
+    ],
+    "rows": [
+      [
+        "2026-07-06T09:00:00Z",
+        36.5,
+        -122.5,
+        15.859
+      ],
+      [
+        "2026-07-06T09:00:00Z",
+        36.5,
+        -122.1,
+        16.049
+      ],
+      [
+        "2026-07-06T09:00:00Z",
+        36.9,
+        -122.5,
+        15.727
+      ],
+      [
+        "2026-07-06T09:00:00Z",
+        36.9,
+        -122.1,
+        16.153
+      ]
+    ]
+  }
+}

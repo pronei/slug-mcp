@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::util::now_pacific;
 
-use super::erddap_client::{ErddapClient, TabledapQuery};
+use super::erddap_client::{ErddapClient, ErddapTable, TabledapQuery};
 use super::types::WharfSnapshot;
 
 const SERVER: &str = "https://erddap.sensors.axds.co/erddap";
@@ -56,8 +56,14 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &WharfRequest) -> Resu
     ]);
 
     let resp = erddap.tabledap(SERVER, DATASET, query).await?;
-    let t = &resp.table;
+    wharf_snapshot(&resp.table)
+}
 
+/// Pure: build a `WharfSnapshot` from an already-fetched ERDDAP table. Split out
+/// of the fetch path so parsing/QC logic is testable without network. Bails on
+/// zero rows; tolerates missing columns and short/non-numeric rows (fields
+/// degrade to `None` via `col_index` + `get`, never panicking).
+fn wharf_snapshot(t: &ErddapTable) -> Result<WharfSnapshot> {
     if t.rows.is_empty() {
         bail!("SC Wharf returned no data for the requested period");
     }
@@ -129,8 +135,12 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &WharfRequest) -> Resu
     ]);
 
     let resp = erddap.tabledap(SERVER, DATASET, query).await?;
-    let t = &resp.table;
+    format_wharf(&resp.table, hours)
+}
 
+/// Pure: render the wharf markdown from an already-fetched ERDDAP table. Split
+/// out of the fetch path so formatting/trend logic is testable without network.
+fn format_wharf(t: &ErddapTable, hours: u32) -> Result<String> {
     if t.rows.is_empty() {
         bail!("SC Wharf returned no data for the requested period");
     }
@@ -252,8 +262,143 @@ pub async fn fetch_and_format(erddap: &ErddapClient, req: &WharfRequest) -> Resu
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::ocean::erddap_client::ErddapResponse;
+
+    const WHARF_FIXTURE: &str = include_str!("fixtures/erddap_table_wharf.json");
+
+    fn fixture_table() -> ErddapTable {
+        let resp: ErddapResponse = serde_json::from_str(WHARF_FIXTURE).expect("fixture parses");
+        resp.table
+    }
+
+    // Build a minimal table with the given column names and JSON rows.
+    fn table(cols: &[&str], rows: Vec<Vec<serde_json::Value>>) -> ErddapTable {
+        ErddapTable {
+            column_names: cols.iter().map(|c| c.to_string()).collect(),
+            column_types: cols.iter().map(|_| "double".to_string()).collect(),
+            column_units: cols.iter().map(|_| None).collect(),
+            rows,
+        }
+    }
+
     #[test]
-    fn ph_annotation() {
-        assert!(super::fetch_and_format as *const () as usize > 0); // module compiles
+    fn fixture_parses_with_expected_columns() {
+        let t = fixture_table();
+        for col in [
+            "time",
+            "sea_water_temperature",
+            "sea_water_practical_salinity",
+            "sea_water_ph_reported_on_total_scale",
+            "mass_concentration_of_chlorophyll_in_sea_water",
+            "mass_concentration_of_oxygen_in_sea_water",
+            "fractional_saturation_of_oxygen_in_sea_water",
+            "sea_water_turbidity",
+        ] {
+            assert!(t.col_index(col).is_some(), "column {col} missing (drift?)");
+        }
+        assert_eq!(t.rows.len(), 5);
+    }
+
+    #[test]
+    fn snapshot_from_fixture_populates_last_row() {
+        let snap = wharf_snapshot(&fixture_table()).unwrap();
+        assert_eq!(snap.timestamp_utc, "2026-06-03T19:10:00Z");
+        assert!((snap.temp_c.unwrap() - 15.46).abs() < 1e-6);
+        assert!((snap.ph.unwrap() - 7.94).abs() < 1e-6);
+        assert!((snap.salinity_psu.unwrap() - 2.45).abs() < 1e-6);
+        assert!((snap.turbidity_ntu.unwrap() - 17.72).abs() < 1e-6);
+    }
+
+    #[test]
+    fn format_from_fixture_renders_readings_and_trend() {
+        let out = format_wharf(&fixture_table(), 6).unwrap();
+        assert!(out.contains("Santa Cruz Municipal Wharf"), "missing header");
+        assert!(out.contains("°C)"), "missing temperature");
+        assert!(out.contains("Salinity"), "missing salinity");
+        assert!(out.contains("pH"), "missing pH");
+        // 5 rows > 3 → trend section renders
+        assert!(out.contains("Trend (5 readings"), "missing trend section");
+    }
+
+    #[test]
+    fn empty_rows_bail_friendly() {
+        let t = table(&["time", "sea_water_temperature"], vec![]);
+        let e = wharf_snapshot(&t).unwrap_err().to_string();
+        assert!(e.contains("no data"), "unexpected: {e}");
+        let e2 = format_wharf(&t, 6).unwrap_err().to_string();
+        assert!(e2.contains("no data"), "unexpected: {e2}");
+    }
+
+    #[test]
+    fn short_row_does_not_panic() {
+        // Row has fewer values than columnNames → get(idx) is None for the
+        // missing trailing columns; must degrade to None, never panic.
+        let t = table(
+            &[
+                "time",
+                "sea_water_temperature",
+                "sea_water_ph_reported_on_total_scale",
+                "sea_water_turbidity",
+            ],
+            vec![vec![
+                serde_json::json!("2026-06-03T19:10:00Z"),
+                serde_json::json!(15.4),
+            ]],
+        );
+        let snap = wharf_snapshot(&t).unwrap();
+        assert!((snap.temp_c.unwrap() - 15.4).abs() < 1e-6);
+        assert!(snap.ph.is_none(), "missing trailing col must be None");
+        assert!(snap.turbidity_ntu.is_none());
+        // format path must not panic either
+        assert!(format_wharf(&t, 6).is_ok());
+    }
+
+    #[test]
+    fn non_numeric_where_f64_expected_is_none() {
+        let t = table(
+            &["time", "sea_water_temperature"],
+            vec![vec![
+                serde_json::json!("2026-06-03T19:10:00Z"),
+                serde_json::json!("not-a-number"),
+            ]],
+        );
+        let snap = wharf_snapshot(&t).unwrap();
+        assert!(snap.temp_c.is_none(), "string temp must parse to None");
+        assert!(format_wharf(&t, 6).is_ok());
+    }
+
+    #[test]
+    fn all_null_readings_bail_free_snapshot() {
+        // QC-scrubbed / all-null values: rows exist but every measurement is
+        // null. Must return a friendly snapshot (timestamp only), not panic.
+        let t = table(
+            &[
+                "time",
+                "sea_water_temperature",
+                "sea_water_ph_reported_on_total_scale",
+            ],
+            vec![vec![
+                serde_json::json!("2026-06-03T19:10:00Z"),
+                serde_json::Value::Null,
+                serde_json::Value::Null,
+            ]],
+        );
+        let snap = wharf_snapshot(&t).unwrap();
+        assert_eq!(snap.timestamp_utc, "2026-06-03T19:10:00Z");
+        assert!(snap.temp_c.is_none() && snap.ph.is_none());
+        assert!(format_wharf(&t, 6).is_ok());
+    }
+
+    #[test]
+    fn missing_time_column_degrades_to_unknown() {
+        // col_index("time") falls back to index 0; if that value isn't a
+        // string the timestamp degrades to "unknown" without panicking.
+        let t = table(
+            &["sea_water_temperature"],
+            vec![vec![serde_json::json!(15.4)]],
+        );
+        let snap = wharf_snapshot(&t).unwrap();
+        assert_eq!(snap.timestamp_utc, "unknown");
     }
 }

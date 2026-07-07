@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::util::now_pacific;
 
-use super::erddap_client::{ErddapClient, grid_selector};
+use super::erddap_client::{ErddapClient, ErddapTable, grid_selector};
 use super::types::HfrSnapshot as HfrSnapTyped;
 
 const SERVER: &str = "https://coastwatch.pfeg.noaa.gov/erddap";
@@ -85,8 +85,13 @@ async fn fetch_typed_uncached(erddap: &ErddapClient, req: &HfrRequest) -> Result
         }
         result.ok_or_else(|| anyhow::anyhow!("HF Radar: no valid data in the last 6 hours"))?
     };
-    let t = &resp.table;
+    hfr_snapshot(&resp.table, res)
+}
 
+/// Pure: reduce an already-fetched HFR grid table into a typed snapshot. Split
+/// out of the fetch path so the QC gross-range filter (|u|,|v| < 2.0), the
+/// mean/divergence math, and the all-NaN bail are testable without network.
+fn hfr_snapshot(t: &ErddapTable, res: &str) -> Result<HfrSnapTyped> {
     if t.rows.is_empty() {
         bail!("HF Radar returned no data for the requested area");
     }
@@ -365,6 +370,100 @@ struct Cell {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ocean::erddap_client::{ErddapResponse, ErddapTable};
+
+    const HFR_FIXTURE: &str = include_str!("fixtures/hfr_grid_small.json");
+
+    fn hfr_fixture_table() -> ErddapTable {
+        let resp: ErddapResponse = serde_json::from_str(HFR_FIXTURE).expect("fixture parses");
+        resp.table
+    }
+
+    fn table(cols: &[&str], rows: Vec<Vec<serde_json::Value>>) -> ErddapTable {
+        ErddapTable {
+            column_names: cols.iter().map(|c| c.to_string()).collect(),
+            column_types: cols.iter().map(|_| "double".to_string()).collect(),
+            column_units: cols.iter().map(|_| None).collect(),
+            rows,
+        }
+    }
+
+    #[test]
+    fn hfr_snapshot_from_fixture() {
+        let t = hfr_fixture_table();
+        for col in ["time", "latitude", "longitude", "water_u", "water_v"] {
+            assert!(t.col_index(col).is_some(), "column {col} missing (drift?)");
+        }
+        let snap = hfr_snapshot(&t, "6km").unwrap();
+        assert_eq!(snap.n_cells_total, 9);
+        assert_eq!(snap.n_cells_valid, 9);
+        assert!(snap.mean_speed_ms.is_finite() && snap.mean_speed_ms >= 0.0);
+        assert!(snap.flow_direction_deg >= 0.0 && snap.flow_direction_deg < 360.0);
+        assert_eq!(snap.timestamp_utc, "2026-07-07T12:00:00Z");
+    }
+
+    #[test]
+    fn hfr_snapshot_empty_rows_bails() {
+        let t = table(
+            &["time", "latitude", "longitude", "water_u", "water_v"],
+            vec![],
+        );
+        let e = hfr_snapshot(&t, "6km").err().unwrap().to_string();
+        assert!(e.contains("no data"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn hfr_snapshot_all_nan_bails() {
+        // All velocity cells null (or QC gross-range fail) → no valid cells →
+        // friendly bail, not a divide-by-zero panic on n_valid.
+        let t = table(
+            &["time", "latitude", "longitude", "water_u", "water_v"],
+            vec![
+                vec![
+                    serde_json::json!("2026-07-07T12:00:00Z"),
+                    serde_json::json!(36.8),
+                    serde_json::json!(-122.0),
+                    serde_json::Value::Null,
+                    serde_json::Value::Null,
+                ],
+                vec![
+                    serde_json::json!("2026-07-07T12:00:00Z"),
+                    serde_json::json!(36.85),
+                    serde_json::json!(-122.0),
+                    serde_json::json!(99.0), // gross-range fail (|u| >= 2.0)
+                    serde_json::json!(0.1),
+                ],
+            ],
+        );
+        let e = hfr_snapshot(&t, "6km").err().unwrap().to_string();
+        assert!(e.contains("all cells were NaN"), "unexpected: {e}");
+    }
+
+    #[test]
+    fn hfr_snapshot_gross_range_filter_drops_bad_cell() {
+        let t = table(
+            &["time", "latitude", "longitude", "water_u", "water_v"],
+            vec![
+                vec![
+                    serde_json::json!("2026-07-07T12:00:00Z"),
+                    serde_json::json!(36.8),
+                    serde_json::json!(-122.0),
+                    serde_json::json!(0.1),
+                    serde_json::json!(0.1),
+                ],
+                vec![
+                    serde_json::json!("2026-07-07T12:00:00Z"),
+                    serde_json::json!(36.85),
+                    serde_json::json!(-122.0),
+                    serde_json::json!(5.0), // filtered
+                    serde_json::json!(0.1),
+                ],
+            ],
+        );
+        let snap = hfr_snapshot(&t, "6km").unwrap();
+        assert_eq!(snap.n_cells_total, 2);
+        assert_eq!(snap.n_cells_valid, 1, "gross-range cell must be dropped");
+    }
 
     #[test]
     fn divergence_uniform_field() {

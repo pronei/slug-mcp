@@ -820,6 +820,20 @@ pub async fn research_snapshot(
 mod tests {
     use super::*;
 
+    fn empty_snapshot() -> FullSnapshot {
+        FullSnapshot {
+            upwelling: None,
+            m1: None,
+            wharf: None,
+            hab: None,
+            sst_snap: None,
+            hfr_snap: None,
+            birds: None,
+            inat: Vec::new(),
+            partial_failures: Vec::new(),
+        }
+    }
+
     #[test]
     fn checksum_deterministic() {
         let vals = vec![1.0, 2.5, 3.625];
@@ -827,6 +841,70 @@ mod tests {
         let c2 = compute_checksum(&vals);
         assert_eq!(c1, c2);
         assert!(c1.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn empty_snapshot_checksum_is_stable() {
+        // An all-unavailable snapshot must still produce a stable, well-formed
+        // checksum (empty input → fixed hash), never a panic.
+        assert!(collect_f64s(&empty_snapshot()).is_empty());
+        let c1 = compute_checksum(&collect_f64s(&empty_snapshot()));
+        let c2 = compute_checksum(&collect_f64s(&empty_snapshot()));
+        assert_eq!(c1, c2);
+        assert!(c1.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn collect_f64s_excludes_non_finite() {
+        // NaN / ±inf values must never enter the checksum payload — otherwise
+        // "{:.6}" would emit "NaN"/"inf" and poison reproducibility. Every
+        // Option/array field in collect_f64s is guarded by is_finite().
+        let mut snap = empty_snapshot();
+        snap.upwelling = Some(UpwellingSnapshot {
+            lat_band: "37N".into(),
+            data_date: "2026-07-05".into(),
+            today_cuti: f64::NAN,
+            today_beuti: f64::INFINITY,
+            climatology_cuti: 1.5,
+            climatology_beuti: f64::NEG_INFINITY,
+            anomaly_cuti: 0.25,
+            z_cuti: f64::NAN,
+            rolling_5d_cuti: 0.5,
+            rolling_5d_beuti: 0.75,
+            days_above_threshold_30d: 10,
+            regime: "Active".into(),
+        });
+        snap.sst_snap = Some(SstSnapshot {
+            timestamp_utc: "t".into(),
+            mean_sst_c: f64::NAN,
+            min_sst_c: 14.0,
+            max_sst_c: 16.0,
+            mean_anom_c: Some(f64::INFINITY),
+            max_grad_c_per_km: Some(0.4),
+            n_cells: 4,
+        });
+        snap.m1 = Some(M1Snapshot {
+            timestamp_utc: "t".into(),
+            latency_hours: 3.0,
+            surface_temp_c: Some(f64::NAN),
+            wind_speed_ms: Some(5.0),
+            wind_dir_from_deg: None,
+            equatorward_wind_ms: Some(f64::NEG_INFINITY),
+            profile: Vec::new(),
+            stratification_index: None,
+        });
+        let vals = collect_f64s(&snap);
+        assert!(
+            vals.iter().all(|v| v.is_finite()),
+            "no NaN/inf may enter checksum inputs"
+        );
+        // Finite values are retained.
+        assert!(vals.contains(&1.5), "finite climatology_cuti kept");
+        assert!(vals.contains(&0.25) && vals.contains(&0.5) && vals.contains(&0.75));
+        assert!(vals.contains(&14.0) && vals.contains(&16.0) && vals.contains(&0.4));
+        assert!(vals.contains(&5.0), "finite wind speed kept");
+        // The checksum over filtered values is well-formed.
+        assert!(compute_checksum(&vals).starts_with("sha256:"));
     }
 
     #[test]

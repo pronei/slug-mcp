@@ -170,7 +170,7 @@ fn build_query(category: &str, lat: f64, lon: f64, radius: u32, limit: u32) -> S
             "[out:json][timeout:15];\
              (way[\"highway\"~\"path|footway\"](around:{radius},{lat},{lon});\
              relation[\"route\"=\"hiking\"](around:{radius},{lat},{lon}););\
-             out tags center {limit};",
+             out center {limit};",
             radius = radius,
             lat = lat,
             lon = lon,
@@ -179,7 +179,7 @@ fn build_query(category: &str, lat: f64, lon: f64, radius: u32, limit: u32) -> S
         "peaks" => format!(
             "[out:json][timeout:15];\
              node[\"natural\"=\"peak\"](around:{radius},{lat},{lon});\
-             out tags {limit};",
+             out center {limit};",
             radius = radius,
             lat = lat,
             lon = lon,
@@ -188,7 +188,7 @@ fn build_query(category: &str, lat: f64, lon: f64, radius: u32, limit: u32) -> S
         "viewpoints" => format!(
             "[out:json][timeout:15];\
              node[\"tourism\"=\"viewpoint\"](around:{radius},{lat},{lon});\
-             out tags {limit};",
+             out center {limit};",
             radius = radius,
             lat = lat,
             lon = lon,
@@ -198,7 +198,7 @@ fn build_query(category: &str, lat: f64, lon: f64, radius: u32, limit: u32) -> S
             "[out:json][timeout:15];\
              (node[\"amenity\"=\"drinking_water\"](around:{radius},{lat},{lon});\
              node[\"amenity\"=\"toilets\"](around:{radius},{lat},{lon}););\
-             out tags {limit};",
+             out center {limit};",
             radius = radius,
             lat = lat,
             lon = lon,
@@ -208,7 +208,7 @@ fn build_query(category: &str, lat: f64, lon: f64, radius: u32, limit: u32) -> S
             "[out:json][timeout:15];\
              (node[\"amenity\"=\"parking\"](around:{radius},{lat},{lon});\
              way[\"amenity\"=\"parking\"](around:{radius},{lat},{lon}););\
-             out tags center {limit};",
+             out center {limit};",
             radius = radius,
             lat = lat,
             lon = lon,
@@ -744,5 +744,26 @@ mod tests {
         let body = r#"{"elements":[{"type":"node","id":42,"tags":{"natural":"peak","name":"Ghost Peak"}}]}"#;
         let features = parse_features(body, "peaks", 36.9741, -122.0308, 20).unwrap();
         assert!(features.is_empty());
+    }
+
+    // Node-only categories used `out tags`, which per Overpass semantics
+    // prints ids and tags WITHOUT node coordinates — element_to_feature then
+    // dropped every result, so peaks/viewpoints/water_restrooms always
+    // returned zero features (and node-parking silently vanished). `out
+    // center` is body verbosity plus way-centers: nodes keep lat/lon, ways
+    // get a center. Every category must use it.
+    #[test]
+    fn build_query_uses_center_verbosity_so_nodes_keep_coordinates() {
+        for cat in VALID_CATEGORIES {
+            let q = build_query(cat, 36.9741, -122.0308, 5000, 20);
+            assert!(
+                q.contains("out center"),
+                "category {cat} query must use `out center`: {q}"
+            );
+            assert!(
+                !q.contains("out tags"),
+                "category {cat} query still uses coordinate-stripping `out tags`: {q}"
+            );
+        }
     }
 }

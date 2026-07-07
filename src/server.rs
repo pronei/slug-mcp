@@ -1312,7 +1312,8 @@ impl ServerHandler for SlugMcpServer {
              classroom search, real-time bus arrival predictions via GTFS-RT, \
              transit service alerts, system-wide SC Metro service alerts, \
              live vehicle positions, and per-route delay stats, degree \
-             requirements lookup, and degree progress tracking. Santa Cruz \
+             requirements lookup, degree progress tracking, and session-aware \
+             Summer Session academic deadlines. Santa Cruz \
              city/county services: 7-day NOAA NWS weather forecasts and \
              active alerts (coastal CAZ529 + mountains CAZ512), CHP incidents \
              and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101, \

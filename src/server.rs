@@ -36,7 +36,7 @@ use crate::events::{
 };
 use crate::fire::{FireDetectionsRequest, FireService};
 use crate::library::{LibraryService, StudyRoomAvailabilityRequest};
-use crate::marine::{MarineForecastRequest, MarineService, SurfConditionsRequest};
+use crate::marine::{MarineService, SurfConditionsRequest};
 use crate::nps::{NationalParkRequest, NpsService};
 use crate::ocean::{
     HabRequest, HabRiskRequest, HfrRequest, M1Request, OceanService, ResearchSnapshotRequest,
@@ -586,7 +586,7 @@ macro_rules! define_tools {
 
             // ─── Marine / Surf Tools ───
 
-            #[tool(description = "Get current surf conditions. Without any parameters, compares all known SC surf spots side-by-side. With `spot`, returns conditions for a named spot (Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa). With `lat`+`lon`, returns conditions for any coastal coordinates — use `label` to give it a name. Shows wave/swell height in feet, period, direction, and local wind.")]
+            #[tool(description = "Surf and marine conditions via Open-Meteo Marine. Without any parameters, compares current conditions at all known SC surf spots side-by-side. With `spot`, returns a named spot (Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa); with `lat`+`lon`, any coastal coordinates — use `label` to name them. Shows wave/swell height in feet, period, direction, and local wind. Set `forecast_hours` (1-24) to also get an hourly marine forecast table for a single spot or coordinates — this replaces the former get_marine_forecast tool.")]
             async fn get_surf_conditions(
                 &self,
                 Parameters(req): Parameters<SurfConditionsRequest>,
@@ -598,20 +598,8 @@ macro_rules! define_tools {
                         req.lat,
                         req.lon,
                         req.label.as_deref(),
+                        req.forecast_hours,
                     )
-                    .await
-                    .map_err(internal_err)?;
-                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
-            }
-
-            #[tool(description = "Get the full Open-Meteo marine forecast (next 12 hourly timesteps) for a named Santa Cruz surf spot or custom lat/lon. Includes wave height, period, direction, and swell components. Useful for planning surf or water activities further out than the 'now' snapshot.")]
-            async fn get_marine_forecast(
-                &self,
-                Parameters(req): Parameters<MarineForecastRequest>,
-            ) -> Result<CallToolResult, ErrorData> {
-                let result = self
-                    .marine
-                    .get_marine_forecast(req.spot.as_deref(), req.lat, req.lon)
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))

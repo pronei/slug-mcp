@@ -207,9 +207,9 @@ pub struct BusPredictionRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ServiceAlertRequest {
-    /// Route number to check alerts for (e.g., "10", "15"). At least one of route or stop_id should be specified.
+    /// Route number to filter alerts to (e.g., "10", "15"). Omit both route and stop_id for all system-wide alerts.
     pub route: Option<String>,
-    /// Stop ID to check alerts for (e.g., "1234"). At least one of route or stop_id should be specified.
+    /// Stop ID to filter alerts to (e.g., "1234"). Omit both route and stop_id for all system-wide alerts.
     pub stop_id: Option<String>,
 }
 
@@ -497,7 +497,7 @@ macro_rules! define_tools {
 
             // ─── Transit Tools ───
 
-            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name; optionally filter by route. Primary source is GTFS-RT (no per-call API key, rich vehicle positions and occupancy). Automatically falls back to BusTime when GTFS-RT has no absolute-time data for the matched stop — BusTime adds destination headsigns, DUE/DLY countdown labels, and canceled/express trip flags. Output footer shows which backend answered. Occupancy comes from the GTFS-RT vehicles feed (SC Metro leaves BusTime's passenger-load field unpopulated). For system-wide queries (no specific stop) prefer `get_system_service_alerts`, `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
+            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name; optionally filter by route. Primary source is GTFS-RT (no per-call API key, rich vehicle positions and occupancy). Automatically falls back to BusTime when GTFS-RT has no absolute-time data for the matched stop — BusTime adds destination headsigns, DUE/DLY countdown labels, and canceled/express trip flags. Output footer shows which backend answered. Occupancy comes from the GTFS-RT vehicles feed (SC Metro leaves BusTime's passenger-load field unpopulated). For system-wide queries (no specific stop) prefer `get_service_alerts` (no arguments), `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
             async fn get_bus_predictions(
                 &self,
                 Parameters(req): Parameters<BusPredictionRequest>,
@@ -511,7 +511,7 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get active service alerts and bulletins for Santa Cruz Metro bus routes via the BusTime bulletin API (requires key). Specify a route number or stop ID. Prefer `get_system_service_alerts` for general 'are there alerts?' questions — it covers the same bulletins via GTFS-RT with no API key. Use this tool only when you need BusTime-specific per-route or per-stop filtering at the API level.")]
+            #[tool(description = "Santa Cruz Metro service alerts. With no arguments: all active system-wide alerts via the GTFS-RT feed (no API key). With `route` or `stop_id`: bulletins filtered to that route/stop via the BusTime API (requires key) — this absorbs the former get_system_service_alerts tool.")]
             async fn get_service_alerts(
                 &self,
                 Parameters(req): Parameters<ServiceAlertRequest>,
@@ -522,16 +522,6 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
 
-                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
-            }
-
-            #[tool(description = "Get system-wide Santa Cruz Metro service alerts via the GTFS-RT alerts feed. No API key required, covers all active alerts across the system.")]
-            async fn get_system_service_alerts(&self) -> Result<CallToolResult, ErrorData> {
-                let result = self
-                    .transit
-                    .get_system_alerts()
-                    .await
-                    .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
@@ -1264,8 +1254,8 @@ impl ServerHandler for SlugMcpServer {
              schedules, library study room availability, class \
              schedule search, campus directory \
              lookup, classroom search, real-time bus arrival predictions via \
-             GTFS-RT, transit service alerts, system-wide SC Metro service \
-             alerts, live vehicle positions, and per-route delay stats, \
+             GTFS-RT, transit service alerts (system-wide or per-route/stop), \
+             live vehicle positions, and per-route delay stats, \
              degree requirements lookup, degree progress tracking, and \
              session-aware Summer Session academic deadlines. \
              Santa Cruz city/county services: 7-day NOAA NWS weather forecasts \
@@ -1298,7 +1288,7 @@ impl ServerHandler for SlugMcpServer {
              schedules, library study room availability, class schedule \
              search, campus directory lookup, \
              classroom search, real-time bus arrival predictions via GTFS-RT, \
-             transit service alerts, system-wide SC Metro service alerts, \
+             transit service alerts (system-wide or per-route/stop), \
              live vehicle positions, and per-route delay stats, degree \
              requirements lookup, degree progress tracking, and session-aware \
              Summer Session academic deadlines. Santa Cruz \

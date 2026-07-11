@@ -133,7 +133,8 @@ impl TransitService {
     }
 
     /// System-wide Santa Cruz Metro service alerts via GTFS-RT (no API key).
-    pub async fn get_system_alerts(&self) -> Result<String> {
+    /// Reached through `get_service_alerts` with no filter.
+    async fn get_system_alerts(&self) -> Result<String> {
         match gtfs_rt::fetch_system_alerts(&self.http, &self.cache).await {
             Ok(alerts) => Ok(gtfs_rt::format_system_alerts(&alerts)),
             Err(e) => {
@@ -174,27 +175,26 @@ impl TransitService {
         }
     }
 
-    /// Get service alerts for a route or stop.
+    /// Service alerts: system-wide via GTFS-RT when no filter is given
+    /// (keyless), or per-route/stop bulletins via BusTime.
     pub async fn get_service_alerts(
         &self,
         route: Option<&str>,
         stop_id: Option<&str>,
     ) -> Result<String> {
+        if route.is_none() && stop_id.is_none() {
+            return self.get_system_alerts().await;
+        }
+
         let api_key = match &self.api_key {
             Some(key) => key.clone(),
             None => {
                 return Ok(
-                    "BusTime API key not configured. Set the `SLUG_MCP_BUSTIME_KEY` environment variable.\n\
+                    "BusTime API key not configured for per-route/stop alert filtering. Set the `SLUG_MCP_BUSTIME_KEY` environment variable, or call this tool without arguments for system-wide alerts (no key needed).\n\
                      Register for developer access at https://rt.scmetro.org".to_string()
                 );
             }
         };
-
-        if route.is_none() && stop_id.is_none() {
-            return Ok(
-                "Please specify a route number or stop ID to check service alerts for.".to_string(),
-            );
-        }
 
         let cache_key = format!(
             "transit:alerts:{}:{}",

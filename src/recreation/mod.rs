@@ -68,10 +68,30 @@ impl RecreationService {
     pub async fn get_schedule(&self, facility_id: &str) -> Result<String> {
         let cache_key = format!("recreation:schedule:{}", facility_id);
         let http = &self.http;
-        let schedule: FacilitySchedule = self
+        let mut schedule: FacilitySchedule = match self
             .cache
             .get_or_fetch(&cache_key, 3600, || scrape_schedule(http, facility_id))
-            .await?;
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(format!(
+                    "Could not fetch the facility schedule right now ({e}).\n\
+                     Try again shortly, or double-check the facility ID — \
+                     get_facility_occupancy lists valid IDs."
+                ));
+            }
+        };
+        // The XHR feed carries no facility name; resolve it from the cached
+        // occupancy list when possible (best effort — the id-prefix fallback
+        // stays on any miss).
+        if let Ok(facilities) = self.fetch_occupancy().await
+            && let Some(f) = facilities
+                .iter()
+                .find(|f| f.uuid.eq_ignore_ascii_case(facility_id))
+        {
+            schedule.facility_name = f.name.clone();
+        }
         Ok(schedule.format())
     }
 

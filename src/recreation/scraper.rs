@@ -2,6 +2,7 @@ use std::fmt::Write;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
+use chrono::{Datelike, Days, NaiveDate, NaiveDateTime, Weekday};
 use regex::Regex;
 use scraper::Html;
 
@@ -10,10 +11,7 @@ use crate::util::selectors;
 selectors! {
     SEL_CANVAS => "canvas.occupancy-chart",
     SEL_STRONG => "strong",
-    SEL_SCHEDULE_ROW => "tr",
     SEL_TD => "td",
-    SEL_TITLE => "h2, h3, .panel-title, title",
-    SEL_FC_EVENT => ".fc-event, .fc-event-title, .event-item",
     SEL_TR => "tr",
     SEL_PROGRAM_LINK => "a[href*=\"GetProgramDetails\"]",
 }
@@ -22,7 +20,11 @@ static TIME_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d{1,2}:\d{2}[ap])").expect("hardcoded regex"));
 
 const OCCUPANCY_URL: &str = "https://campusrec.ucsc.edu/FacilityOccupancy";
-const SCHEDULE_URL: &str = "https://campusrec.ucsc.edu/Facility/GetSchedule";
+// The old /Facility/GetSchedule page became a DevExtreme JS shell in 2026;
+// this is the XHR feed that shell loads its appointments from. Recurring
+// events arrive unexpanded (anchor dates + iCal RRULE).
+const SCHEDULE_URL: &str =
+    "https://campusrec.ucsc.edu/Facility/GetScheduleCustomAppointmentsForDevExtremeScheduler";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FacilityOccupancy {
@@ -185,82 +187,211 @@ pub async fn scrape_schedule(
     client: &reqwest::Client,
     facility_id: &str,
 ) -> Result<FacilitySchedule> {
+    let today = crate::util::now_pacific().date_naive();
     let url = format!(
-        "{}?facilityId={}",
+        "{}?selectedFacilityId={}&start={}T00:00:00&end={}T00:00:00",
         SCHEDULE_URL,
-        urlencoding::encode(facility_id)
+        urlencoding::encode(facility_id),
+        today,
+        today + Days::new(7),
     );
     let resp = client
         .get(&url)
         .send()
         .await
-        .context("Failed to fetch facility schedule")?;
+        .context("Failed to fetch facility schedule")?
+        .error_for_status()
+        .context("Facility schedule feed returned an error status")?;
 
-    let html = resp.text().await.context("Failed to read schedule body")?;
+    let body = resp.text().await.context("Failed to read schedule body")?;
+    let appointments = parse_schedule_json(&body)?;
 
-    Ok(parse_schedule(&html, facility_id))
-}
-
-fn parse_schedule(html: &str, facility_id: &str) -> FacilitySchedule {
-    let document = Html::parse_document(html);
-
-    // The schedule page uses FullCalendar. Try to extract events from the page.
-    // Look for table rows or list items that contain schedule data.
-
-    let mut entries = Vec::new();
-    let mut facility_name = String::new();
-
-    // Try to get facility name from page title or header
-    if let Some(el) = document.select(&SEL_TITLE).next() {
-        let text = el.text().collect::<String>().trim().to_string();
-        if !text.is_empty() && !text.contains("Schedule") {
-            facility_name = text;
-        } else if text.contains(" - ") {
-            facility_name = text.split(" - ").next().unwrap_or("").trim().to_string();
-        }
-    }
-
-    // Parse table rows for schedule entries
-    for row in document.select(&SEL_SCHEDULE_ROW) {
-        let cells: Vec<String> = row
-            .select(&SEL_TD)
-            .map(|td| td.text().collect::<String>().trim().to_string())
-            .collect();
-
-        if cells.len() >= 2 {
-            let time = cells[0].clone();
-            let event = cells[1..].join(" — ");
-            if !time.is_empty() && !event.is_empty() {
-                entries.push(ScheduleEntry { time, event });
-            }
-        }
-    }
-
-    // If no table rows found, try extracting from FullCalendar event elements
-    if entries.is_empty() {
-        for el in document.select(&SEL_FC_EVENT) {
-            let text = el.text().collect::<String>().trim().to_string();
-            if !text.is_empty() {
-                entries.push(ScheduleEntry {
-                    time: String::new(),
-                    event: text,
-                });
-            }
-        }
-    }
-
-    if facility_name.is_empty() {
-        facility_name = format!(
+    Ok(FacilitySchedule {
+        // The feed carries no facility name; the service layer resolves it
+        // from the occupancy list when possible.
+        facility_name: format!(
             "Facility {}",
             facility_id.chars().take(8).collect::<String>()
-        );
+        ),
+        facility_id: facility_id.to_string(),
+        entries: expand_appointments(&appointments, today, 7),
+    })
+}
+
+/// One raw appointment from the DevExtreme scheduler feed. Recurring events
+/// arrive unexpanded: an anchor StartDate/EndDate (sometimes years in the
+/// past) plus an iCal RRULE the client is expected to expand.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct Appointment {
+    #[serde(rename = "Text", default)]
+    text: String,
+    #[serde(rename = "StartDate", default)]
+    start_date: String,
+    #[serde(rename = "EndDate", default)]
+    end_date: String,
+    #[serde(rename = "AllDay", default)]
+    all_day: bool,
+    #[serde(rename = "Description", default)]
+    description: String,
+    #[serde(rename = "RecurrenceRule", default)]
+    recurrence_rule: Option<String>,
+    #[serde(rename = "RecurrenceException", default)]
+    recurrence_exception: Option<String>,
+}
+
+fn parse_schedule_json(body: &str) -> Result<Vec<Appointment>> {
+    serde_json::from_str(body).context("Failed to parse schedule feed")
+}
+
+fn appt_datetime(s: &str) -> Option<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f").ok()
+}
+
+fn rule_field<'a>(rule: &'a str, key: &str) -> Option<&'a str> {
+    rule.split(';')
+        .find_map(|part| part.strip_prefix(key).and_then(|r| r.strip_prefix('=')))
+}
+
+fn byday_weekdays(byday: &str) -> Vec<Weekday> {
+    byday
+        .split(',')
+        .filter_map(|code| match code {
+            "SU" => Some(Weekday::Sun),
+            "MO" => Some(Weekday::Mon),
+            "TU" => Some(Weekday::Tue),
+            "WE" => Some(Weekday::Wed),
+            "TH" => Some(Weekday::Thu),
+            "FR" => Some(Weekday::Fri),
+            "SA" => Some(Weekday::Sat),
+            _ => None,
+        })
+        .collect()
+}
+
+/// UNTIL is UTC ("...Z"); convert to Pacific so a summer-hours cutoff doesn't
+/// bleed an extra day past its end.
+fn until_pacific(until: &str) -> Option<NaiveDateTime> {
+    use chrono::TimeZone;
+    let naive = NaiveDateTime::parse_from_str(until, "%Y%m%dT%H%M%SZ").ok()?;
+    Some(
+        chrono::Utc
+            .from_utc_datetime(&naive)
+            .with_timezone(&chrono_tz::US::Pacific)
+            .naive_local(),
+    )
+}
+
+fn exception_dates(exceptions: Option<&str>) -> Vec<NaiveDate> {
+    exceptions
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|e| NaiveDateTime::parse_from_str(e.trim(), "%Y%m%dT%H%M%S").ok())
+        .map(|dt| dt.date())
+        .collect()
+}
+
+/// Expand raw appointments into per-day entries for the window starting at
+/// `from`, `days` long. Covers the recurrence shapes the feed actually uses
+/// (weekly BYDAY with optional UNTIL/exceptions; yearly nth-weekday-of-month
+/// holidays); anything else degrades to a single annotated entry instead of
+/// silently vanishing.
+fn expand_appointments(appts: &[Appointment], from: NaiveDate, days: u32) -> Vec<ScheduleEntry> {
+    let window_end = from + Days::new(u64::from(days));
+    let mut dated: Vec<(NaiveDateTime, ScheduleEntry)> = Vec::new();
+    let mut undated: Vec<ScheduleEntry> = Vec::new();
+
+    for appt in appts {
+        let (Some(start), Some(end)) = (
+            appt_datetime(&appt.start_date),
+            appt_datetime(&appt.end_date),
+        ) else {
+            continue;
+        };
+
+        let rule = appt.recurrence_rule.as_deref().unwrap_or("");
+        if rule.is_empty() {
+            if start.date() < window_end && end.date() >= from {
+                dated.push((start, entry_for(appt, start, end)));
+            }
+            continue;
+        }
+
+        match rule_field(rule, "FREQ") {
+            Some("WEEKLY") => {
+                let by = byday_weekdays(rule_field(rule, "BYDAY").unwrap_or(""));
+                let until = rule_field(rule, "UNTIL").and_then(until_pacific);
+                let skip = exception_dates(appt.recurrence_exception.as_deref());
+                for i in 0..days {
+                    let day = from + Days::new(u64::from(i));
+                    let occ_start = day.and_time(start.time());
+                    if by.contains(&day.weekday())
+                        && day >= start.date()
+                        && until.is_none_or(|u| occ_start <= u)
+                        && !skip.contains(&day)
+                    {
+                        let occ_end = day.and_time(end.time());
+                        dated.push((occ_start, entry_for(appt, occ_start, occ_end)));
+                    }
+                }
+            }
+            Some("YEARLY") => {
+                // Observed shape: BYMONTH + BYDAY + BYSETPOS (nth weekday of
+                // a month, e.g. MLK = third Monday of January).
+                let month: Option<u32> = rule_field(rule, "BYMONTH").and_then(|v| v.parse().ok());
+                let by = byday_weekdays(rule_field(rule, "BYDAY").unwrap_or(""));
+                let setpos: Option<u32> = rule_field(rule, "BYSETPOS").and_then(|v| v.parse().ok());
+                for i in 0..days {
+                    let day = from + Days::new(u64::from(i));
+                    let nth = (day.day() - 1) / 7 + 1;
+                    if month == Some(day.month())
+                        && by.contains(&day.weekday())
+                        && setpos.is_none_or(|p| p == nth)
+                        && day >= start.date()
+                    {
+                        let occ_start = day.and_time(start.time());
+                        let occ_end = day.and_time(end.time());
+                        dated.push((occ_start, entry_for(appt, occ_start, occ_end)));
+                    }
+                }
+            }
+            _ => undated.push(ScheduleEntry {
+                time: "recurring".to_string(),
+                event: format!("{} (recurring \u{2014} pattern not expanded)", appt.text),
+            }),
+        }
     }
 
-    FacilitySchedule {
-        facility_name,
-        facility_id: facility_id.to_string(),
-        entries,
-    }
+    dated.sort_by_key(|(dt, _)| *dt);
+    let mut entries: Vec<ScheduleEntry> = dated.into_iter().map(|(_, e)| e).collect();
+    entries.extend(undated);
+    entries
+}
+
+fn entry_for(appt: &Appointment, start: NaiveDateTime, end: NaiveDateTime) -> ScheduleEntry {
+    let time = if appt.all_day {
+        format!("{} \u{b7} all day", start.format("%a %b %-d"))
+    } else if start.date() == end.date() {
+        format!(
+            "{} \u{b7} {} \u{2013} {}",
+            start.format("%a %b %-d"),
+            start.format("%-I:%M %p"),
+            end.format("%-I:%M %p")
+        )
+    } else {
+        format!(
+            "{} {} \u{2013} {} {}",
+            start.format("%a %b %-d"),
+            start.format("%-I:%M %p"),
+            end.format("%a %b %-d"),
+            end.format("%-I:%M %p")
+        )
+    };
+    let event = if appt.description.is_empty() || appt.description == appt.text {
+        appt.text.clone()
+    } else {
+        format!("{} \u{2014} {}", appt.text, appt.description)
+    };
+    ScheduleEntry { time, event }
 }
 
 // ───── Group Exercise Classes ─────
@@ -689,66 +820,128 @@ mod occupancy_tests {
 #[cfg(test)]
 mod schedule_tests {
     use super::*;
+    use chrono::NaiveDate;
 
-    const SCHEDULE_EMPTY_FIXTURE: &str = include_str!("fixtures/schedule_empty.html");
-    const SCHEDULE_POPULATED_FIXTURE: &str = include_str!("fixtures/schedule_populated.html");
+    // Trimmed real capture of the DevExtreme scheduler XHR feed (2026-07-07),
+    // plus one synthetic FREQ=MONTHLY row to pin unknown-pattern degradation.
+    const SCHEDULE_XHR_FIXTURE: &str = include_str!("fixtures/schedule_xhr.json");
 
-    #[test]
-    fn parse_schedule_no_classes_yields_empty() {
-        let schedule = parse_schedule(SCHEDULE_EMPTY_FIXTURE, "abcdef1234567890");
-        assert!(schedule.entries.is_empty(), "got: {:#?}", schedule.entries);
-        // format() renders the empty-state line.
-        assert!(schedule.format().contains("No scheduled events."));
+    fn day(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn fixture_appointments() -> Vec<Appointment> {
+        parse_schedule_json(SCHEDULE_XHR_FIXTURE).unwrap()
     }
 
     #[test]
-    fn parse_schedule_populated_rows() {
-        let schedule = parse_schedule(SCHEDULE_POPULATED_FIXTURE, "abcdef1234567890");
-        // Three tbody rows; the <th> header row is ignored.
-        assert_eq!(schedule.entries.len(), 3, "got: {:#?}", schedule.entries);
+    fn expand_july_week_covers_weekly_allday_and_unknown() {
+        // Mon Jul 6 - Sun Jul 12, 2026: two weekday-closure rules fire Mon-Fri
+        // (5 each), the all-day one-off lands Wed, the unknown MONTHLY rule
+        // degrades to a single undated tail entry. Cheer camp (Jul 17) and the
+        // January holiday are out of window.
+        let entries = expand_appointments(&fixture_appointments(), day(2026, 7, 6), 7);
+        assert_eq!(entries.len(), 12, "got: {:#?}", entries);
 
-        assert_eq!(schedule.entries[0].time, "6:00 AM - 9:00 AM");
-        assert_eq!(schedule.entries[0].event, "Lap Swim");
-
-        // A 3-cell row joins the extra cells with " — ".
-        assert_eq!(schedule.entries[1].time, "12:00 PM - 1:00 PM");
+        // Sorted by occurrence: midnight closure precedes the evening one.
         assert_eq!(
-            schedule.entries[1].event,
-            "Water Aerobics — Instructor: Dana"
+            entries[0].time,
+            "Mon Jul 6 \u{b7} 12:00 AM \u{2013} 6:00 AM"
         );
-
-        assert_eq!(schedule.entries[2].event, "Open Rec Swim");
-    }
-
-    // ── error paths ──
-
-    #[test]
-    fn parse_schedule_maintenance_page_falls_back_to_id_name() {
-        let schedule = parse_schedule(
-            "<html><body>Maintenance</body></html>",
-            "6337894d-9b88-4872-add3-c29f783055c2",
-        );
-        assert!(schedule.entries.is_empty());
-        // No title/h2 anywhere → name falls back to the id prefix.
-        assert_eq!(schedule.facility_name, "Facility 6337894d");
-        assert!(schedule.format().contains("No scheduled events."));
+        assert_eq!(entries[0].event, "Facility Closed");
+        assert!(entries.iter().any(|e| {
+            e.time == "Mon Jul 6 \u{b7} 7:00 PM \u{2013} 11:00 PM"
+                && e.event == "Facility Closed \u{2014} Summer hours"
+        }));
+        assert!(entries.iter().any(|e| {
+            e.time == "Wed Jul 8 \u{b7} all day"
+                && e.event == "Maintenance Shutdown \u{2014} Annual pool maintenance"
+        }));
+        assert!(!entries.iter().any(|e| e.event.contains("Cheer")));
+        assert!(!entries.iter().any(|e| e.event.contains("Holiday")));
     }
 
     #[test]
-    fn parse_schedule_js_shell_page_degrades_to_empty() {
-        // Characterization of the 2026 live page: the portal now renders the
-        // schedule client-side (FullCalendar fed by XHR), so the HTML has a
-        // page <title> but zero table rows — the tool reports no events
-        // rather than erroring.
-        let html = r#"<html><head>
-            <title>Facility Schedule - UC Santa Cruz Athletics &amp; Recreation Registration Portal</title>
-            </head><body>
-            <div id="calendar"></div>
-            <script>var InnosoftConstants = {};</script>
-            </body></html>"#;
-        let schedule = parse_schedule(html, "6337894d-9b88-4872-add3-c29f783055c2");
-        assert!(schedule.entries.is_empty());
-        assert_eq!(schedule.facility_name, "Facility Schedule");
-        assert!(schedule.format().contains("No scheduled events."));
+    fn weekly_until_cutoff_excludes_expired_rule() {
+        // UNTIL=20260914T060000Z: the "Summer hours" closure must not fire
+        // the week of Sept 21, while the no-UNTIL weekday rule still does.
+        let entries = expand_appointments(&fixture_appointments(), day(2026, 9, 21), 7);
+        assert!(!entries.iter().any(|e| e.event.contains("Summer hours")));
+        let weekday_closures = entries
+            .iter()
+            .filter(|e| e.event == "Facility Closed")
+            .count();
+        assert_eq!(weekday_closures, 5);
+    }
+
+    #[test]
+    fn weekly_recurrence_exception_skips_thanksgiving() {
+        // RecurrenceException 20261126T000000: Thu Nov 26 is skipped, the
+        // other four weekdays still fire.
+        let entries = expand_appointments(&fixture_appointments(), day(2026, 11, 23), 7);
+        let closures: Vec<&ScheduleEntry> = entries
+            .iter()
+            .filter(|e| e.event == "Facility Closed")
+            .collect();
+        assert_eq!(closures.len(), 4, "got: {:#?}", closures);
+        assert!(!closures.iter().any(|e| e.time.contains("Nov 26")));
+    }
+
+    #[test]
+    fn yearly_bysetpos_holiday_fires_on_third_monday_only() {
+        // FREQ=YEARLY;BYDAY=MO;BYMONTH=1;BYSETPOS=3 -> Mon Jan 18, 2027.
+        let mlk_week = expand_appointments(&fixture_appointments(), day(2027, 1, 18), 7);
+        assert!(
+            mlk_week
+                .iter()
+                .any(|e| { e.event.contains("Holiday") && e.time.starts_with("Mon Jan 18") })
+        );
+        let next_week = expand_appointments(&fixture_appointments(), day(2027, 1, 25), 7);
+        assert!(!next_week.iter().any(|e| e.event.contains("Holiday")));
+    }
+
+    #[test]
+    fn one_off_event_appears_only_in_its_week() {
+        let entries = expand_appointments(&fixture_appointments(), day(2026, 7, 13), 7);
+        assert!(entries.iter().any(|e| {
+            e.event == "Cheer Camp 2" && e.time == "Fri Jul 17 \u{b7} 12:00 PM \u{2013} 4:00 PM"
+        }));
+    }
+
+    #[test]
+    fn unknown_recurrence_degrades_to_annotated_tail_entry() {
+        let entries = expand_appointments(&fixture_appointments(), day(2026, 7, 6), 7);
+        let last = entries.last().unwrap();
+        assert_eq!(last.time, "recurring");
+        assert!(last.event.contains("Monthly Deep Clean"));
+    }
+
+    // \u{2500}\u{2500} error paths \u{2500}\u{2500}
+
+    #[test]
+    fn parse_schedule_json_empty_array_is_ok() {
+        assert!(parse_schedule_json("[]").unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_schedule_json_truncated_errs() {
+        assert!(parse_schedule_json(r#"[{"Id":"x","Text":"y","#).is_err());
+    }
+
+    #[test]
+    fn parse_schedule_json_html_body_errs_usefully() {
+        // If campusrec changes the feed again and starts serving HTML here,
+        // the tool must error visibly instead of showing an empty schedule.
+        let err = parse_schedule_json("<html><body>Maintenance</body></html>").unwrap_err();
+        assert!(err.to_string().contains("schedule feed"));
+    }
+
+    #[test]
+    fn appointment_with_unparseable_dates_is_dropped_not_panicking() {
+        let body = r#"[{"Id":"x","Text":"Ghost","StartDate":"garbage","EndDate":"2026-07-08T10:00:00.000",
+            "AllDay":false,"Description":"","RecurrenceRule":null,"RecurrenceException":null}]"#;
+        let appts = parse_schedule_json(body).unwrap();
+        let entries = expand_appointments(&appts, day(2026, 7, 6), 7);
+        assert!(entries.is_empty());
     }
 }

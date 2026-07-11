@@ -1,0 +1,74 @@
+[
+  {
+    "Id": "16fe0563-f224-4d32-b324-b18b047d11b2",
+    "Text": "Facility Closed (Holiday)",
+    "StartDate": "2020-01-20T06:00:00.000",
+    "EndDate": "2020-01-20T23:00:00.000",
+    "AllDay": false,
+    "Description": "",
+    "RecurrenceRule": "FREQ=YEARLY;BYDAY=MO;BYMONTH=1;BYSETPOS=3",
+    "RecurrenceException": null,
+    "BackgroundColor": "#00FFFF",
+    "TextColor": "#000000"
+  },
+  {
+    "Id": "7c2b5a3e-9f4d-4e1a-b8c6-2d7e0f5a9b31",
+    "Text": "Facility Closed",
+    "StartDate": "2026-06-15T19:00:00.000",
+    "EndDate": "2026-06-15T23:00:00.000",
+    "AllDay": false,
+    "Description": "Summer hours",
+    "RecurrenceRule": "FREQ=WEEKLY;UNTIL=20260914T060000Z;BYDAY=MO,TU,WE,TH,FR;WKST=SU",
+    "RecurrenceException": null,
+    "BackgroundColor": "#00FFFF",
+    "TextColor": "#000000"
+  },
+  {
+    "Id": "3f8e1d92-6a5b-47c3-9e0d-8b4f2a6c1e57",
+    "Text": "Facility Closed",
+    "StartDate": "2025-09-22T00:00:00.000",
+    "EndDate": "2025-09-22T06:00:00.000",
+    "AllDay": false,
+    "Description": "",
+    "RecurrenceRule": "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;WKST=SU",
+    "RecurrenceException": "20261126T000000",
+    "BackgroundColor": "#00FFFF",
+    "TextColor": "#000000"
+  },
+  {
+    "Id": "c31450cc-e456-4053-a324-565cc7c6e624",
+    "Text": "Cheer Camp 2",
+    "StartDate": "2026-07-17T12:00:00.000",
+    "EndDate": "2026-07-17T16:00:00.000",
+    "AllDay": false,
+    "Description": "",
+    "RecurrenceRule": null,
+    "RecurrenceException": null,
+    "BackgroundColor": "#B1365F",
+    "TextColor": "#FFFFFF"
+  },
+  {
+    "Id": "5d9a7e14-2c8b-4f60-a3d1-7b6e9c2f4a88",
+    "Text": "Maintenance Shutdown",
+    "StartDate": "2026-07-08T00:00:00.000",
+    "EndDate": "2026-07-08T23:59:00.000",
+    "AllDay": true,
+    "Description": "Annual pool maintenance",
+    "RecurrenceRule": null,
+    "RecurrenceException": null,
+    "BackgroundColor": "#00FFFF",
+    "TextColor": "#000000"
+  },
+  {
+    "Id": "9e4c2b70-1f8d-4a35-b6e9-0c7d5a3f2e16",
+    "Text": "Monthly Deep Clean",
+    "StartDate": "2026-01-01T06:00:00.000",
+    "EndDate": "2026-01-01T08:00:00.000",
+    "AllDay": false,
+    "Description": "",
+    "RecurrenceRule": "FREQ=MONTHLY;BYMONTHDAY=1",
+    "RecurrenceException": null,
+    "BackgroundColor": "#00FFFF",
+    "TextColor": "#000000"
+  }
+]

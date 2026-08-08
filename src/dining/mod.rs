@@ -31,6 +31,7 @@ pub struct DiningHoursRequest {
     pub location: Option<String>,
 }
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::cache::CacheStore;
@@ -62,6 +63,41 @@ pub struct DiningService {
 impl DiningService {
     pub fn new(http: reqwest::Client, cache: Arc<CacheStore>) -> Self {
         Self { http, cache }
+    }
+
+    /// Residential halls shut on `date`, keyed by `location_num`, with a
+    /// human-readable span ("closed through 2026-09-17").
+    ///
+    /// Between quarters UCSC consolidates dining into a single hall, but the
+    /// nutrition site keeps publishing menus for the dark ones — on 2026-08-07
+    /// all five halls returned full, distinct breakfast/lunch/dinner menus
+    /// while only Cowell/Stevenson was operating — so the menu feed cannot
+    /// tell us who is open. The hours page can: it marks a shutdown as a
+    /// vacation range carrying no serving hours.
+    ///
+    /// Returns `None` when the hours page is unavailable or nothing is closed,
+    /// so every caller degrades to the all-halls behaviour rather than hiding
+    /// menus on a bad scrape.
+    async fn closed_halls(&self, date: &str) -> Option<HashMap<&'static str, String>> {
+        let http = &self.http;
+        let locations: Vec<DiningLocation> = self
+            .cache
+            .get_or_fetch("dining:hours", 21600, || scrape_hours(http))
+            .await
+            .map_err(|e| tracing::warn!("closure check unavailable, assuming all halls open: {e}"))
+            .ok()?;
+
+        let closed: HashMap<&'static str, String> = locations
+            .iter()
+            .filter(|loc| loc.is_dining_hall())
+            .filter_map(|loc| {
+                let closure = loc.closure_covering(date)?;
+                let hall = find_hall(&loc.name)?;
+                Some((hall.location_num, closure.closure_label()))
+            })
+            .collect();
+
+        (!closed.is_empty()).then_some(closed)
     }
 
     pub async fn get_menu(
@@ -96,6 +132,14 @@ impl DiningService {
         let scraper_date = formatted_date.as_deref();
         let cache_date = iso_date.as_str();
 
+        let closed = self.closed_halls(cache_date).await.unwrap_or_default();
+
+        // An explicit hall request is always honoured — the caller asked for
+        // that hall by name, so return its menu and flag the closure rather
+        // than answering with nothing. Only the implicit "all halls" fan-out
+        // drops closed halls, which is what keeps stale between-quarter menus
+        // out of the default answer.
+        let mut skipped: Vec<String> = Vec::new();
         let halls: Vec<&scraper::DiningHall> = if let Some(hall_query) = hall {
             let hall = find_hall(hall_query).ok_or_else(|| {
                 anyhow::anyhow!(
@@ -109,6 +153,13 @@ impl DiningService {
             DINING_HALLS
                 .iter()
                 .filter(|h| h.kind == HallKind::Full)
+                .filter(|h| match closed.get(h.location_num) {
+                    Some(span) => {
+                        skipped.push(format!("{} ({})", h.name, span));
+                        false
+                    }
+                    None => true,
+                })
                 .collect()
         };
 
@@ -158,9 +209,35 @@ impl DiningService {
             .join("\n---\n\n");
 
         if output.trim().is_empty() {
+            if !skipped.is_empty() {
+                bail!(
+                    "No dining halls are open on {}. Closed: {}.",
+                    cache_date,
+                    skipped.join("; ")
+                );
+            }
             bail!("No menu data available. The nutrition site may be temporarily down.");
         }
 
+        // Warn when a caller explicitly asked for a hall that isn't serving:
+        // the nutrition site still returns a plausible-looking menu for it.
+        let mut prefix = String::new();
+        for hall in &halls {
+            if let Some(span) = closed.get(hall.location_num) {
+                prefix.push_str(&format!(
+                    "> **{}** is {} — the menu below is published upstream but the hall is not serving.\n\n",
+                    hall.name, span
+                ));
+            }
+        }
+
+        let mut output = format!("{prefix}{output}");
+        if !skipped.is_empty() {
+            output.push_str(&format!(
+                "\n_Not shown (closed): {}._\n",
+                skipped.join("; ")
+            ));
+        }
         Ok(output)
     }
 
@@ -244,6 +321,9 @@ pub fn start_cache_refresher(
     cache: Arc<CacheStore>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        // Shares the caller's cache, so the closure lookup reuses whatever the
+        // `dining:hours` entry already holds instead of refetching each night.
+        let service = DiningService::new(http.clone(), cache.clone());
         loop {
             let delay = duration_until_next_5am();
             tracing::info!(
@@ -257,7 +337,16 @@ pub fn start_cache_refresher(
             let scraper_date = format!("{}/{}/{}", now.month(), now.day(), now.year());
             let iso_date = now.format("%Y-%m-%d").to_string();
 
-            for hall in DINING_HALLS.iter().filter(|h| h.kind == HallKind::Full) {
+            // Don't pre-warm halls that aren't serving — between quarters that
+            // is four of the five, each costing a shortmenu plus one longmenu
+            // per meal. Reuses the same fail-open closure lookup as get_menu.
+            let closed = service.closed_halls(&iso_date).await.unwrap_or_default();
+
+            for hall in DINING_HALLS
+                .iter()
+                .filter(|h| h.kind == HallKind::Full)
+                .filter(|h| !closed.contains_key(h.location_num))
+            {
                 match scrape_menu(&http, hall, Some(&scraper_date)).await {
                     Ok(menu) => {
                         let key = format!("dining:menu:{}:{}", hall.location_num, iso_date);

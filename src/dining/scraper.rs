@@ -928,11 +928,44 @@ pub struct DiningLocation {
     pub date_hours: Vec<DateHours>,
 }
 
+/// One `openingHoursSpecification` entry: a single dated exception, or a
+/// multi-day range when `through` is set. An entry carrying no `opens`/`closes`
+/// is a *closure* — see [`DiningLocation::closure_covering`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DateHours {
     pub date: String,
+    /// Last day of a multi-day closure. `None` means a single day.
+    /// `#[serde(default)]` so hours cached before this field existed still
+    /// deserialize instead of poisoning the cache after a deploy.
+    #[serde(default)]
+    pub through: Option<String>,
     pub opens: Option<String>,
     pub closes: Option<String>,
+}
+
+impl DateHours {
+    /// Inclusive range end — `through` when present, else a single day.
+    fn end(&self) -> &str {
+        self.through.as_deref().unwrap_or(&self.date)
+    }
+
+    /// No serving hours published for this date/range.
+    fn is_closure(&self) -> bool {
+        self.opens.is_none() && self.closes.is_none()
+    }
+
+    /// ISO-8601 dates compare correctly as plain strings.
+    fn covers(&self, date: &str) -> bool {
+        date >= self.date.as_str() && date <= self.end()
+    }
+
+    /// Human-readable closure span, e.g. "closed through 2026-09-17".
+    pub fn closure_label(&self) -> String {
+        match self.through.as_ref() {
+            Some(end) => format!("closed through {end}"),
+            None => format!("closed on {}", self.date),
+        }
+    }
 }
 
 const HOURS_URL: &str = "https://dining.ucsc.edu/locations-hours/";
@@ -1003,15 +1036,42 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
             }
 
             // Dated specs lead with a combined `validFrom validThrough` time.
-            // A spec whose first time is validFrom-only is the schedule's
-            // overall validity range (paired with a separate validThrough) —
-            // not a closure/exception, so skip it.
+            // A spec whose first time is validFrom-only is a *vacation*: a
+            // multi-day shutdown, paired with a separate validThrough. The
+            // page's own shortcode asks for these via `includevacations=true`,
+            // and on 2026-08-07 the correlation was exact across all 17
+            // locations — every one whose vacation covered that day published
+            // the placeholder "Mo 1:00-13:00" as its regular hours, and every
+            // one whose vacation was in the future published real hours. This
+            // is the only machine-readable signal for which halls are actually
+            // serving between quarters, so record it rather than skip it.
             let first_props = times[0].value().attr("itemprop").unwrap_or("");
-            if !(first_props.contains("validFrom") && first_props.contains("validThrough")) {
+            let date = times[0].value().attr("datetime").unwrap_or("").to_string();
+
+            if !first_props.contains("validThrough") {
+                let through = times
+                    .get(1)
+                    .filter(|t| {
+                        t.value()
+                            .attr("itemprop")
+                            .is_some_and(|p| p.contains("validThrough"))
+                    })
+                    .and_then(|t| t.value().attr("datetime"))
+                    .map(|s| s.to_string());
+
+                // A lone validFrom with no closing bound tells us nothing.
+                if let Some(through) = through
+                    && !date.is_empty()
+                {
+                    date_hours.push(DateHours {
+                        date,
+                        through: Some(through),
+                        opens: None,
+                        closes: None,
+                    });
+                }
                 continue;
             }
-
-            let date = times[0].value().attr("datetime").unwrap_or("").to_string();
 
             let (opens, closes) = if times.len() >= 3 {
                 (
@@ -1025,6 +1085,7 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
             if !date.is_empty() {
                 date_hours.push(DateHours {
                     date,
+                    through: None,
                     opens,
                     closes,
                 });
@@ -1043,10 +1104,41 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
 }
 
 impl DiningLocation {
+    /// The closure period covering `date`, if any — what distinguishes a
+    /// location that is genuinely operating from one that is dark for the
+    /// summer.
+    pub fn closure_covering(&self, date: &str) -> Option<&DateHours> {
+        self.date_hours
+            .iter()
+            .find(|d| d.is_closure() && d.covers(date))
+    }
+
+    /// True if this is one of the residential dining halls (not a cafe, market,
+    /// or coffee bar). Guards the hours→[`DiningHall`] mapping: without it
+    /// "Stevenson Coffee House" would match the Cowell & Stevenson hall and
+    /// "Merrill Market" would match Crown & Merrill.
+    pub fn is_dining_hall(&self) -> bool {
+        FuzzyMatcher::new(["dining hall"])
+            .case_insensitive()
+            .whitespace_collapsed()
+            .matches(&self.name)
+    }
+
     /// Format with a reference date for filtering upcoming special hours.
     pub fn format_with_date(&self, today: &str) -> String {
         let mut out = String::new();
         let _ = writeln!(out, "### {} ({})", self.name, self.category);
+
+        // While a closure is in effect the `openingHours` meta is stale
+        // boilerplate — every shuttered location publishes a literal
+        // "Mo 1:00-13:00" — so report the closure instead of echoing hours
+        // nobody can use.
+        if let Some(closure) = self.closure_covering(today) {
+            let _ = writeln!(out, "**CLOSED** — {}", closure.closure_label());
+            out.push('\n');
+            return out;
+        }
+
         if self.regular_hours.is_empty() {
             out.push_str("Hours not available\n");
         } else {
@@ -1065,12 +1157,18 @@ impl DiningLocation {
         if !upcoming.is_empty() {
             out.push_str("\n**Upcoming Special Hours:**\n");
             for dh in upcoming {
+                // Render a multi-day entry as a span; printing only the start
+                // date makes an upcoming two-week shutdown look like one day.
+                let when = match dh.through.as_ref() {
+                    Some(end) if end != &dh.date => format!("{} to {}", dh.date, end),
+                    _ => dh.date.clone(),
+                };
                 match (&dh.opens, &dh.closes) {
                     (Some(o), Some(c)) => {
-                        let _ = writeln!(out, "- {}: {} - {}", dh.date, o, c);
+                        let _ = writeln!(out, "- {}: {} - {}", when, o, c);
                     }
                     _ => {
-                        let _ = writeln!(out, "- {}: CLOSED", dh.date);
+                        let _ = writeln!(out, "- {}: CLOSED", when);
                     }
                 }
             }
@@ -1354,12 +1452,18 @@ mod tests {
             .expect("special-hours date");
         assert_eq!(jul3.opens.as_deref(), Some("07:00:00"));
         assert_eq!(jul3.closes.as_deref(), Some("19:00:00"));
-        // 2-time spec = validFrom/validThrough range, NOT a closure — must be skipped.
-        assert!(
-            cowell.date_hours.iter().all(|d| d.date != "2026-08-29"),
-            "validity-range spec misread as a dated closure: {:#?}",
-            cowell.date_hours
-        );
+        // 2-time spec = a vacation range (validFrom + validThrough). This was
+        // previously skipped as a mere "validity range", but it is the only
+        // machine-readable signal for a multi-day shutdown, so it is now kept
+        // with `through` set. Cowell's is the late-summer break before fall.
+        let aug29 = cowell
+            .date_hours
+            .iter()
+            .find(|d| d.date == "2026-08-29")
+            .expect("vacation range");
+        assert_eq!(aug29.through.as_deref(), Some("2026-09-09"));
+        assert_eq!(aug29.opens, None);
+        assert_eq!(aug29.closes, None);
 
         // A block with a name but no hours markup at all parses as hours-less.
         let slug_stop = by_name("Slug Stop");
@@ -1382,10 +1486,114 @@ mod tests {
         assert!(output.contains("2026-06-17: CLOSED"));
         assert!(output.contains("2026-07-03: 07:00:00 - 19:00:00"));
 
-        // After the last dated exception (July 4): nothing upcoming — the
-        // validity-range spec (Aug 29) must not resurface as a bogus closure.
+        // After the last dated exception (July 4), the Aug 29 vacation is the
+        // only thing left upcoming, and it renders as a span rather than a
+        // lone start date.
         let output = cowell.format_with_date("2026-07-05");
-        assert!(!output.contains("Upcoming Special Hours"), "got: {output}");
+        assert!(
+            output.contains("2026-08-29 to 2026-09-09: CLOSED"),
+            "got: {output}"
+        );
+    }
+
+    /// The vacation range is the summer open/closed signal. Verified against
+    /// the live page on 2026-08-07, where the correlation was exact across all
+    /// 17 locations: a vacation covering the day always accompanied the
+    /// "Mo 1:00-13:00" placeholder, and a future vacation always accompanied
+    /// real hours.
+    #[test]
+    fn closure_covering_distinguishes_open_from_closed() {
+        let locations = parse_hours(HOURS_FIXTURE);
+        let cowell = locations
+            .iter()
+            .find(|l| l.name.contains("Cowell/Stevenson"))
+            .unwrap();
+
+        // Cowell serves through the summer; its own break is 8/29-9/9.
+        assert!(cowell.closure_covering("2026-08-07").is_none());
+        assert!(cowell.closure_covering("2026-08-29").is_some());
+        assert!(cowell.closure_covering("2026-09-09").is_some());
+        assert!(cowell.closure_covering("2026-09-10").is_none());
+        assert_eq!(
+            cowell
+                .closure_covering("2026-09-01")
+                .unwrap()
+                .closure_label(),
+            "closed through 2026-09-09"
+        );
+
+        // A single dated closure still reads as a closure on its own day only.
+        assert!(cowell.closure_covering("2026-06-17").is_some());
+        assert!(cowell.closure_covering("2026-06-16").is_none());
+        // A day with published serving hours is not a closure.
+        assert!(cowell.closure_covering("2026-07-03").is_none());
+    }
+
+    /// Guards the hours→hall mapping the menu filter depends on: cafes and
+    /// markets must not be mistaken for the residential hall they share a name
+    /// with.
+    #[test]
+    fn dining_hall_filter_excludes_cafes_and_markets() {
+        let locations = parse_hours(HOURS_FIXTURE);
+        let by_name = |n: &str| locations.iter().find(|l| l.name.contains(n)).unwrap();
+
+        assert!(by_name("Cowell/Stevenson").is_dining_hall());
+        assert!(by_name("College Nine").is_dining_hall());
+        assert!(!by_name("Stevenson Coffee House").is_dining_hall());
+        assert!(!by_name("Merrill Market").is_dining_hall());
+        assert!(!by_name("Oakes Cafe").is_dining_hall());
+        assert!(!by_name("Porter Market").is_dining_hall());
+    }
+
+    /// The exact names the live page publishes (note the U+2044 fraction
+    /// slashes) must resolve to the right hall.
+    #[test]
+    fn live_hours_names_map_to_halls() {
+        for (hours_name, expected) in [
+            ("Cowell/Stevenson Dining Hall - Summer Hours", "05"),
+            ("Porter \u{2044} Kresge Dining Hall - Summer Hours", "25"),
+            ("Crown\u{2044}Merrill Dining Hall - Summer Hours", "20"),
+            ("College Nine\u{2044}JRL Dining Hall - Summer Hours", "40"),
+            (
+                "Rachel Carson\u{2044}Oakes Dining Hall - Summer Hours",
+                "30",
+            ),
+        ] {
+            let hall =
+                find_hall(hours_name).unwrap_or_else(|| panic!("no hall matched {hours_name}"));
+            assert_eq!(hall.location_num, expected, "wrong hall for {hours_name}");
+        }
+    }
+
+    /// A closed location reports the closure rather than upstream's placeholder.
+    #[test]
+    fn closed_location_reports_closure_not_placeholder() {
+        let locations = parse_hours(HOURS_FIXTURE);
+        let cowell = locations
+            .iter()
+            .find(|l| l.name.contains("Cowell/Stevenson"))
+            .unwrap();
+
+        let output = cowell.format_with_date("2026-09-01");
+        assert!(output.contains("CLOSED"));
+        assert!(output.contains("2026-09-09"));
+        assert!(!output.contains("Mo-Su 7:00-19:00"));
+    }
+
+    /// Regression guard for the "non-disruptive in regular quarters" property:
+    /// with no closure covering the date, output is exactly as before.
+    #[test]
+    fn regular_quarter_output_unchanged() {
+        let locations = parse_hours(HOURS_FIXTURE);
+        let cowell = locations
+            .iter()
+            .find(|l| l.name.contains("Cowell/Stevenson"))
+            .unwrap();
+
+        assert!(cowell.closure_covering("2026-08-07").is_none());
+        let output = cowell.format_with_date("2026-08-07");
+        assert!(output.contains("**Regular Hours:**"));
+        assert!(output.contains("Mo-Su 7:00-19:00"));
     }
 
     // ── error paths ──

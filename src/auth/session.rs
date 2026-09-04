@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aes_gcm::aead::{Aead, OsRng};
-use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit};
+use aes_gcm::aead::{Aead, Generate};
+use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -28,7 +28,7 @@ pub fn save_session(path: &Path, data: &SessionData) -> Result<()> {
     let json = serde_json::to_vec(data)?;
     let key = derive_key();
     let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::generate();
 
     let ciphertext = cipher
         .encrypt(&nonce, json.as_slice())
@@ -59,12 +59,13 @@ pub fn load_session(path: &Path) -> Result<Option<SessionData>> {
     }
 
     let (nonce_bytes, ciphertext) = data.split_at(12);
-    let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
+    let nonce = Nonce::try_from(nonce_bytes)
+        .map_err(|_| anyhow::anyhow!("session file has a malformed nonce"))?;
     let key = derive_key();
     let cipher = Aes256Gcm::new(&key);
 
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|_| anyhow::anyhow!("session decryption failed - file may be corrupted"))?;
 
     let session: SessionData = serde_json::from_slice(&plaintext)?;
@@ -98,9 +99,9 @@ fn derive_key() -> Key<Aes256Gcm> {
     let mut hasher = Sha256::new();
     hasher.update(hostname.as_bytes());
     hasher.update(salt);
-    let hash = hasher.finalize();
-
-    *Key::<Aes256Gcm>::from_slice(&hash)
+    // sha2 0.11 and aes-gcm 0.11 share hybrid-array, so the 32-byte digest is
+    // already a `Key<Aes256Gcm>`.
+    hasher.finalize()
 }
 
 #[cfg(test)]

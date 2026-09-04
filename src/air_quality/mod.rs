@@ -187,8 +187,11 @@ fn format_readings(zip: &str, readings: &[AirReading]) -> String {
     let tz = &readings[0].local_time_zone;
     let mut out = format!(
         "# Air quality — {}, {} (ZIP {})\n\n\
-         **Observed**: {} at {:02}:00 {}\n\n",
-        area, state, zip, date, hour, tz
+         **Observed**: {}\n\n",
+        area,
+        state,
+        zip,
+        observed_stamp(date, hour, tz)
     );
 
     for r in readings {
@@ -348,5 +351,50 @@ mod tests {
         assert!(!out.contains("🟢"), "sentinel must not look Good: {}", out);
         assert!(!out.contains("-999"), "sentinel must not be shown: {}", out);
         assert!(out.contains("PM2.5"));
+    }
+}
+
+/// "YYYY-MM-DD at H:MM AM/PM ZZZ" for an AirNow observation. AirNow reports
+/// the hour in local clock time but labels the zone with its standard-time
+/// abbreviation year-round, so Pacific stamps are re-labelled via chrono-tz.
+fn observed_stamp(date: &str, hour: u32, tz: &str) -> String {
+    use chrono::TimeZone;
+    let fallback = format!("{date} at {hour:02}:00 {tz}");
+    if !matches!(tz, "PST" | "PDT") {
+        return fallback;
+    }
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.and_hms_opt(hour, 0, 0))
+        .and_then(|naive| {
+            chrono_tz::America::Los_Angeles
+                .from_local_datetime(&naive)
+                .single()
+        })
+        .map(|dt| dt.format("%Y-%m-%d at %-I:%M %p %Z").to_string())
+        .unwrap_or(fallback)
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn pacific_summer_observation_is_labelled_pdt() {
+        let out = observed_stamp("2026-09-03", 11, "PST");
+        assert!(out.contains("PDT"), "{out}");
+        assert!(!out.contains("PST"), "{out}");
+    }
+
+    #[test]
+    fn pacific_winter_observation_stays_pst() {
+        let out = observed_stamp("2026-01-15", 11, "PST");
+        assert!(out.contains("PST"), "{out}");
+    }
+
+    #[test]
+    fn non_pacific_zone_label_is_passed_through() {
+        let out = observed_stamp("2026-09-03", 11, "EST");
+        assert!(out.contains("EST"), "{out}");
     }
 }

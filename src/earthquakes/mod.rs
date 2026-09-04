@@ -165,9 +165,7 @@ async fn fetch_earthquakes(
     days: u32,
     limit: u32,
 ) -> Result<UsgsResponse> {
-    let now = crate::util::now_pacific();
-    let start = now - chrono::Duration::days(days as i64);
-    let start_str = start.format("%Y-%m-%dT%H:%M:%S").to_string();
+    let start_str = usgs_starttime(crate::util::now_pacific(), days);
 
     let url = format!(
         "{}?format=geojson&latitude={}&longitude={}&maxradiuskm={}&minmagnitude={}&starttime={}&limit={}&orderby=time",
@@ -563,5 +561,28 @@ mod tests {
         assert!(output.contains("No earthquakes recorded"));
         assert!(output.contains("## Context"));
         assert!(output.contains("USGS Earthquake Hazards Program"));
+    }
+}
+
+/// USGS FDSN treats an offset-less `starttime` as UTC, so format the window
+/// start in UTC rather than Pacific wall-clock.
+fn usgs_starttime(now: chrono::DateTime<chrono_tz::Tz>, days: u32) -> String {
+    (now - chrono::Duration::days(days as i64))
+        .to_utc()
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string()
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn starttime_is_expressed_in_utc() {
+        let now = chrono_tz::US::Pacific
+            .with_ymd_and_hms(2026, 9, 3, 12, 0, 0)
+            .unwrap();
+        assert_eq!(usgs_starttime(now, 1), "2026-09-02T19:00:00");
     }
 }

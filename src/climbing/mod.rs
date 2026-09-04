@@ -124,6 +124,13 @@ fn render_response(
 
     let route_filter = route.map(|r| r.to_lowercase());
 
+    // OpenBeta's name match is a global regex with no ranking; order the
+    // results ourselves so a California area named like the query comes first.
+    let areas: Vec<&GqlArea> = match area {
+        Some(q) => rank_areas(areas, q),
+        None => areas.iter().collect(),
+    };
+
     let mut out = String::new();
     for area in areas {
         let _ = writeln!(out, "# Climbing \u{2014} {}", area.area_name);
@@ -647,5 +654,103 @@ mod tests {
         let climb = &data.areas[0].climbs.as_ref().unwrap()[0];
         assert_eq!(climb.length, Some(-1));
         // -1 length is suppressed in the rendered output (formatter guards `len > 0`).
+    }
+}
+
+/// Order OpenBeta area matches for a name query: exact name first, then
+/// California areas, then by distance from Santa Cruz.
+fn rank_areas<'a>(areas: &'a [GqlArea], query: &str) -> Vec<&'a GqlArea> {
+    const SANTA_CRUZ: (f64, f64) = (36.9741, -122.0308);
+    let q = query.trim().to_lowercase();
+    let mut ranked: Vec<(u8, u8, i64, &GqlArea)> = areas
+        .iter()
+        .map(|a| {
+            let name = a.area_name.to_lowercase();
+            let name_rank = if name == q {
+                0
+            } else if name.starts_with(&q) {
+                1
+            } else if name.contains(&q) {
+                2
+            } else {
+                3
+            };
+            let in_california = a
+                .path_tokens
+                .as_ref()
+                .is_some_and(|t| t.iter().any(|s| s == "California"));
+            let distance_km = a
+                .metadata
+                .as_ref()
+                .and_then(|m| Some(haversine_km(SANTA_CRUZ, (m.lat?, m.lng?)) as i64))
+                .unwrap_or(i64::MAX);
+            (name_rank, u8::from(!in_california), distance_km, a)
+        })
+        .collect();
+    ranked.sort_by_key(|(name_rank, out_of_state, dist, _)| (*name_rank, *out_of_state, *dist));
+    ranked.into_iter().map(|(_, _, _, a)| a).collect()
+}
+
+fn haversine_km(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (lat1, lon1) = (a.0.to_radians(), a.1.to_radians());
+    let (lat2, lon2) = (b.0.to_radians(), b.1.to_radians());
+    let dlat = lat2 - lat1;
+    let dlon = lon2 - lon1;
+    let h = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    2.0 * 6371.0 * h.sqrt().asin()
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn area(name: &str, tokens: &[&str], lat: f64, lng: f64) -> GqlArea {
+        GqlArea {
+            area_name: name.into(),
+            total_climbs: Some(1),
+            metadata: Some(GqlMetadata {
+                lat: Some(lat),
+                lng: Some(lng),
+            }),
+            path_tokens: Some(tokens.iter().map(|t| t.to_string()).collect()),
+            children: None,
+            climbs: None,
+        }
+    }
+
+    #[test]
+    fn pinnacles_query_ranks_the_california_park_before_arizona_matches() {
+        let areas = vec![
+            area(
+                "Sisyphus Pinnacles",
+                &["USA", "Arizona", "Phoenix Area"],
+                33.41,
+                -111.31,
+            ),
+            area("Nosepicker Pinnacles", &["USA", "Arizona"], 33.41, -111.36),
+            area(
+                "Pinnacles National Park",
+                &["USA", "California", "Pinnacles National Park"],
+                36.48,
+                -121.18,
+            ),
+        ];
+        let ranked = rank_areas(&areas, "Pinnacles");
+        assert_eq!(ranked[0].area_name, "Pinnacles National Park");
+    }
+
+    #[test]
+    fn exact_name_beats_a_nearer_partial_match() {
+        let areas = vec![
+            area(
+                "Castle Rock State Park",
+                &["USA", "California"],
+                37.23,
+                -122.09,
+            ),
+            area("Castle Rock", &["USA", "California"], 39.0, -120.0),
+        ];
+        let ranked = rank_areas(&areas, "castle rock");
+        assert_eq!(ranked[0].area_name, "Castle Rock");
     }
 }

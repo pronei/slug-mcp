@@ -9,7 +9,7 @@ name = "slug-mcp"
 path = "src/main.rs"
 
 [dependencies]
-rmcp = { version = "2.1", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "3.2", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
@@ -28,16 +28,16 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 directories = "6"
-aes-gcm = { version = "0.10", optional = true }
-sha2 = "0.10"
+aes-gcm = { version = "0.11", optional = true }
+sha2 = "0.11"
 hostname = { version = "0.4", optional = true }
 urlencoding = "2"
 chrono = "0.4"
 chrono-tz = "0.10"
 chromiumoxide = { version = "0.9.1", optional = true }
 futures-util = "0.3.32"
-base64 = "0.22"
-quick-xml = { version = "0.41", features = ["serialize"] }
+base64 = "0.23"
+quick-xml = { version = "0.42", features = ["serialize"] }
 gtfs-realtime = "0.2"
 prost = "0.14"
 regex = "1"

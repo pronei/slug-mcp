@@ -1,9 +1,8 @@
-// BusTime API client. As of 2026-04-10, `get_predictions` is the fallback
-// path in `TransitService::get_predictions` (GTFS-RT is primary; BusTime
-// takes over when GTFS-RT has no absolute-time data for a matched stop).
-// `get_service_bulletins` remains the backend for `get_service_alerts` —
-// GTFS-RT's alerts feed exists but doesn't support per-route/per-stop
-// filtering as cleanly as BusTime's bulletin API.
+// BusTime API client. `get_predictions` is the primary path in
+// `TransitService::get_predictions` (its stop ids match the stops catalog;
+// GTFS-RT trip_updates uses a different stop_id namespace and is only a
+// fallback). `get_service_bulletins` backs per-route/per-stop
+// `get_service_alerts`; the keyless system-wide view comes from GTFS-RT.
 
 use anyhow::{Context, Result, bail};
 use chrono::NaiveDateTime;
@@ -26,7 +25,7 @@ impl TripStatus {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Prediction {
     /// Route number (e.g., "10", "15")
     pub route: String,
@@ -136,7 +135,7 @@ fn parse_predictions(body: &str, now: NaiveDateTime) -> Result<Vec<Prediction>> 
 
 // ─── Service bulletins ───
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServiceBulletin {
     pub subject: String,
     pub detail: String,

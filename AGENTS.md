@@ -92,11 +92,15 @@ Then wire it in three places:
 
 ## Conventions
 
-- **rmcp 2.x API.** Tool handler params use `Parameters<T>` wrapping the request
+- **rmcp 3.x API.** Tool handler params use `Parameters<T>` wrapping the request
   struct — *not* `#[tool(aggr)]` (older API). Tool results wrap
-  `ContentBlock::text(...)` (renamed from `Content` in rmcp 2.0).
+  `ContentBlock::text(...)`. `ServerHandler::call_tool` returns
+  `CallToolResponse` (the router's result converts via `Into`), and
+  `ListToolsResult` has cache-hint fields — build it with `..Default::default()`.
   `ServerInfo::new(...)` is a builder; the underlying struct is
-  `#[non_exhaustive]`, so don't construct it directly.
+  `#[non_exhaustive]`, so don't construct it directly. Streamable HTTP config
+  uses `legacy_session_mode` (sessions only for protocol versions before
+  2026-07-28; newer clients are served statelessly per SEP-2567).
 
 - **Optional API keys degrade, never error.** If a key is `None`, return a friendly
   string explaining the env var to set. Don't return `Err`. The exception is
@@ -151,6 +155,18 @@ Then wire it in three places:
 - **CruzID auth is browser-driven.** `auth/browser.rs` drives Chrome via CDP
   (chromiumoxide). Headless servers can't run the `login` tool — use
   `slug-mcp export-token` locally and the `authenticate` tool remotely.
+
+- **BusTime and GTFS-RT use different stop-id namespaces.** BusTime `stpid`s
+  (the stops catalog) never appear in the GTFS-RT trip_updates feed, so
+  `get_bus_predictions` is BusTime-first; GTFS-RT only supplies vehicle
+  positions/occupancy and system alerts. Real GTFS-RT predictions (and true
+  per-route delays) need a static-GTFS `stops.txt`/`stop_times.txt` loader.
+
+- **The public build exposes 50 tools, not 54.** `deploy.sh` builds
+  `--no-default-features`, which compiles out the four auth tools.
+
+- **`docs/` is git-ignored.** Local design notes and audit write-ups live there
+  but never ship; anything that must be tracked goes in README/AGENTS/CHANGELOG.
 
 - **Stdio mode owns stdout.** Anything written to stdout in stdio transport
   corrupts MCP framing. All logs/diagnostics go to stderr. Tracing is configured

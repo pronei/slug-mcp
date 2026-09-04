@@ -28,20 +28,13 @@ impl TransitService {
 
     /// Get real-time bus arrival predictions for a stop by name.
     ///
-    /// **Dispatch**: GTFS-RT is the primary source (no per-call key needed,
-    /// rich vehicle + occupancy data). If GTFS-RT returns no predictions for
-    /// the matched stop — e.g., Metro only published `delay`-based updates
-    /// for that trip, or the trip_updates feed hasn't caught up — the
-    /// service automatically falls back to the authenticated BusTime API,
-    /// which gives pre-computed ETAs, destination headsigns, and DUE/DLY
-    /// countdown labels. The stops catalog itself is always loaded via
-    /// BusTime (cached 24h) so `SLUG_MCP_BUSTIME_KEY` is required for this
-    /// tool to work at all.
-    ///
-    /// Rollback: to force-switch back to BusTime as the primary backend,
-    /// swap the order of the two match arms below (call `bustime_predictions`
-    /// first and fall back to GTFS-RT on empty). `bustime.rs` is kept live
-    /// for this path.
+    /// **Dispatch**: BusTime is the primary source — its `stpid`s are the ids
+    /// in the stops catalog, and it carries headsigns and DUE/DLY labels.
+    /// Occupancy is joined in from the GTFS-RT vehicles feed by vehicle id
+    /// (SC Metro leaves BusTime's passenger-load field blank). GTFS-RT
+    /// trip_updates is only a fallback when BusTime itself fails: its
+    /// stop_ids are a different namespace from BusTime's, so in practice it
+    /// rarely matches a catalog stop.
     pub async fn get_predictions(&self, stop_query: &str, route: Option<&str>) -> Result<String> {
         // Stop lookup comes from BusTime (cached 24h). We need the BusTime
         // key for stop search — graceful degradation if it's missing.
@@ -49,8 +42,7 @@ impl TransitService {
             Some(key) => key.clone(),
             None => {
                 return Ok(
-                    "BusTime API key not configured for stop lookups. Set the `SLUG_MCP_BUSTIME_KEY` environment variable.\n\
-                     (Note: real-time predictions come from GTFS-RT primarily, with BusTime as a fallback for stops where GTFS-RT has no absolute-time data. The stops catalog itself still uses BusTime.)\n\
+                    "BusTime API key not configured. Set the `SLUG_MCP_BUSTIME_KEY` environment variable — stop lookup and arrival predictions both need it.\n\
                      Register for developer access at https://rt.scmetro.org".to_string()
                 );
             }
@@ -60,7 +52,7 @@ impl TransitService {
         let matches = stops::search_stops(&stops, stop_query, 5);
         if matches.is_empty() {
             return Ok(format!(
-                "No stops found matching \"{}\". Try a different search term (e.g., \"Science Hill\", \"Metro Center\", \"Oakes\").",
+                "No stops found matching \"{}\". Try a stop or street name (e.g., \"Science Hill\", \"Pacific & Center\", \"Oakes College\").",
                 stop_query
             ));
         }
@@ -68,75 +60,74 @@ impl TransitService {
         let best_match = matches[0];
         let other_matches: Vec<&Stop> = matches.iter().skip(1).copied().collect();
 
-        // Primary: GTFS-RT (feed-level cache is 30s inside gtfs_rt).
-        let gtfs_result =
-            gtfs_rt::get_predictions_for_stop(&self.http, &self.cache, &best_match.stop_id, route)
-                .await;
+        let cache_key = format!(
+            "transit:bustime:pred:{}:{}",
+            best_match.stop_id,
+            route.unwrap_or("")
+        );
+        let bustime_result = self
+            .cache
+            .get_or_fetch(&cache_key, 30, {
+                let http = self.http.clone();
+                let api_key = api_key.clone();
+                let stop_id = best_match.stop_id.clone();
+                let route = route.map(str::to_string);
+                move || async move {
+                    bustime::get_predictions(&http, &api_key, &stop_id, route.as_deref()).await
+                }
+            })
+            .await;
 
-        let output = match gtfs_result {
-            Ok(preds) if !preds.is_empty() => {
-                gtfs_rt::format_predictions(best_match, &preds, &other_matches)
-            }
-            Ok(_) => {
-                tracing::info!(
-                    "GTFS-RT had no predictions for stop {} (route filter {:?}); falling back to BusTime",
-                    best_match.stop_id,
-                    route
-                );
-                self.bustime_fallback(
-                    &api_key,
-                    best_match,
-                    route,
-                    &other_matches,
-                    "GTFS-RT returned no data for this stop",
-                )
-                .await
+        let output = match bustime_result {
+            Ok(mut preds) => {
+                match gtfs_rt::occupancy_lookup(&self.http, &self.cache).await {
+                    Ok(lookup) => apply_occupancy(&mut preds, &lookup),
+                    Err(e) => {
+                        tracing::info!("GTFS-RT vehicles feed unavailable for occupancy: {}", e)
+                    }
+                }
+                format_bustime_predictions(best_match, &preds, &other_matches, None)
             }
             Err(e) => {
                 tracing::warn!(
-                    "GTFS-RT fetch failed for stop {}: {} (falling back to BusTime)",
+                    "BusTime predictions failed for stop {}: {} (trying GTFS-RT)",
                     best_match.stop_id,
                     e
                 );
-                self.bustime_fallback(
-                    &api_key,
-                    best_match,
+                match gtfs_rt::get_predictions_for_stop(
+                    &self.http,
+                    &self.cache,
+                    &best_match.stop_id,
                     route,
-                    &other_matches,
-                    &format!("GTFS-RT primary feed unreachable ({})", e),
                 )
                 .await
+                {
+                    Ok(preds) if !preds.is_empty() => {
+                        gtfs_rt::format_predictions(best_match, &preds, &other_matches)
+                    }
+                    Ok(_) => format!(
+                        "Could not fetch predictions for {} (Stop #{}):\n  - BusTime: {}\n  - GTFS-RT trip_updates has no entry for this stop\n",
+                        best_match.stop_name, best_match.stop_id, e
+                    ),
+                    Err(e2) => format!(
+                        "Could not fetch predictions for {} (Stop #{}):\n  - BusTime: {}\n  - GTFS-RT: {}\n",
+                        best_match.stop_name, best_match.stop_id, e, e2
+                    ),
+                }
             }
         };
 
         Ok(output)
     }
 
-    /// Fetch per-stop predictions from BusTime as a fallback when GTFS-RT has
-    /// no data. Formats using the BusTime-specific helper so callers see the
-    /// ergonomic extras (DUE/DLY countdown labels, headsigns, canceled trips).
-    async fn bustime_fallback(
-        &self,
-        api_key: &str,
-        stop: &Stop,
-        route: Option<&str>,
-        other_matches: &[&Stop],
-        reason: &str,
-    ) -> String {
-        match bustime::get_predictions(&self.http, api_key, &stop.stop_id, route).await {
-            Ok(preds) => format_bustime_predictions(stop, &preds, other_matches, reason),
-            Err(e) => format!(
-                "Could not fetch predictions for {} (Stop #{}):\n  - {}\n  - BusTime fallback also failed: {}",
-                stop.stop_name, stop.stop_id, reason, e
-            ),
-        }
-    }
-
     /// System-wide Santa Cruz Metro service alerts via GTFS-RT (no API key).
     /// Reached through `get_service_alerts` with no filter.
     async fn get_system_alerts(&self) -> Result<String> {
         match gtfs_rt::fetch_system_alerts(&self.http, &self.cache).await {
-            Ok(alerts) => Ok(gtfs_rt::format_system_alerts(&alerts)),
+            Ok(alerts) => Ok(gtfs_rt::format_system_alerts(
+                &alerts,
+                crate::util::now_pacific().timestamp(),
+            )),
             Err(e) => {
                 tracing::warn!("GTFS-RT system alerts fetch failed: {}", e);
                 Ok(format!(
@@ -201,44 +192,47 @@ impl TransitService {
             route.unwrap_or(""),
             stop_id.unwrap_or("")
         );
-
-        if let Some(cached) = self.cache.get::<String>(&cache_key).await {
-            return Ok(cached);
-        }
-
-        let bulletins = bustime::get_service_bulletins(&self.http, &api_key, route, stop_id).await;
-
-        let output = match bulletins {
-            Ok(b) => format_service_bulletins(&b),
-            Err(e) => {
-                let msg = e.to_string();
-                // "No data found for parameter" means zero bulletins when the
-                // route/stop is known-valid. But we can't distinguish that from
-                // a genuinely bad parameter here, so surface it transparently.
-                if msg.contains("No data found") {
-                    format!(
-                        "No active service alerts for {}.\n\
-                         (If this route/stop seems wrong, double-check the identifier.)",
-                        route
-                            .map(|r| format!("route {}", r))
-                            .or_else(|| stop_id.map(|s| format!("stop {}", s)))
-                            .unwrap_or_default()
+        // Cache the parsed bulletins (not the rendered text) so the footer
+        // timestamp is always fresh and a transient error is never pinned.
+        let bulletins = self
+            .cache
+            .get_or_fetch(&cache_key, 300, {
+                let http = self.http.clone();
+                let api_key = api_key.clone();
+                let route = route.map(str::to_string);
+                let stop_id = stop_id.map(str::to_string);
+                move || async move {
+                    match bustime::get_service_bulletins(
+                        &http,
+                        &api_key,
+                        route.as_deref(),
+                        stop_id.as_deref(),
                     )
-                } else {
-                    format!("Could not fetch service alerts: {}", msg)
+                    .await
+                    {
+                        Ok(b) => Ok(b),
+                        // BusTime answers "No data found" for zero bulletins
+                        // on a known route/stop (and for a bad identifier).
+                        Err(e) if e.to_string().contains("No data found") => Ok(Vec::new()),
+                        Err(e) => Err(e),
+                    }
                 }
-            }
-        };
-
-        self.cache
-            .set(
-                &cache_key,
-                output.clone(),
-                std::time::Duration::from_secs(300),
-            )
+            })
             .await;
 
-        Ok(output)
+        let scope = route
+            .map(|r| format!("route {}", r))
+            .or_else(|| stop_id.map(|s| format!("stop {}", s)))
+            .unwrap_or_default();
+        Ok(match bulletins {
+            Ok(b) if b.is_empty() => format!(
+                "No active service alerts for {}.\n\
+                 (If this route/stop seems wrong, double-check the identifier.)",
+                scope
+            ),
+            Ok(b) => format_service_bulletins(&b),
+            Err(e) => format!("Could not fetch service alerts: {}", e),
+        })
     }
 
     async fn load_stops(&self, api_key: &str) -> Result<Vec<Stop>> {
@@ -261,25 +255,29 @@ impl TransitService {
     }
 }
 
-/// Render BusTime predictions — used only when GTFS-RT had no data and the
-/// service fell back to BusTime. Surfaces the ergonomic extras BusTime
-/// provides (DUE/DLY countdown labels, destination headsigns, canceled or
-/// expressed trip flags) that GTFS-RT can't match without a static GTFS
-/// schedule loader.
+/// Render BusTime predictions (DUE/DLY countdown labels, destination
+/// headsigns, canceled or expressed trip flags, occupancy joined from
+/// GTFS-RT). `reason` is set only when BusTime answered as a fallback.
 fn format_bustime_predictions(
     stop: &Stop,
     predictions: &[bustime::Prediction],
     other_matches: &[&Stop],
-    reason: &str,
+    reason: Option<&str>,
 ) -> String {
     let mut out = format!(
-        "Bus arrivals at {} (Stop #{}):\n_{}; showing BusTime pre-computed ETAs._\n",
-        stop.stop_name, stop.stop_id, reason
+        "Bus arrivals at {} (Stop #{}):\n",
+        stop.stop_name, stop.stop_id
     );
+    if let Some(reason) = reason {
+        out.push_str(&format!(
+            "_{}; showing BusTime pre-computed ETAs._\n",
+            reason
+        ));
+    }
 
     if predictions.is_empty() {
         out.push_str(
-            "\nNo upcoming buses from either GTFS-RT or BusTime. Service may have ended for the day or no buses are currently running.\n",
+            "\nNo upcoming buses reported. Service may have ended for the day or no buses are currently running.\n",
         );
     } else {
         let mut by_route: Vec<(String, Vec<&bustime::Prediction>)> = Vec::new();
@@ -341,9 +339,15 @@ fn format_bustime_predictions(
     }
 
     let now = crate::util::now_pacific();
+    let source = if reason.is_some() {
+        "BusTime (fallback)"
+    } else {
+        "BusTime"
+    };
     out.push_str(&format!(
-        "\nLast updated: {} · source: BusTime (fallback)\n",
-        now.format("%-I:%M %p")
+        "\nLast updated: {} · source: {}\n",
+        now.format("%-I:%M %p"),
+        source
     ));
 
     if !other_matches.is_empty() {
@@ -354,6 +358,21 @@ fn format_bustime_predictions(
     }
 
     out
+}
+
+/// Fill BusTime predictions' empty passenger-load field from a GTFS-RT
+/// vehicle_id -> occupancy lookup (SC Metro never populates BusTime's field).
+fn apply_occupancy(
+    predictions: &mut [bustime::Prediction],
+    occupancy: &std::collections::HashMap<String, String>,
+) {
+    for p in predictions {
+        if p.passenger_load.is_none()
+            && let Some(label) = occupancy.get(&p.vehicle_id)
+        {
+            p.passenger_load = Some(label.clone());
+        }
+    }
 }
 
 /// Translate BusTime's shouty occupancy enum to a short human label.
@@ -444,8 +463,8 @@ mod tests {
     #[test]
     fn format_bustime_empty_predictions_explains_no_service() {
         let s = stop("2674", "Science Hill");
-        let out = format_bustime_predictions(&s, &[], &[], "GTFS-RT returned no data");
-        assert!(out.contains("No upcoming buses from either GTFS-RT or BusTime"));
+        let out = format_bustime_predictions(&s, &[], &[], Some("GTFS-RT returned no data"));
+        assert!(out.contains("No upcoming buses reported"));
         assert!(out.contains("GTFS-RT returned no data"));
         assert!(out.contains("source: BusTime (fallback)"));
     }
@@ -464,7 +483,7 @@ mod tests {
 
         let preds = vec![due, delayed, canceled];
         let other = stop("1615", "Science Hill (inbound)");
-        let out = format_bustime_predictions(&s, &preds, &[&other], "fallback test");
+        let out = format_bustime_predictions(&s, &preds, &[&other], Some("fallback test"));
 
         // Route grouping with destination arrow.
         assert!(out.contains("Route 19 (OUTBOUND → UCSC via West Gate):"));
@@ -487,7 +506,7 @@ mod tests {
         let s = stop("1", "Metro Center");
         let arriving = pred("18", "1", 1);
         let later = pred("18", "9", 9);
-        let out = format_bustime_predictions(&s, &[arriving, later], &[], "r");
+        let out = format_bustime_predictions(&s, &[arriving, later], &[], Some("r"));
         assert!(out.contains("arriving (6:37 AM)"));
         assert!(out.contains("9 min (6:37 AM)"));
     }
@@ -523,5 +542,75 @@ mod tests {
         assert_eq!(out.matches("Same text").count(), 1);
         // No priority bracket when priority is empty.
         assert!(out.contains("**Elevator outage**"));
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn stop() -> Stop {
+        Stop {
+            stop_id: "2674".into(),
+            stop_name: "McLaughlin Dr (UCSC - Science Hill)".into(),
+            stop_lat: 36.99,
+            stop_lon: -122.06,
+        }
+    }
+
+    fn pred(vid: &str) -> bustime::Prediction {
+        bustime::Prediction {
+            route: "19".into(),
+            direction: "OUTBOUND".into(),
+            destination: "UCSC".into(),
+            predicted_time: "12:23 PM".into(),
+            eta_minutes: 5,
+            countdown: "5".into(),
+            is_delayed: false,
+            trip_status: bustime::TripStatus::Normal,
+            passenger_load: None,
+            next_bus_minutes: None,
+            vehicle_id: vid.into(),
+        }
+    }
+
+    #[test]
+    fn bustime_primary_footer_has_no_fallback_note() {
+        let out = format_bustime_predictions(&stop(), &[pred("2812")], &[], None);
+        assert!(out.contains("source: BusTime\n"), "{out}");
+        assert!(!out.contains("fallback"), "{out}");
+        assert!(!out.contains("GTFS-RT returned no data"), "{out}");
+    }
+
+    #[test]
+    fn bustime_with_reason_keeps_the_note() {
+        let out = format_bustime_predictions(
+            &stop(),
+            &[pred("2812")],
+            &[],
+            Some("GTFS-RT feed unreachable"),
+        );
+        assert!(out.contains("GTFS-RT feed unreachable"), "{out}");
+    }
+
+    #[test]
+    fn occupancy_is_filled_from_gtfs_rt_vehicle_lookup() {
+        let mut preds = vec![pred("2812"), pred("9999")];
+        let mut lookup = HashMap::new();
+        lookup.insert("2812".to_string(), "few seats".to_string());
+        apply_occupancy(&mut preds, &lookup);
+        assert_eq!(preds[0].passenger_load.as_deref(), Some("few seats"));
+        assert_eq!(preds[1].passenger_load, None);
+    }
+
+    #[test]
+    fn occupancy_does_not_override_bustime_value() {
+        let mut preds = vec![pred("2812")];
+        preds[0].passenger_load = Some("FULL".into());
+        let mut lookup = HashMap::new();
+        lookup.insert("2812".to_string(), "empty".to_string());
+        apply_occupancy(&mut preds, &lookup);
+        assert_eq!(preds[0].passenger_load.as_deref(), Some("FULL"));
     }
 }

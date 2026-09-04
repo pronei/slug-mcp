@@ -43,17 +43,33 @@ pub async fn fetch_all_stops(http: &reqwest::Client, api_key: &str) -> Result<Ve
         .collect();
     let stop_results = futures_util::future::join_all(stop_futures).await;
 
-    // 5. Deduplicate by stop_id
+    merge_stop_results(stop_results)
+}
+
+/// Merge per-(route, direction) `getstops` results into one deduplicated
+/// catalog. Refuses to produce a catalog when more than a quarter of the
+/// fan-out failed: a partial catalog would be cached for a day and make every
+/// stop on the failed routes report "No stops found".
+pub fn merge_stop_results(results: Vec<Result<Vec<Stop>>>) -> Result<Vec<Stop>> {
+    let total = results.len();
+    let failed = results.iter().filter(|r| r.is_err()).count();
+    if failed * 4 > total {
+        bail!(
+            "BusTime getstops failed for {failed} of {total} route-directions; refusing to cache a partial stop catalog"
+        );
+    }
+    if failed > 0 {
+        tracing::warn!("BusTime getstops failed for {failed} of {total} route-directions");
+    }
     let mut seen = HashSet::new();
     let mut all_stops = Vec::new();
-    for stops in stop_results.into_iter().flatten() {
+    for stops in results.into_iter().flatten() {
         for stop in stops {
             if seen.insert(stop.stop_id.clone()) {
                 all_stops.push(stop);
             }
         }
     }
-
     Ok(all_stops)
 }
 
@@ -194,45 +210,77 @@ struct BustimeStop {
     lon: f64,
 }
 
-/// Search stops by name using case-insensitive substring matching.
-/// Returns up to `limit` matches, sorted by relevance (exact > prefix > contains > words).
+/// Query aliases for hubs whose everyday name differs from the BusTime stop
+/// name (all normalized: lowercase, `&` -> "and", punctuation stripped).
+const STOP_ALIASES: &[(&str, &str)] = &[
+    ("metro center", "pacific and center"),
+    ("metro station", "pacific and center"),
+    ("santa cruz metro", "pacific and center"),
+    ("downtown transit center", "pacific and center"),
+    ("main entrance", "bay and high"),
+    ("base of campus", "bay and high"),
+];
+
+/// Lowercase, fold `&` to "and", and collapse punctuation/whitespace so
+/// "Bay & High", "bay and high", and "BAY AND HIGH" compare equal.
+fn normalize(text: &str) -> String {
+    let folded = text.to_lowercase().replace('&', " and ");
+    let spaced: String = folded
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
+    spaced.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Search stops by name. Ranking: exact > prefix > substring > every query
+/// token present > a majority of tokens present. Falls back to the alias
+/// table only when the literal query matches nothing.
 pub fn search_stops<'a>(stops: &'a [Stop], query: &str, limit: usize) -> Vec<&'a Stop> {
-    let query_lower = query.trim().to_lowercase();
+    let query = normalize(query);
     // An empty query would prefix-match every stop and return `limit`
     // arbitrary ones; treat it as "no match" so the tool prompts for a name.
-    if query_lower.is_empty() {
+    if query.is_empty() {
         return Vec::new();
     }
+    let direct = rank_stops(stops, &query, limit);
+    if !direct.is_empty() {
+        return direct;
+    }
+    match STOP_ALIASES.iter().find(|(alias, _)| *alias == query) {
+        Some((_, target)) => rank_stops(stops, target, limit),
+        None => Vec::new(),
+    }
+}
 
-    let mut matches: Vec<(usize, &Stop)> = stops
+fn rank_stops<'a>(stops: &'a [Stop], query: &str, limit: usize) -> Vec<&'a Stop> {
+    let tokens: Vec<&str> = query.split_whitespace().collect();
+    let mut matches: Vec<(u8, usize, usize, &Stop)> = stops
         .iter()
         .filter_map(|stop| {
-            let name_lower = stop.stop_name.to_lowercase();
-            if name_lower == query_lower {
-                Some((0, stop)) // exact match
-            } else if name_lower.starts_with(&query_lower) {
-                Some((1, stop)) // prefix match
-            } else if name_lower.contains(&query_lower) {
-                Some((2, stop)) // substring match
+            let name = normalize(&stop.stop_name);
+            let hits = tokens.iter().filter(|t| name.contains(*t)).count();
+            let rank = if name == query {
+                0
+            } else if name.starts_with(query) {
+                1
+            } else if name.contains(query) {
+                2
+            } else if hits == tokens.len() {
+                3
+            } else if tokens.len() >= 2 && hits * 2 >= tokens.len() {
+                4
             } else {
-                // Also match individual words
-                let query_words: Vec<&str> = query_lower.split_whitespace().collect();
-                let all_words_match =
-                    !query_words.is_empty() && query_words.iter().all(|w| name_lower.contains(w));
-                if all_words_match {
-                    Some((3, stop))
-                } else {
-                    None
-                }
-            }
+                return None;
+            };
+            Some((rank, tokens.len() - hits, name.len(), stop))
         })
         .collect();
 
-    matches.sort_by_key(|(rank, _)| *rank);
+    matches.sort_by_key(|(rank, misses, len, _)| (*rank, *misses, *len));
     matches
         .into_iter()
         .take(limit)
-        .map(|(_, stop)| stop)
+        .map(|(_, _, _, stop)| stop)
         .collect()
 }
 
@@ -325,5 +373,83 @@ mod tests {
         let errors = parsed.bustime_response.error.unwrap();
         assert_eq!(errors[0].msg, "Invalid API access key supplied");
         assert!(parsed.bustime_response.routes.is_none());
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn stop(id: &str, name: &str) -> Stop {
+        Stop {
+            stop_id: id.to_string(),
+            stop_name: name.to_string(),
+            stop_lat: 36.97,
+            stop_lon: -122.03,
+        }
+    }
+
+    #[test]
+    fn search_resolves_metro_center_alias_to_pacific_and_center() {
+        let stops = vec![stop("2697", "Pacific & Center"), stop("1", "Science Hill")];
+        let results = search_stops(&stops, "Metro Center", 5);
+        assert_eq!(results.first().map(|s| s.stop_id.as_str()), Some("2697"));
+    }
+
+    #[test]
+    fn search_resolves_main_entrance_alias_to_bay_and_high() {
+        let stops = vec![stop("5", "Bay & High"), stop("1", "Science Hill")];
+        let results = search_stops(&stops, "Main Entrance", 5);
+        assert_eq!(results.first().map(|s| s.stop_id.as_str()), Some("5"));
+    }
+
+    #[test]
+    fn search_folds_ampersand_and_the_word_and() {
+        let stops = vec![stop("5", "Bay & High")];
+        assert_eq!(search_stops(&stops, "Bay and High", 5).len(), 1);
+        assert_eq!(search_stops(&stops, "bay & high", 5).len(), 1);
+        assert_eq!(search_stops(&stops, "BAY AND HIGH", 5).len(), 1);
+    }
+
+    #[test]
+    fn search_accepts_majority_token_coverage_but_not_minority() {
+        let stops = vec![stop("5", "Bay & High"), stop("1", "Science Hill")];
+        let results = search_stops(&stops, "bay high entrance", 5);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].stop_id, "5");
+        assert!(search_stops(&stops, "bay airport station road", 5).is_empty());
+    }
+
+    #[test]
+    fn search_direct_match_wins_over_alias() {
+        let stops = vec![stop("9", "Metro Center"), stop("2697", "Pacific & Center")];
+        let results = search_stops(&stops, "Metro Center", 5);
+        assert_eq!(results.first().map(|s| s.stop_id.as_str()), Some("9"));
+    }
+
+    #[test]
+    fn merge_refuses_catalog_when_more_than_a_quarter_of_fetches_failed() {
+        let results: Vec<anyhow::Result<Vec<Stop>>> = vec![
+            Ok(vec![stop("1", "A")]),
+            Ok(vec![stop("2", "B")]),
+            Ok(vec![stop("3", "C")]),
+            Err(anyhow::anyhow!("429")),
+            Err(anyhow::anyhow!("429")),
+        ];
+        assert!(merge_stop_results(results).is_err());
+    }
+
+    #[test]
+    fn merge_dedupes_and_tolerates_a_minority_of_failures() {
+        let results: Vec<anyhow::Result<Vec<Stop>>> = vec![
+            Ok(vec![stop("1", "A"), stop("2", "B")]),
+            Ok(vec![stop("2", "B"), stop("3", "C")]),
+            Ok(vec![stop("4", "D")]),
+            Ok(vec![]),
+            Err(anyhow::anyhow!("timeout")),
+        ];
+        let merged = merge_stop_results(results).unwrap();
+        let ids: Vec<&str> = merged.iter().map(|s| s.stop_id.as_str()).collect();
+        assert_eq!(ids, vec!["1", "2", "3", "4"]);
     }
 }

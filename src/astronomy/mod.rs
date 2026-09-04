@@ -75,7 +75,14 @@ impl AstronomyService {
     }
 
     async fn load_open_meteo(&self, lat: f64, lon: f64, days: u32) -> Result<OpenMeteoResponse> {
-        let key = format!("astro:openmeteo:{:.3}:{:.3}:{}", lat, lon, days);
+        // Date in the key: the daily block starts "today" and must roll over.
+        let key = format!(
+            "astro:openmeteo:{:.3}:{:.3}:{}:{}",
+            lat,
+            lon,
+            days,
+            crate::util::now_pacific().date_naive()
+        );
         let http = self.http.clone();
         self.cache
             .get_or_fetch::<OpenMeteoResponse, _, _>(&key, 3600, move || async move {
@@ -85,11 +92,12 @@ impl AstronomyService {
     }
 
     async fn load_twilight(&self, lat: f64, lon: f64) -> Result<TwilightData> {
-        let key = format!("astro:twilight:{:.3}:{:.3}", lat, lon);
+        let date = crate::util::now_pacific().date_naive().to_string();
+        let key = twilight_cache_key(lat, lon, &date);
         let http = self.http.clone();
         self.cache
             .get_or_fetch::<TwilightData, _, _>(&key, 3600, move || async move {
-                fetch_twilight(&http, lat, lon).await
+                fetch_twilight(&http, lat, lon, &date).await
             })
             .await
     }
@@ -200,8 +208,13 @@ pub struct TwilightData {
     pub astro_end: String,
 }
 
-async fn fetch_twilight(http: &reqwest::Client, lat: f64, lon: f64) -> Result<TwilightData> {
-    let url = format!("https://api.sunrise-sunset.org/json?lat={lat}&lng={lon}&formatted=0");
+async fn fetch_twilight(
+    http: &reqwest::Client,
+    lat: f64,
+    lon: f64,
+    date: &str,
+) -> Result<TwilightData> {
+    let url = twilight_url(lat, lon, date);
     let resp = http
         .get(&url)
         .send()
@@ -807,5 +820,31 @@ mod tests {
         let out = format_output(&om, None, DEFAULT_LAT, DEFAULT_LON, 1);
         assert!(out.contains("**Sunrise**: —"));
         assert!(out.contains("**Sunset**: 7:53 PM"));
+    }
+}
+
+/// sunrise-sunset.org defaults to the current *UTC* date; pin the Pacific date
+/// so an evening call doesn't return tomorrow's twilight as "today".
+fn twilight_url(lat: f64, lon: f64, date: &str) -> String {
+    format!("https://api.sunrise-sunset.org/json?lat={lat}&lng={lon}&date={date}&formatted=0")
+}
+
+fn twilight_cache_key(lat: f64, lon: f64, date: &str) -> String {
+    format!("astro:twilight:{:.3}:{:.3}:{date}", lat, lon)
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn twilight_request_pins_the_pacific_date() {
+        let url = twilight_url(36.9741, -122.0308, "2026-09-03");
+        assert!(url.contains("date=2026-09-03"), "{url}");
+    }
+
+    #[test]
+    fn twilight_cache_key_rolls_over_daily() {
+        assert!(twilight_cache_key(36.9741, -122.0308, "2026-09-03").ends_with(":2026-09-03"));
     }
 }

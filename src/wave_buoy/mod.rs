@@ -7,9 +7,13 @@
 //! wave research than the combined `Hs` in the plain realtime2 feed.
 //!
 //! Defaults to Monterey-area CDIP stations:
-//! - **46114** (CDIP 158 – Pt. Sur Offshore)
-//! - **46236** (CDIP 185 – Monterey Canyon Inner)
+//! - **46239** (CDIP 157 – Point Sur)
+//! - **46236** (CDIP 156 – Monterey Canyon Outer)
 //! - **46042** (NOAA – Monterey — included for context as a 3m discus)
+//!
+//! 46114 (CDIP 158, Pt. Sur Offshore) is no longer a default: NDBC only
+//! serves `.spec` for stations that reported spectra within ~45 days, and
+//! that buoy has had no feed since at least 2026-07.
 //!
 //! Feed: <https://www.ndbc.noaa.gov/data/realtime2/{STATION}.spec>
 
@@ -23,16 +27,19 @@ use serde::{Deserialize, Serialize};
 use crate::cache::CacheStore;
 
 pub const DEFAULT_STATIONS: &[(&str, &str)] = &[
-    ("46114", "Pt. Sur Offshore (CDIP 158)"),
-    ("46236", "Monterey Canyon Inner (CDIP 185)"),
+    ("46239", "Point Sur (CDIP 157)"),
+    ("46236", "Monterey Canyon Outer (CDIP 156)"),
     ("46042", "Monterey (NOAA 46042)"),
 ];
+
+/// Stations we can label but do not query by default (feed currently dead).
+const KNOWN_LABELS: &[(&str, &str)] = &[("46114", "Pt. Sur Offshore (CDIP 158)")];
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WaveBuoyRequest {
     /// Comma-separated NDBC station IDs (CDIP stations are NDBC-mirrored).
     /// If omitted, queries default Monterey-area waveriders
-    /// (46114 / 46236 / 46042) and compares them.
+    /// (46239 / 46236 / 46042) and compares them.
     pub stations: Option<String>,
 }
 
@@ -67,10 +74,8 @@ impl WaveBuoyService {
                 .map(|id| id.trim().to_string())
                 .filter(|id| !id.is_empty())
                 .map(|id| {
-                    let label = DEFAULT_STATIONS
-                        .iter()
-                        .find(|(s, _)| *s == id)
-                        .map(|(_, name)| name.to_string())
+                    let label = station_label(&id)
+                        .map(str::to_string)
                         .unwrap_or_else(|| format!("Station {}", id));
                     (id, label)
                 })
@@ -407,5 +412,32 @@ mod tests {
         assert!(out.contains("Pt. Sur Offshore"));
         assert!(out.contains("Swell"));
         assert!(out.contains("WNW"));
+    }
+}
+
+/// Human label for any station this module knows about, default or not.
+pub fn station_label(station: &str) -> Option<&'static str> {
+    DEFAULT_STATIONS
+        .iter()
+        .chain(KNOWN_LABELS.iter())
+        .find(|(id, _)| *id == station)
+        .map(|(_, name)| *name)
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn default_stations_skip_the_dead_pt_sur_feed() {
+        assert!(!DEFAULT_STATIONS.iter().any(|(id, _)| *id == "46114"));
+        assert!(DEFAULT_STATIONS.iter().any(|(id, _)| *id == "46239"));
+    }
+
+    #[test]
+    fn non_default_station_still_has_a_label() {
+        assert_eq!(station_label("46114"), Some("Pt. Sur Offshore (CDIP 158)"));
+        assert_eq!(station_label("46239"), Some("Point Sur (CDIP 157)"));
+        assert_eq!(station_label("00000"), None);
     }
 }

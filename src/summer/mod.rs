@@ -93,7 +93,7 @@ impl SummerService {
         upcoming_only: bool,
     ) -> Result<String> {
         let http = &self.http;
-        let sessions: Vec<SummerSession> = self
+        let sessions: Result<Vec<SummerSession>> = self
             .cache
             .get_or_fetch("summer:deadlines", 86_400, || async move {
                 let html = http
@@ -106,17 +106,19 @@ impl SummerService {
                     .text()
                     .await
                     .context("failed to read summer calendar page")?;
-                Ok(parse_calendar(&html))
+                crate::util::reject_empty_catalog(parse_calendar(&html), "summer calendar")
             })
-            .await?;
-
-        if sessions.is_empty() {
-            return Ok(
-                "Could not read the summer academic calendar (the page layout may have changed). \
-                 See <https://summer.ucsc.edu/summer-student-guide/academic-calendar/>."
-                    .to_string(),
-            );
-        }
+            .await;
+        let sessions = match sessions {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("summer calendar unavailable: {e}");
+                return Ok(format!(
+                    "Could not read the summer academic calendar ({e}). \
+                     See <https://summer.ucsc.edu/summer-student-guide/academic-calendar/>."
+                ));
+            }
+        };
 
         // Resolve a session filter to its canonical id.
         let want_id = session.and_then(resolve_session_id);

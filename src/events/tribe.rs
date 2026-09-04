@@ -84,6 +84,26 @@ impl TribeClient {
     }
 }
 
+fn date_part(stamp: &str) -> &str {
+    stamp.split_whitespace().next().unwrap_or(stamp)
+}
+
+/// Tribe ends all-day events at 23:59:59 local, but a DST-mismatched event
+/// arrives shifted (e.g. 00:59:59 the next day). Anything before 02:00 is the
+/// tail of the previous day.
+fn all_day_end(stamp: &str) -> String {
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(stamp, "%Y-%m-%d %H:%M:%S") {
+        let cutoff = chrono::NaiveTime::from_hms_opt(2, 0, 0).expect("valid time");
+        let day = if dt.time() < cutoff {
+            dt.date() - chrono::Duration::days(1)
+        } else {
+            dt.date()
+        };
+        return day.format("%Y-%m-%d").to_string();
+    }
+    date_part(stamp).to_string()
+}
+
 impl TribeEvent {
     /// First venue, regardless of whether the API returned a single object or
     /// an array. `None` for an empty array.
@@ -113,10 +133,18 @@ impl TribeEvent {
 
     pub fn format_summary(&self) -> String {
         let mut out = format!("## {}\n", self.title);
-        out.push_str(&format!(
-            "- **When**: {} to {}\n",
-            self.start_date, self.end_date
-        ));
+        let when = if self.all_day {
+            let start = date_part(&self.start_date);
+            let end = all_day_end(&self.end_date);
+            if start == end {
+                format!("{start} (all day)")
+            } else {
+                format!("{start} to {end} (all day)")
+            }
+        } else {
+            format!("{} to {}", self.start_date, self.end_date)
+        };
+        out.push_str(&format!("- **When**: {when}\n"));
 
         if let Some(venue) = self.venue_name() {
             out.push_str(&format!("- **Where**: {}", venue));
@@ -322,5 +350,51 @@ mod tests {
         }"#;
         let resp: TribeEventsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.events[0].venue_name(), Some("McHenry Library"));
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn event(start: &str, end: &str, all_day: bool) -> TribeEvent {
+        TribeEvent {
+            id: 1,
+            title: "ReView".into(),
+            description: None,
+            url: "https://events.ucsc.edu/event/review-2/".into(),
+            start_date: start.into(),
+            end_date: end.into(),
+            all_day,
+            cost: None,
+            venue: TribeVenueField::Venues(vec![]),
+            organizer: vec![],
+            categories: vec![],
+            tags: vec![],
+        }
+    }
+
+    #[test]
+    fn all_day_event_shifted_by_an_hour_renders_as_one_date() {
+        let out = event("2026-09-02 01:00:00", "2026-09-03 00:59:59", true).format_summary();
+        assert!(out.contains("**When**: 2026-09-02 (all day)"), "{out}");
+    }
+
+    #[test]
+    fn multi_day_all_day_event_renders_a_date_span() {
+        let out = event("2026-08-13 00:00:00", "2026-09-19 23:59:59", true).format_summary();
+        assert!(
+            out.contains("**When**: 2026-08-13 to 2026-09-19 (all day)"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn timed_event_keeps_its_times() {
+        let out = event("2026-10-10 19:00:00", "2026-10-10 21:00:00", false).format_summary();
+        assert!(
+            out.contains("**When**: 2026-10-10 19:00:00 to 2026-10-10 21:00:00"),
+            "{out}"
+        );
     }
 }

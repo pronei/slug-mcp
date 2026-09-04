@@ -561,50 +561,110 @@ pub fn format_predictions(
     out
 }
 
-pub fn format_system_alerts(alerts: &[SystemAlert]) -> String {
-    if alerts.is_empty() {
+/// Split alerts into (active now, upcoming) by their GTFS-RT active_period;
+/// alerts whose window has already ended are dropped.
+pub fn partition_alerts(
+    alerts: &[SystemAlert],
+    now: i64,
+) -> (Vec<&SystemAlert>, Vec<&SystemAlert>) {
+    let mut active = Vec::new();
+    let mut upcoming = Vec::new();
+    for a in alerts {
+        let started = a.active_from.is_none_or(|from| from <= now);
+        let ended = a.active_until.is_some_and(|until| until < now);
+        if ended {
+            continue;
+        }
+        if started {
+            active.push(a);
+        } else {
+            upcoming.push(a);
+        }
+    }
+    (active, upcoming)
+}
+
+/// vehicle_id -> occupancy label from the live vehicles feed. Used to fill the
+/// passenger-load field BusTime leaves blank.
+pub async fn occupancy_lookup(
+    http: &reqwest::Client,
+    cache: &CacheStore,
+) -> Result<HashMap<String, String>> {
+    let positions = fetch_vehicle_positions(http, cache, None).await?;
+    Ok(positions
+        .into_iter()
+        .filter_map(|v| v.occupancy.map(|o| (v.vehicle_id, o)))
+        .collect())
+}
+
+pub fn format_system_alerts(alerts: &[SystemAlert], now: i64) -> String {
+    let (active, upcoming) = partition_alerts(alerts, now);
+    let stamp = crate::util::now_pacific().format("%-I:%M %p %Z");
+    if active.is_empty() && upcoming.is_empty() {
         return format!(
             "# Santa Cruz Metro — System Service Alerts\n\n\
              No active system alerts.\n\n\
-             _Source: METRO GTFS-RT. Last checked: {}_\n",
-            crate::util::now_pacific().format("%-I:%M %p")
+             _Source: METRO GTFS-RT. Last checked: {stamp}_\n"
         );
     }
     let mut out = format!(
         "# Santa Cruz Metro — System Service Alerts ({} active)\n\n",
-        alerts.len()
+        active.len()
     );
-    for a in alerts {
-        if !a.header.is_empty() {
-            out.push_str(&format!("**{}**\n", a.header));
-        }
-        if !a.description.is_empty() {
-            out.push_str(&format!("{}\n", a.description));
-        }
-        if !a.routes_affected.is_empty() {
-            out.push_str(&format!("- Routes: {}\n", a.routes_affected.join(", ")));
-        }
-        if !a.stops_affected.is_empty() && a.stops_affected.len() <= 8 {
-            out.push_str(&format!("- Stops: {}\n", a.stops_affected.join(", ")));
-        }
-        if a.cause != "—" && a.cause != "unknown" {
-            out.push_str(&format!("- Cause: {}\n", a.cause));
-        }
-        if a.effect != "—" {
-            out.push_str(&format!("- Effect: {}\n", a.effect));
-        }
-        if let Some(url) = &a.url
-            && !url.is_empty()
-        {
-            out.push_str(&format!("- More info: {}\n", url));
-        }
-        out.push('\n');
+    if active.is_empty() {
+        out.push_str("No alerts are in effect right now.\n\n");
     }
-    out.push_str(&format!(
-        "_Source: METRO GTFS-RT. Last updated: {}_\n",
-        crate::util::now_pacific().format("%-I:%M %p")
-    ));
+    for a in &active {
+        render_alert(&mut out, a);
+    }
+    if !upcoming.is_empty() {
+        out.push_str(&format!("## Upcoming ({})\n\n", upcoming.len()));
+        for a in &upcoming {
+            if let Some(from) = a.active_from {
+                out.push_str(&format!("_Starts {}_\n", pacific_date(from)));
+            }
+            render_alert(&mut out, a);
+        }
+    }
+    out.push_str(&format!("_Source: METRO GTFS-RT. Last updated: {stamp}_\n"));
     out
+}
+
+fn render_alert(out: &mut String, a: &SystemAlert) {
+    if !a.header.is_empty() {
+        out.push_str(&format!("**{}**\n", a.header));
+    }
+    if !a.description.is_empty() {
+        out.push_str(&format!("{}\n", a.description));
+    }
+    if !a.routes_affected.is_empty() {
+        out.push_str(&format!("- Routes: {}\n", a.routes_affected.join(", ")));
+    }
+    if !a.stops_affected.is_empty() && a.stops_affected.len() <= 8 {
+        out.push_str(&format!("- Stops: {}\n", a.stops_affected.join(", ")));
+    }
+    if a.cause != "—" && a.cause != "unknown" {
+        out.push_str(&format!("- Cause: {}\n", a.cause));
+    }
+    if a.effect != "—" {
+        out.push_str(&format!("- Effect: {}\n", a.effect));
+    }
+    if let Some(url) = &a.url
+        && !url.is_empty()
+    {
+        out.push_str(&format!("- More info: {}\n", url));
+    }
+    out.push('\n');
+}
+
+fn pacific_date(epoch: i64) -> String {
+    chrono::DateTime::from_timestamp(epoch, 0)
+        .map(|t| {
+            t.with_timezone(&chrono_tz::America::Los_Angeles)
+                .format("%b %-d, %Y")
+                .to_string()
+        })
+        .unwrap_or_else(|| epoch.to_string())
 }
 
 pub fn format_vehicle_positions(
@@ -637,9 +697,15 @@ pub fn format_vehicle_positions(
                 .speed
                 .map(|s| format!(" · {:.0} m/s", s))
                 .unwrap_or_default();
+            // A bus with no trip assigned (deadhead / pull-out) reports no route.
+            let label = if v.route.is_empty() {
+                "Not in service".to_string()
+            } else {
+                format!("Route {}", v.route)
+            };
             out.push_str(&format!(
-                "- **Route {}** bus #{} @ {:.4}, {:.4}{}{}\n",
-                v.route, v.vehicle_id, v.latitude, v.longitude, speed, occ
+                "- **{}** bus #{} @ {:.4}, {:.4}{}{}\n",
+                label, v.vehicle_id, v.latitude, v.longitude, speed, occ
             ));
         }
         if positions.len() > 30 {
@@ -665,7 +731,12 @@ pub fn format_route_delays(stats: &[RouteDelayStats], route_filter: Option<&str>
     };
 
     if stats.is_empty() {
-        out.push_str("No delay information in the current trip_updates feed.\n");
+        out.push_str(
+            "No per-route delay statistics are available: SC Metro's trip_updates feed publishes \
+             absolute arrival times but no delay values, and computing delay needs the static \
+             schedule. Use get_bus_predictions for live ETAs (delayed trips are flagged) or \
+             get_service_alerts for disruptions.\n",
+        );
     } else {
         out.push_str("| Route | Active trips | Avg delay | Max delay |\n");
         out.push_str("|---|---|---|---|\n");
@@ -740,5 +811,76 @@ mod tests {
         assert_eq!(occupancy_label(3), "standing room");
         assert_eq!(occupancy_label(5), "full");
         assert_eq!(occupancy_label(99), "unknown");
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn alert(from: Option<i64>, until: Option<i64>) -> SystemAlert {
+        SystemAlert {
+            header: "Alert".into(),
+            description: String::new(),
+            cause: "other".into(),
+            effect: "modified service".into(),
+            routes_affected: vec![],
+            stops_affected: vec![],
+            active_from: from,
+            active_until: until,
+            url: None,
+        }
+    }
+
+    #[test]
+    fn vehicle_without_route_is_labeled_not_in_service() {
+        let v = VehicleSnapshot {
+            vehicle_id: "1611".into(),
+            vehicle_label: String::new(),
+            route: String::new(),
+            trip_id: String::new(),
+            latitude: 36.9098,
+            longitude: -121.7597,
+            bearing: None,
+            speed: Some(0.0),
+            occupancy: None,
+            timestamp: None,
+        };
+        let out = format_vehicle_positions(&[v], None);
+        assert!(out.contains("**Not in service** bus #1611"), "{out}");
+        assert!(!out.contains("**Route **"), "{out}");
+    }
+
+    #[test]
+    fn alerts_are_partitioned_by_active_period() {
+        let now = 1_000_000;
+        let alerts = vec![
+            alert(Some(900_000), Some(1_100_000)), // in window
+            alert(Some(1_200_000), None),          // future
+            alert(Some(100), Some(200)),           // expired
+            alert(None, None),                     // open-ended
+        ];
+        let (active, upcoming) = partition_alerts(&alerts, now);
+        assert_eq!(active.len(), 2);
+        assert_eq!(upcoming.len(), 1);
+    }
+
+    #[test]
+    fn system_alert_summary_counts_only_active_and_lists_upcoming() {
+        let now = 1_000_000;
+        let alerts = vec![
+            alert(Some(900_000), None),
+            alert(Some(1_200_000), None),
+            alert(Some(1), Some(2)),
+        ];
+        let out = format_system_alerts(&alerts, now);
+        assert!(out.contains("(1 active)"), "{out}");
+        assert!(out.contains("Upcoming"), "{out}");
+    }
+
+    #[test]
+    fn route_delay_empty_state_explains_the_feed_limitation() {
+        let out = format_route_delays(&[], None);
+        assert!(out.contains("absolute arrival times"), "{out}");
     }
 }

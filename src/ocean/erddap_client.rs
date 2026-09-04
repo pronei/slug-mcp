@@ -52,6 +52,7 @@ pub struct TabledapQuery {
     /// The client auto-appends `<var>_qc_agg` to the variable list and adds
     /// `&<var>_qc_agg=1` as a constraint.
     pub qc_vars: Vec<String>,
+    order_by_max: Option<String>,
 }
 
 impl TabledapQuery {
@@ -61,6 +62,7 @@ impl TabledapQuery {
             constraints: Vec::new(),
             order_by_mean: None,
             order_by: None,
+            order_by_max: None,
             qc_vars: Vec::new(),
         }
     }
@@ -77,6 +79,13 @@ impl TabledapQuery {
 
     pub fn order_by(mut self, expr: impl Into<String>) -> Self {
         self.order_by = Some(expr.into());
+        self
+    }
+
+    /// ERDDAP `orderByMax("time")`: return only the newest row per group —
+    /// the recovery path when a dataset lags behind the requested window.
+    pub fn order_by_max(mut self, expr: impl Into<String>) -> Self {
+        self.order_by_max = Some(expr.into());
         self
     }
 
@@ -120,37 +129,7 @@ impl ErddapClient {
             );
         }
 
-        let mut all_vars = query.variables.clone();
-        let mut all_constraints = query.constraints.clone();
-
-        for var in &query.qc_vars {
-            let qc_var = format!("{}_qc_agg", var);
-            if !all_vars.contains(&qc_var) {
-                all_vars.push(qc_var.clone());
-            }
-            all_constraints.push(format!("{}_qc_agg=1", var));
-        }
-
-        let var_str = all_vars.join(",");
-        let constraint_str = all_constraints
-            .iter()
-            .map(|c| format!("&{}", c))
-            .collect::<String>();
-
-        let mut url = format!(
-            "{}/tabledap/{}.json?{}{}",
-            server.trim_end_matches('/'),
-            dataset_id,
-            var_str,
-            constraint_str,
-        );
-
-        if let Some(ref obm) = query.order_by_mean {
-            url.push_str(&format!("&orderByMean(\"{}\")", obm));
-        }
-        if let Some(ref ob) = query.order_by {
-            url.push_str(&format!("&orderBy(\"{}\")", ob));
-        }
+        let url = build_tabledap_url(server, dataset_id, &query)?;
 
         let resp = self
             .http
@@ -162,19 +141,19 @@ impl ErddapClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            if body.contains("no matching results") || body.contains("outside of the variable") {
-                bail!(
-                    "ERDDAP query returned no data ({}). The dataset may have a lag. \
-                     Try a wider time range. Server message: {}",
-                    status,
-                    extract_erddap_message(&body),
-                );
-            }
+            return Err(classify_erddap_error(status.as_u16(), dataset_id, &body));
+        }
+
+        // Reject oversized responses before buffering them (the post-read
+        // check below is the backstop for chunked responses).
+        if let Some(len) = resp.content_length()
+            && len as usize > MAX_RESPONSE_BYTES
+        {
             bail!(
-                "ERDDAP returned HTTP {} for dataset '{}': {}",
-                status,
-                dataset_id,
-                extract_erddap_message(&body),
+                "ERDDAP response too large ({:.1} MB, limit {:.0} MB). \
+                 Narrow your time range or add spatial constraints.",
+                len as f64 / 1_048_576.0,
+                MAX_RESPONSE_BYTES as f64 / 1_048_576.0,
             );
         }
 
@@ -479,5 +458,114 @@ mod tests {
         // Non-numeric where f64 expected degrades to None.
         assert_eq!(table.get_f64(0, 0), None, "string cell as_f64 → None");
         assert_eq!(table.get_str(0, 0), Some("2026-07-05T00:00:00Z"));
+    }
+}
+
+/// ERDDAP answered "no matching results" (HTTP 404): the constraints fell
+/// outside the dataset's actual time range. Typed so callers can widen the
+/// window instead of surfacing the error.
+#[derive(Debug)]
+pub struct ErddapNoData {
+    pub status: u16,
+    pub message: String,
+}
+
+impl std::fmt::Display for ErddapNoData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ERDDAP query returned no data ({}). The dataset may have a lag. Server message: {}",
+            self.status, self.message
+        )
+    }
+}
+
+impl std::error::Error for ErddapNoData {}
+
+/// Map a non-2xx ERDDAP response to an error, typed when it is a no-data
+/// answer rather than a real failure.
+pub fn classify_erddap_error(status: u16, dataset_id: &str, body: &str) -> anyhow::Error {
+    if body.contains("no matching results") || body.contains("outside of the variable") {
+        return anyhow::Error::new(ErddapNoData {
+            status,
+            message: extract_erddap_message(body),
+        });
+    }
+    anyhow::anyhow!(
+        "ERDDAP returned HTTP {} for dataset '{}': {}",
+        status,
+        dataset_id,
+        extract_erddap_message(body)
+    )
+}
+
+/// Build the tabledap request URL (pure, so it is testable). Quotes inside
+/// orderBy* functions are percent-encoded, which is what ERDDAP expects.
+pub fn build_tabledap_url(server: &str, dataset_id: &str, query: &TabledapQuery) -> Result<String> {
+    let mut all_vars = query.variables.clone();
+    let mut all_constraints = query.constraints.clone();
+
+    for var in &query.qc_vars {
+        let qc_var = format!("{}_qc_agg", var);
+        if !all_vars.contains(&qc_var) {
+            all_vars.push(qc_var.clone());
+        }
+        all_constraints.push(format!("{}_qc_agg=1", var));
+    }
+
+    let var_str = all_vars.join(",");
+    let constraint_str = all_constraints
+        .iter()
+        .map(|c| format!("&{}", c))
+        .collect::<String>();
+
+    let mut url = format!(
+        "{}/tabledap/{}.json?{}{}",
+        server.trim_end_matches('/'),
+        dataset_id,
+        var_str,
+        constraint_str,
+    );
+
+    if let Some(ref obm) = query.order_by_mean {
+        url.push_str(&format!("&orderByMean(%22{}%22)", obm));
+    }
+    if let Some(ref ob) = query.order_by {
+        url.push_str(&format!("&orderBy(%22{}%22)", ob));
+    }
+    if let Some(ref obx) = query.order_by_max {
+        url.push_str(&format!("&orderByMax(%22{}%22)", obx));
+    }
+    Ok(url)
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn no_matching_results_is_a_typed_no_data_error() {
+        let err = classify_erddap_error(
+            404,
+            "edu_ucsc_scwharf1",
+            "Error { code=404; message=\"Not Found: Your query produced no matching results. (time>=2026-08-31 is outside of the variable's actual_range)\" }",
+        );
+        assert!(err.downcast_ref::<ErddapNoData>().is_some(), "{err}");
+    }
+
+    #[test]
+    fn other_statuses_are_plain_errors() {
+        let err = classify_erddap_error(500, "x", "boom");
+        assert!(err.downcast_ref::<ErddapNoData>().is_none());
+    }
+
+    #[test]
+    fn order_by_max_is_emitted_in_the_url() {
+        let q = TabledapQuery::new(vec!["time".into(), "sea_water_temperature".into()])
+            .constraint("time>=2025-09-03T00:00:00Z")
+            .order_by_max("time");
+        let url = build_tabledap_url("https://erddap.example/erddap", "ds", &q).unwrap();
+        assert!(url.contains("orderByMax(%22time%22)"), "{url}");
+        assert!(url.contains("&time>=2025-09-03T00:00:00Z"), "{url}");
     }
 }

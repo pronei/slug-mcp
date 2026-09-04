@@ -4,7 +4,9 @@ use serde::Deserialize;
 
 use crate::util::now_pacific;
 
-use super::erddap_client::{ErddapClient, ErddapTable, TabledapQuery};
+use super::erddap_client::{
+    ErddapClient, ErddapNoData, ErddapResponse, ErddapTable, TabledapQuery,
+};
 use super::types::WharfSnapshot;
 
 const SERVER: &str = "https://erddap.sensors.axds.co/erddap";
@@ -29,34 +31,72 @@ pub async fn fetch_typed(erddap: &ErddapClient, req: &WharfRequest) -> Result<Wh
 
 async fn fetch_typed_uncached(erddap: &ErddapClient, req: &WharfRequest) -> Result<WharfSnapshot> {
     let hours = req.hours.unwrap_or(6).clamp(1, 48);
-
-    let now = chrono::Utc::now();
-    let lookback = (hours as i64 + 72).max(72);
-    let from = now - chrono::Duration::hours(lookback);
-    let time_min = from.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-
-    let query = TabledapQuery::new(vec![
-        "time".into(),
-        "sea_water_temperature".into(),
-        "sea_water_practical_salinity".into(),
-        "sea_water_ph_reported_on_total_scale".into(),
-        "mass_concentration_of_chlorophyll_in_sea_water".into(),
-        "mass_concentration_of_oxygen_in_sea_water".into(),
-        "fractional_saturation_of_oxygen_in_sea_water".into(),
-        "sea_water_turbidity".into(),
-    ])
-    .constraint(format!("time>={}", time_min))
-    .with_qc(vec![
-        "sea_water_temperature".into(),
-        "sea_water_practical_salinity".into(),
-        "sea_water_ph_reported_on_total_scale".into(),
-        "mass_concentration_of_chlorophyll_in_sea_water".into(),
-        "mass_concentration_of_oxygen_in_sea_water".into(),
-        "sea_water_turbidity".into(),
-    ]);
-
-    let resp = erddap.tabledap(SERVER, DATASET, query).await?;
+    let (resp, _fell_back) = query_with_lag_fallback(erddap, hours).await?;
     wharf_snapshot(&resp.table)
+}
+
+const WHARF_VARS: &[&str] = &[
+    "time",
+    "sea_water_temperature",
+    "sea_water_practical_salinity",
+    "sea_water_ph_reported_on_total_scale",
+    "mass_concentration_of_chlorophyll_in_sea_water",
+    "mass_concentration_of_oxygen_in_sea_water",
+    "fractional_saturation_of_oxygen_in_sea_water",
+    "sea_water_turbidity",
+];
+const WHARF_QC_VARS: &[&str] = &[
+    "sea_water_temperature",
+    "sea_water_practical_salinity",
+    "sea_water_ph_reported_on_total_scale",
+    "mass_concentration_of_chlorophyll_in_sea_water",
+    "mass_concentration_of_oxygen_in_sea_water",
+    "sea_water_turbidity",
+];
+
+fn wharf_query(time_min: &str, newest_only: bool) -> TabledapQuery {
+    let q = TabledapQuery::new(WHARF_VARS.iter().map(|v| v.to_string()).collect())
+        .constraint(format!("time>={}", time_min))
+        .with_qc(WHARF_QC_VARS.iter().map(|v| v.to_string()).collect());
+    if newest_only {
+        q.order_by_max("time")
+    } else {
+        q
+    }
+}
+
+/// Query the requested window (plus the usual 72h maintenance-gap margin). If
+/// ERDDAP answers that the window lies outside the dataset's range — the
+/// upstream feed is lagging by more than `hours` can reach — fall back to the
+/// single newest row of the past year so callers still see the latest real
+/// sample (flagged stale by `stale_banner`).
+async fn query_with_lag_fallback(
+    erddap: &ErddapClient,
+    hours: u32,
+) -> Result<(ErddapResponse, bool)> {
+    let now = chrono::Utc::now();
+    // Wharf is typically 5-min cadence but can have 24-48h gaps during
+    // maintenance. Always look back at least 72h to ensure data.
+    let lookback = (hours as i64 + 72).max(72);
+    let from = (now - chrono::Duration::hours(lookback))
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    match erddap
+        .tabledap(SERVER, DATASET, wharf_query(&from, false))
+        .await
+    {
+        Ok(resp) => Ok((resp, false)),
+        Err(e) if e.downcast_ref::<ErddapNoData>().is_some() => {
+            let year_ago = (now - chrono::Duration::days(365))
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string();
+            let resp = erddap
+                .tabledap(SERVER, DATASET, wharf_query(&year_ago, true))
+                .await?;
+            Ok((resp, true))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Pure: build a `WharfSnapshot` from an already-fetched ERDDAP table. Split out
@@ -106,35 +146,7 @@ fn wharf_snapshot(t: &ErddapTable) -> Result<WharfSnapshot> {
 
 pub async fn fetch_and_format(erddap: &ErddapClient, req: &WharfRequest) -> Result<String> {
     let hours = req.hours.unwrap_or(6).clamp(1, 48);
-
-    let now = chrono::Utc::now();
-    // Wharf is typically 5-min cadence but can have 24-48h gaps during
-    // maintenance. Always look back at least 72h to ensure data.
-    let lookback = (hours as i64 + 72).max(72);
-    let from = now - chrono::Duration::hours(lookback);
-    let time_min = from.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-
-    let query = TabledapQuery::new(vec![
-        "time".into(),
-        "sea_water_temperature".into(),
-        "sea_water_practical_salinity".into(),
-        "sea_water_ph_reported_on_total_scale".into(),
-        "mass_concentration_of_chlorophyll_in_sea_water".into(),
-        "mass_concentration_of_oxygen_in_sea_water".into(),
-        "fractional_saturation_of_oxygen_in_sea_water".into(),
-        "sea_water_turbidity".into(),
-    ])
-    .constraint(format!("time>={}", time_min))
-    .with_qc(vec![
-        "sea_water_temperature".into(),
-        "sea_water_practical_salinity".into(),
-        "sea_water_ph_reported_on_total_scale".into(),
-        "mass_concentration_of_chlorophyll_in_sea_water".into(),
-        "mass_concentration_of_oxygen_in_sea_water".into(),
-        "sea_water_turbidity".into(),
-    ]);
-
-    let resp = erddap.tabledap(SERVER, DATASET, query).await?;
+    let (resp, _fell_back) = query_with_lag_fallback(erddap, hours).await?;
     format_wharf(&resp.table, hours)
 }
 
@@ -179,10 +191,13 @@ fn format_wharf(t: &ErddapTable, hours: u32) -> Result<String> {
     let mut out = format!(
         "# UCSC Santa Cruz Municipal Wharf\n\n\
          _36.96°N, 122.02°W — in-situ continuous monitoring (Kudela Lab, UCSC)_\n\n\
-         **Latest observation**: {} (latency {}m)\n\n\
-         ## Current readings\n\n",
+         **Latest observation**: {} (latency {}m)\n\n",
         time_str, latency_min,
     );
+    if let Some(banner) = stale_banner(latency_min) {
+        out.push_str(&banner);
+    }
+    out.push_str("## Current readings\n\n");
 
     if let Some(v) = temp {
         out.push_str(&format!(
@@ -400,5 +415,38 @@ mod tests {
         );
         let snap = wharf_snapshot(&t).unwrap();
         assert_eq!(snap.timestamp_utc, "unknown");
+    }
+}
+
+/// Banner shown when the newest available sample is old enough that the
+/// dataset is clearly lagging (not just a maintenance gap).
+fn stale_banner(latency_minutes: i64) -> Option<String> {
+    if latency_minutes <= 180 {
+        return None;
+    }
+    let age = if latency_minutes >= 1440 {
+        format!("{} days old", latency_minutes / 1440)
+    } else {
+        format!("{} hours old", latency_minutes / 60)
+    };
+    Some(format!(
+        "\u{26a0} **STALE DATA** \u{2014} the newest available sample is {age}; the upstream ERDDAP dataset is lagging.\n\n"
+    ))
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn fresh_sample_has_no_banner() {
+        assert!(stale_banner(30).is_none());
+        assert!(stale_banner(180).is_none());
+    }
+
+    #[test]
+    fn weeks_old_sample_is_flagged_in_days() {
+        let banner = stale_banner(15 * 24 * 60 + 30).unwrap();
+        assert!(banner.contains("15 days old"), "{banner}");
     }
 }

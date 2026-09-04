@@ -107,27 +107,12 @@ impl DiningService {
         date: Option<&str>,
         include_all: bool,
     ) -> Result<String> {
-        // Convert ISO date (YYYY-MM-DD) to M/D/YYYY for the nutrition site.
-        // Cache key always uses the canonical ISO date for consistency. A
-        // missing date canonicalizes to *today in Pacific* (not a literal
-        // "today" key) so the key matches what the 5 AM pre-warmer writes and
-        // rolls over at midnight instead of serving yesterday's menu.
-        let (iso_date, formatted_date) = match date {
-            Some(d) => {
-                if let Ok(parsed) = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d") {
-                    let iso = d.to_string();
-                    let formatted =
-                        format!("{}/{}/{}", parsed.month(), parsed.day(), parsed.year());
-                    (iso, Some(formatted))
-                } else {
-                    // Assume it's already in M/D/YYYY — store raw as cache key
-                    (d.to_string(), Some(d.to_string()))
-                }
-            }
-            None => {
-                let now = crate::util::now_pacific();
-                (now.format("%Y-%m-%d").to_string(), None)
-            }
+        // Canonical ISO date for the cache key (so it matches the 5 AM
+        // pre-warmer and closure detection), M/D/YYYY for the nutrition site.
+        let today = crate::util::now_pacific().date_naive();
+        let (iso_date, formatted_date) = match canonical_menu_date(date, today) {
+            Ok(v) => v,
+            Err(e) => return Ok(format!("{e}. Example: {today}.")),
         };
         let scraper_date = formatted_date.as_deref();
         let cache_date = iso_date.as_str();
@@ -377,5 +362,63 @@ fn duration_until_next_5am() -> Duration {
             tracing::warn!("ambiguous Pacific time at 5 AM; retrying in 1h");
             Duration::from_secs(3600)
         }
+    }
+}
+
+/// Normalize a caller-supplied menu date to (ISO cache date, M/D/YYYY for the
+/// nutrition site). `None` means today in Pacific.
+fn canonical_menu_date(
+    date: Option<&str>,
+    today: chrono::NaiveDate,
+) -> Result<(String, Option<String>)> {
+    let Some(d) = date.map(str::trim).filter(|d| !d.is_empty()) else {
+        return Ok((today.format("%Y-%m-%d").to_string(), None));
+    };
+    let parsed = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+        .or_else(|_| chrono::NaiveDate::parse_from_str(d, "%m/%d/%Y"))
+        .map_err(|_| anyhow::anyhow!("date must be YYYY-MM-DD (got '{d}')"))?;
+    Ok((
+        parsed.format("%Y-%m-%d").to_string(),
+        Some(format!(
+            "{}/{}/{}",
+            parsed.month(),
+            parsed.day(),
+            parsed.year()
+        )),
+    ))
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn today() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 9, 3).unwrap()
+    }
+
+    #[test]
+    fn iso_date_is_kept_and_converted_for_the_site() {
+        let (iso, site) = canonical_menu_date(Some("2026-09-04"), today()).unwrap();
+        assert_eq!(iso, "2026-09-04");
+        assert_eq!(site.as_deref(), Some("9/4/2026"));
+    }
+
+    #[test]
+    fn slash_date_is_normalized_to_iso_for_the_cache_key() {
+        let (iso, site) = canonical_menu_date(Some("9/4/2026"), today()).unwrap();
+        assert_eq!(iso, "2026-09-04");
+        assert_eq!(site.as_deref(), Some("9/4/2026"));
+    }
+
+    #[test]
+    fn missing_date_means_today_in_pacific() {
+        let (iso, site) = canonical_menu_date(None, today()).unwrap();
+        assert_eq!(iso, "2026-09-03");
+        assert_eq!(site, None);
+    }
+
+    #[test]
+    fn unparseable_date_is_rejected() {
+        assert!(canonical_menu_date(Some("tomorrow"), today()).is_err());
     }
 }

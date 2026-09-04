@@ -390,7 +390,7 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get UCSC group exercise class schedule (Spring 2026). Classes include yoga, pilates, cycling, kickboxing, Zumba, conditioning, and self-defense. Filter by day of week and/or class name.")]
+            #[tool(description = "Get the UCSC group exercise class schedule for the most recently published term (the output header names it). Classes include yoga, pilates, cycling, kickboxing, Zumba, conditioning, and self-defense. Filter by day of week and/or class name.")]
             async fn get_group_exercise_classes(
                 &self,
                 Parameters(req): Parameters<GroupExerciseRequest>,
@@ -497,7 +497,7 @@ macro_rules! define_tools {
 
             // ─── Transit Tools ───
 
-            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop name; optionally filter by route. Primary source is GTFS-RT (no per-call API key, rich vehicle positions and occupancy). Automatically falls back to BusTime when GTFS-RT has no absolute-time data for the matched stop — BusTime adds destination headsigns, DUE/DLY countdown labels, and canceled/express trip flags. Output footer shows which backend answered. Occupancy comes from the GTFS-RT vehicles feed (SC Metro leaves BusTime's passenger-load field unpopulated). For system-wide queries (no specific stop) prefer `get_service_alerts` (no arguments), `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
+            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop or street name (e.g., \"Science Hill\", \"Pacific & Center\", \"Bay & High\", \"Oakes College\"); optionally filter by route. ETAs come from the BusTime API (destination headsigns, DUE/DLY countdown labels, canceled/express flags); occupancy is joined from the GTFS-RT vehicles feed. For system-wide queries (no specific stop) prefer `get_service_alerts` (no arguments), `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
             async fn get_bus_predictions(
                 &self,
                 Parameters(req): Parameters<BusPredictionRequest>,
@@ -538,7 +538,7 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get per-route delay statistics for Santa Cruz Metro via GTFS-RT trip updates. Shows average and max delay per route across all currently-active trips. Optionally filter by route. No API key required.")]
+            #[tool(description = "Per-route delay statistics for Santa Cruz Metro from GTFS-RT trip updates, when the feed carries delay values (SC Metro currently publishes absolute arrival times only, so this usually explains that limitation and points to get_bus_predictions, whose ETAs flag delayed trips). Optionally filter by route. No API key required.")]
             async fn get_route_delays(
                 &self,
                 Parameters(req): Parameters<TransitRouteRequest>,
@@ -730,7 +730,7 @@ macro_rules! define_tools {
 
             // ─── Wave Buoy (CDIP) Tools ───
 
-            #[tool(description = "Get swell vs wind-wave spectral summary from CDIP/NDBC waverider buoys. Unlike get_buoy_observations (single station, met+ocean summary), this compares multiple waveriders and separates swell height/period/direction from local wind-wave energy. Defaults to Monterey-area stations 46114 (CDIP 158 Pt. Sur), 46236 (CDIP 185 Monterey Canyon), 46042 (Monterey). Pass `stations` as comma-separated NDBC IDs to override.")]
+            #[tool(description = "Get swell vs wind-wave spectral summary from CDIP/NDBC waverider buoys. Unlike get_buoy_observations (single station, met+ocean summary), this compares multiple waveriders and separates swell height/period/direction from local wind-wave energy. Defaults to Monterey-area stations 46239 (CDIP 157 Point Sur), 46236 (CDIP 156 Monterey Canyon Outer), 46042 (Monterey). Pass `stations` as comma-separated NDBC IDs to override.")]
             async fn get_wave_buoy(
                 &self,
                 Parameters(req): Parameters<WaveBuoyRequest>,
@@ -1224,7 +1224,7 @@ impl ServerHandler for SlugMcpServer {
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         let tcc = ToolCallContext::new(self, request, context);
         self.tool_router.call(tcc).await
     }
@@ -1236,8 +1236,7 @@ impl ServerHandler for SlugMcpServer {
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
             tools: self.tool_router.list_all(),
-            meta: None,
-            next_cursor: None,
+            ..Default::default()
         })
     }
 

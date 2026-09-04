@@ -33,6 +33,14 @@ impl LibraryService {
         date: Option<&str>,
     ) -> Result<String> {
         let today = crate::util::now_pacific().format("%Y-%m-%d").to_string();
+        if let Some(d) = date
+            && crate::util::parse_iso_date(d).is_none()
+        {
+            return Ok(format!(
+                "Date must be YYYY-MM-DD (got '{}'). Example: {}.",
+                d, today
+            ));
+        }
         let date = date.unwrap_or(&today);
 
         let lids: Vec<(u32, &str)> = if let Some(query) = library {

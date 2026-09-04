@@ -2,7 +2,7 @@ use std::fmt::Write;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
-use chrono::{Datelike, Days, NaiveDate, NaiveDateTime, Weekday};
+use chrono::{Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Weekday};
 use regex::Regex;
 use scraper::Html;
 
@@ -60,6 +60,12 @@ pub struct FacilitySchedule {
 pub struct ScheduleEntry {
     pub time: String,
     pub event: String,
+    /// Structured bounds; `#[serde(default)]` so entries cached before these
+    /// fields existed still deserialize.
+    #[serde(default)]
+    pub start: Option<NaiveDateTime>,
+    #[serde(default)]
+    pub end: Option<NaiveDateTime>,
 }
 
 impl FacilitySchedule {
@@ -67,13 +73,89 @@ impl FacilitySchedule {
         let mut out = format!("## Schedule: {}\n", self.facility_name);
         if self.entries.is_empty() {
             out.push_str("No scheduled events.");
-        } else {
-            for entry in &self.entries {
-                let _ = write!(out, "\n- **{}** — {}", entry.time, entry.event);
+            return out;
+        }
+        // The feed publishes closures, not opening hours; the gaps between
+        // "Facility Closed" blocks are when the facility is open.
+        let windows = open_windows(&self.entries);
+        if !windows.is_empty() {
+            out.push_str("\n**Open hours** (between posted closures):\n");
+            for (day, spans) in &windows {
+                let spans: Vec<String> = spans
+                    .iter()
+                    .map(|(s, e)| {
+                        format!(
+                            "{} \u{2013} {}",
+                            s.format("%-I:%M %p"),
+                            e.format("%-I:%M %p")
+                        )
+                    })
+                    .collect();
+                let _ = writeln!(
+                    out,
+                    "- **{}** · Open {}",
+                    day.format("%a %b %-d"),
+                    spans.join(", ")
+                );
             }
+            out.push_str("\n**Posted blocks:**");
+        }
+        for entry in &self.entries {
+            let _ = write!(out, "\n- **{}** — {}", entry.time, entry.event);
         }
         out
     }
+}
+
+/// Per-day open windows implied by "Facility Closed" blocks. Multi-day blocks
+/// are split at midnight; days with no closure blocks are omitted (unknown).
+fn open_windows(entries: &[ScheduleEntry]) -> Vec<(NaiveDate, Vec<(NaiveTime, NaiveTime)>)> {
+    use std::collections::BTreeMap;
+    let midnight = NaiveTime::from_hms_opt(0, 0, 0).expect("valid time");
+    let end_of_day = NaiveTime::from_hms_opt(23, 59, 59).expect("valid time");
+    let mut by_day: BTreeMap<NaiveDate, Vec<(NaiveTime, NaiveTime)>> = BTreeMap::new();
+    for e in entries {
+        if !e.event.starts_with("Facility Closed") {
+            continue;
+        }
+        let (Some(start), Some(end)) = (e.start, e.end) else {
+            continue;
+        };
+        let mut cur = start;
+        while cur < end {
+            let stop = if end.date() > cur.date() {
+                end_of_day
+            } else {
+                end.time()
+            };
+            by_day
+                .entry(cur.date())
+                .or_default()
+                .push((cur.time(), stop));
+            cur = (cur.date() + Days::new(1)).and_time(midnight);
+        }
+    }
+    let mut out = Vec::new();
+    for (day, mut spans) in by_day {
+        spans.sort();
+        let mut gaps = Vec::new();
+        let mut cursor = midnight;
+        for (s, e) in spans {
+            if s > cursor {
+                gaps.push((cursor, s));
+            }
+            if e > cursor {
+                cursor = e;
+            }
+        }
+        if cursor < end_of_day {
+            gaps.push((cursor, end_of_day));
+        }
+        if !gaps.is_empty() {
+            out.push((day, gaps));
+        }
+    }
+    out
 }
 
 pub async fn scrape_occupancy(client: &reqwest::Client) -> Result<Vec<FacilityOccupancy>> {
@@ -339,13 +421,16 @@ fn expand_appointments(appts: &[Appointment], from: NaiveDate, days: u32) -> Vec
                 // a month, e.g. MLK = third Monday of January).
                 let month: Option<u32> = rule_field(rule, "BYMONTH").and_then(|v| v.parse().ok());
                 let by = byday_weekdays(rule_field(rule, "BYDAY").unwrap_or(""));
-                let setpos: Option<u32> = rule_field(rule, "BYSETPOS").and_then(|v| v.parse().ok());
+                // BYSETPOS counts from the end of the month when negative
+                // (-1 = last such weekday, e.g. Memorial Day).
+                let setpos: Option<i32> = rule_field(rule, "BYSETPOS").and_then(|v| v.parse().ok());
                 for i in 0..days {
                     let day = from + Days::new(u64::from(i));
-                    let nth = (day.day() - 1) / 7 + 1;
+                    let nth = ((day.day() - 1) / 7 + 1) as i32;
+                    let from_end = -(((days_in_month(day) - day.day()) / 7 + 1) as i32);
                     if month == Some(day.month())
                         && by.contains(&day.weekday())
-                        && setpos.is_none_or(|p| p == nth)
+                        && setpos.is_none_or(|p| p == nth || p == from_end)
                         && day >= start.date()
                     {
                         let occ_start = day.and_time(start.time());
@@ -357,6 +442,8 @@ fn expand_appointments(appts: &[Appointment], from: NaiveDate, days: u32) -> Vec
             _ => undated.push(ScheduleEntry {
                 time: "recurring".to_string(),
                 event: format!("{} (recurring \u{2014} pattern not expanded)", appt.text),
+                start: None,
+                end: None,
             }),
         }
     }
@@ -365,6 +452,18 @@ fn expand_appointments(appts: &[Appointment], from: NaiveDate, days: u32) -> Vec
     let mut entries: Vec<ScheduleEntry> = dated.into_iter().map(|(_, e)| e).collect();
     entries.extend(undated);
     entries
+}
+
+fn days_in_month(day: NaiveDate) -> u32 {
+    let (y, m) = (day.year(), day.month());
+    let first = NaiveDate::from_ymd_opt(y, m, 1).expect("valid first of month");
+    let next = if m == 12 {
+        NaiveDate::from_ymd_opt(y + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(y, m + 1, 1)
+    }
+    .expect("valid first of next month");
+    (next - first).num_days() as u32
 }
 
 fn entry_for(appt: &Appointment, start: NaiveDateTime, end: NaiveDateTime) -> ScheduleEntry {
@@ -391,7 +490,12 @@ fn entry_for(appt: &Appointment, start: NaiveDateTime, end: NaiveDateTime) -> Sc
     } else {
         format!("{} \u{2014} {}", appt.text, appt.description)
     };
-    ScheduleEntry { time, event }
+    ScheduleEntry {
+        time,
+        event,
+        start: Some(start),
+        end: Some(end),
+    }
 }
 
 // ───── Group Exercise Classes ─────
@@ -402,6 +506,25 @@ fn entry_for(appt: &Appointment, start: NaiveDateTime, end: NaiveDateTime) -> Sc
 // spring26 siblings). Bump the path when a new term page appears.
 const GROUP_EXERCISE_URL: &str =
     "https://goslugs.com/sports/2026/2/26/groupexercise_schedules_spring26";
+
+/// Term label derived from the schedule URL slug ("..._spring26" -> "Spring
+/// 2026"), so the header can never claim a term the data isn't from.
+pub fn term_from_url(url: &str) -> Option<String> {
+    let slug = url.rsplit('_').next()?;
+    let cut = slug.find(|c: char| c.is_ascii_digit())?;
+    let (name, yy) = slug.split_at(cut);
+    if name.is_empty() || yy.len() != 2 || !yy.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let mut chars = name.chars();
+    let first = chars.next()?.to_ascii_uppercase();
+    Some(format!("{first}{} 20{yy}", chars.as_str()))
+}
+
+/// The term of the schedule page currently scraped.
+pub fn group_exercise_term() -> String {
+    term_from_url(GROUP_EXERCISE_URL).unwrap_or_else(|| "term unknown".to_string())
+}
 
 /// Location abbreviation expansion.
 fn expand_location(abbr: &str) -> &str {
@@ -943,5 +1066,101 @@ mod schedule_tests {
         let appts = parse_schedule_json(body).unwrap();
         let entries = expand_appointments(&appts, day(2026, 7, 6), 7);
         assert!(entries.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn day(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn dt(y: i32, m: u32, d: u32, h: u32, min: u32) -> NaiveDateTime {
+        day(y, m, d).and_hms_opt(h, min, 0).unwrap()
+    }
+
+    #[test]
+    fn term_is_derived_from_the_url_slug() {
+        assert_eq!(
+            term_from_url("https://goslugs.com/sports/2026/2/26/groupexercise_schedules_spring26")
+                .as_deref(),
+            Some("Spring 2026")
+        );
+        assert_eq!(
+            term_from_url("https://goslugs.com/x/groupexercise_schedules_fall26").as_deref(),
+            Some("Fall 2026")
+        );
+        assert_eq!(
+            term_from_url("https://goslugs.com/x/groupexercise_schedules_winter27").as_deref(),
+            Some("Winter 2027")
+        );
+        assert_eq!(term_from_url("https://goslugs.com/x/schedule"), None);
+    }
+
+    #[test]
+    fn yearly_negative_bysetpos_means_last_weekday_of_month() {
+        let body = r#"[{"Text":"Facility Closed (Holiday)","StartDate":"2025-05-26T00:00:00","EndDate":"2025-05-26T23:59:59","AllDay":true,"Description":"","RecurrenceRule":"FREQ=YEARLY;BYMONTH=5;BYDAY=MO;BYSETPOS=-1","RecurrenceException":null}]"#;
+        let appts = parse_schedule_json(body).unwrap();
+        let entries = expand_appointments(&appts, day(2026, 5, 4), 28);
+        let holidays: Vec<&ScheduleEntry> = entries
+            .iter()
+            .filter(|e| e.event.contains("Holiday"))
+            .collect();
+        assert_eq!(holidays.len(), 1, "{holidays:?}");
+        assert!(
+            holidays[0].time.starts_with("Mon May 25"),
+            "{}",
+            holidays[0].time
+        );
+    }
+
+    #[test]
+    fn schedule_renders_open_windows_between_closure_blocks() {
+        let closed = |s: NaiveDateTime, e: NaiveDateTime| ScheduleEntry {
+            time: format!(
+                "{} {} – {}",
+                s.format("%a %b %-d"),
+                s.format("%-I:%M %p"),
+                e.format("%-I:%M %p")
+            ),
+            event: "Facility Closed".into(),
+            start: Some(s),
+            end: Some(e),
+        };
+        let schedule = FacilitySchedule {
+            facility_name: "Fitness Center".into(),
+            facility_id: "abc".into(),
+            entries: vec![
+                closed(dt(2026, 9, 3, 0, 0), dt(2026, 9, 3, 6, 0)),
+                closed(dt(2026, 9, 3, 9, 0), dt(2026, 9, 3, 15, 0)),
+                closed(dt(2026, 9, 3, 19, 0), dt(2026, 9, 3, 23, 0)),
+                closed(dt(2026, 9, 3, 23, 0), dt(2026, 9, 4, 0, 0)),
+            ],
+        };
+        let out = schedule.format();
+        assert!(out.contains("Thu Sep 3"), "{out}");
+        assert!(
+            out.contains("Open 6:00 AM – 9:00 AM, 3:00 PM – 7:00 PM"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn schedule_without_closure_blocks_lists_events_only() {
+        let schedule = FacilitySchedule {
+            facility_name: "Pool".into(),
+            facility_id: "abc".into(),
+            entries: vec![ScheduleEntry {
+                time: "Thu Sep 3 9:00 AM – 11:00 AM".into(),
+                event: "Cheer Camp 2".into(),
+                start: Some(dt(2026, 9, 3, 9, 0)),
+                end: Some(dt(2026, 9, 3, 11, 0)),
+            }],
+        };
+        let out = schedule.format();
+        assert!(out.contains("Cheer Camp 2"), "{out}");
+        assert!(!out.contains("Open "), "{out}");
     }
 }

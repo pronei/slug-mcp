@@ -981,6 +981,13 @@ pub async fn scrape_hours(client: &reqwest::Client) -> Result<Vec<DiningLocation
     Ok(parse_hours(&html))
 }
 
+/// dining.ucsc.edu publishes this literal `openingHours` value for any
+/// location without a weekly schedule (shuttered for the break, or only dated
+/// hours posted). It is boilerplate, not hours.
+fn is_placeholder_hours(hours: &str) -> bool {
+    hours.trim() == "Mo 1:00-13:00"
+}
+
 fn parse_hours(html: &str) -> Vec<DiningLocation> {
     // Strip <details>/<summary> wrappers that cause html5ever foster-parenting
     // issues — the schema.org divs inside them get misplaced in the DOM tree.
@@ -1026,6 +1033,7 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
         let regular_hours: Vec<String> = schema_div
             .select(&SEL_HOURS)
             .filter_map(|el| el.value().attr("content").map(|s| s.to_string()))
+            .filter(|h| !is_placeholder_hours(h))
             .collect();
 
         let mut date_hours = Vec::new();
@@ -1034,62 +1042,42 @@ fn parse_hours(html: &str) -> Vec<DiningLocation> {
             if times.is_empty() {
                 continue;
             }
-
-            // Dated specs lead with a combined `validFrom validThrough` time.
-            // A spec whose first time is validFrom-only is a *vacation*: a
-            // multi-day shutdown, paired with a separate validThrough. The
-            // page's own shortcode asks for these via `includevacations=true`,
-            // and on 2026-08-07 the correlation was exact across all 17
-            // locations — every one whose vacation covered that day published
-            // the placeholder "Mo 1:00-13:00" as its regular hours, and every
-            // one whose vacation was in the future published real hours. This
-            // is the only machine-readable signal for which halls are actually
-            // serving between quarters, so record it rather than skip it.
-            let first_props = times[0].value().attr("itemprop").unwrap_or("");
-            let date = times[0].value().attr("datetime").unwrap_or("").to_string();
-
-            if !first_props.contains("validThrough") {
-                let through = times
-                    .get(1)
-                    .filter(|t| {
+            // Times are keyed by itemprop, not position: a single-date
+            // exception carries a combined "validFrom validThrough", a
+            // vacation carries separate validFrom/validThrough with no hours,
+            // and a dated schedule adds opens/closes (possibly on a range).
+            let attr = |prop: &str| -> Option<String> {
+                times
+                    .iter()
+                    .find(|t| {
                         t.value()
                             .attr("itemprop")
-                            .is_some_and(|p| p.contains("validThrough"))
+                            .is_some_and(|p| p.split_whitespace().any(|x| x == prop))
                     })
                     .and_then(|t| t.value().attr("datetime"))
-                    .map(|s| s.to_string());
-
-                // A lone validFrom with no closing bound tells us nothing.
-                if let Some(through) = through
-                    && !date.is_empty()
-                {
-                    date_hours.push(DateHours {
-                        date,
-                        through: Some(through),
-                        opens: None,
-                        closes: None,
-                    });
-                }
+                    .map(|s| s.to_string())
+            };
+            let Some(date) = attr("validFrom").filter(|d| !d.is_empty()) else {
+                continue;
+            };
+            let through = attr("validThrough").filter(|t| *t != date);
+            let has_through = attr("validThrough").is_some();
+            let (mut opens, mut closes) = (attr("opens"), attr("closes"));
+            if opens.is_none() && closes.is_none() && times.len() >= 3 {
+                // Older markup: unlabeled second/third <time> are opens/closes.
+                opens = times[1].value().attr("datetime").map(|s| s.to_string());
+                closes = times[2].value().attr("datetime").map(|s| s.to_string());
+            }
+            // A lone validFrom with no closing bound and no hours tells us nothing.
+            if !has_through && opens.is_none() && closes.is_none() {
                 continue;
             }
-
-            let (opens, closes) = if times.len() >= 3 {
-                (
-                    times[1].value().attr("datetime").map(|s| s.to_string()),
-                    times[2].value().attr("datetime").map(|s| s.to_string()),
-                )
-            } else {
-                (None, None)
-            };
-
-            if !date.is_empty() {
-                date_hours.push(DateHours {
-                    date,
-                    through: None,
-                    opens,
-                    closes,
-                });
-            }
+            date_hours.push(DateHours {
+                date,
+                through,
+                opens,
+                closes,
+            });
         }
 
         locations.push(DiningLocation {
@@ -1140,7 +1128,7 @@ impl DiningLocation {
         }
 
         if self.regular_hours.is_empty() {
-            out.push_str("Hours not available\n");
+            out.push_str("No weekly schedule published \u{2014} see dated hours below.\n");
         } else {
             out.push_str("**Regular Hours:**\n");
             for h in &self.regular_hours {
@@ -1148,12 +1136,24 @@ impl DiningLocation {
             }
         }
 
-        let upcoming: Vec<_> = self
+        // Multi-day ranges (a between-quarter shutdown) are the entries a
+        // reader most needs, and the page lists them last, after the
+        // single-day exceptions — so keep every range and fill the remaining
+        // slots with the nearest single dates, then show them in date order.
+        let (ranges, singles): (Vec<&DateHours>, Vec<&DateHours>) = self
             .date_hours
             .iter()
             .filter(|d| d.date.as_str() >= today)
-            .take(5)
-            .collect();
+            .partition(|d| d.through.is_some());
+        let mut singles = singles;
+        singles.sort_by(|a, b| a.date.cmp(&b.date));
+        let mut upcoming: Vec<&DateHours> = ranges;
+        upcoming.extend(
+            singles
+                .into_iter()
+                .take(8usize.saturating_sub(upcoming.len())),
+        );
+        upcoming.sort_by(|a, b| a.date.cmp(&b.date).then_with(|| a.end().cmp(b.end())));
         if !upcoming.is_empty() {
             out.push_str("\n**Upcoming Special Hours:**\n");
             for dh in upcoming {
@@ -1693,5 +1693,99 @@ mod tests {
         assert_eq!(extract_after("Sodium", "Sodium"), None);
         // Label absent entirely.
         assert_eq!(extract_after("nothing here", "Protein"), None);
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn location_html(hours_meta: &str, specs: &str) -> String {
+        format!(
+            r#"<html><body><div itemtype="http://schema.org/Restaurant" itemscope>
+                <meta itemprop="name" content="Test Hall">
+                {hours_meta}
+                {specs}
+            </div></body></html>"#
+        )
+    }
+
+    #[test]
+    fn placeholder_regular_hours_are_dropped_at_parse_time() {
+        let html = location_html(
+            r#"<meta itemprop="openingHours" content="Mo 1:00-13:00">"#,
+            "",
+        );
+        let locations = parse_hours(&html);
+        assert_eq!(locations.len(), 1);
+        assert!(
+            locations[0].regular_hours.is_empty(),
+            "{:?}",
+            locations[0].regular_hours
+        );
+        let out = locations[0].format_with_date("2026-09-03");
+        assert!(!out.contains("1:00-13:00"), "{out}");
+    }
+
+    #[test]
+    fn real_regular_hours_survive_parse() {
+        let html = location_html(
+            r#"<meta itemprop="openingHours" content="Mo-Su 7:00-19:00">"#,
+            "",
+        );
+        let locations = parse_hours(&html);
+        assert_eq!(locations[0].regular_hours, vec!["Mo-Su 7:00-19:00"]);
+    }
+
+    #[test]
+    fn dated_range_with_opens_and_closes_is_hours_not_a_closure() {
+        let specs = r#"<div itemprop="openingHoursSpecification" itemscope>
+            <time itemprop="validFrom" datetime="2026-09-18"></time>
+            <time itemprop="validThrough" datetime="2026-12-05"></time>
+            <time itemprop="opens" datetime="07:00"></time>
+            <time itemprop="closes" datetime="19:00"></time>
+        </div>"#;
+        let locations = parse_hours(&location_html("", specs));
+        let dh = &locations[0].date_hours[0];
+        assert_eq!(dh.date, "2026-09-18");
+        assert_eq!(dh.through.as_deref(), Some("2026-12-05"));
+        assert_eq!(dh.opens.as_deref(), Some("07:00"));
+        assert_eq!(dh.closes.as_deref(), Some("19:00"));
+        assert!(locations[0].closure_covering("2026-10-01").is_none());
+    }
+
+    #[test]
+    fn upcoming_special_hours_keep_a_later_multi_day_closure_visible() {
+        let single = |d: &str| DateHours {
+            date: d.to_string(),
+            through: None,
+            opens: Some("07:00".into()),
+            closes: Some("19:00".into()),
+        };
+        let mut date_hours: Vec<DateHours> = [
+            "2026-09-04",
+            "2026-09-05",
+            "2026-09-06",
+            "2026-09-07",
+            "2026-09-08",
+            "2026-09-09",
+        ]
+        .iter()
+        .map(|d| single(d))
+        .collect();
+        date_hours.push(DateHours {
+            date: "2026-09-12".into(),
+            through: Some("2026-09-17".into()),
+            opens: None,
+            closes: None,
+        });
+        let loc = DiningLocation {
+            name: "Test Hall".into(),
+            category: "Dining".into(),
+            regular_hours: vec![],
+            date_hours,
+        };
+        let out = loc.format_with_date("2026-09-03");
+        assert!(out.contains("2026-09-12 to 2026-09-17"), "{out}");
     }
 }

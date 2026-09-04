@@ -165,54 +165,57 @@ fn validate_category(category: &str) -> Result<()> {
 // ─── Query templates ───
 
 fn build_query(category: &str, lat: f64, lon: f64, radius: u32, limit: u32) -> String {
+    // Overpass truncates in arbitrary order; fetch a generous set and let the
+    // distance sort + truncate(limit) pick the nearest.
+    let server_cap = limit.max(200);
     match category {
         "trails" => format!(
             "[out:json][timeout:15];\
              (way[\"highway\"~\"path|footway\"](around:{radius},{lat},{lon});\
              relation[\"route\"=\"hiking\"](around:{radius},{lat},{lon}););\
-             out center {limit};",
+             out center {server_cap};",
             radius = radius,
             lat = lat,
             lon = lon,
-            limit = limit,
+            server_cap = server_cap,
         ),
         "peaks" => format!(
             "[out:json][timeout:15];\
              node[\"natural\"=\"peak\"](around:{radius},{lat},{lon});\
-             out center {limit};",
+             out center {server_cap};",
             radius = radius,
             lat = lat,
             lon = lon,
-            limit = limit,
+            server_cap = server_cap,
         ),
         "viewpoints" => format!(
             "[out:json][timeout:15];\
              node[\"tourism\"=\"viewpoint\"](around:{radius},{lat},{lon});\
-             out center {limit};",
+             out center {server_cap};",
             radius = radius,
             lat = lat,
             lon = lon,
-            limit = limit,
+            server_cap = server_cap,
         ),
         "water_restrooms" => format!(
             "[out:json][timeout:15];\
              (node[\"amenity\"=\"drinking_water\"](around:{radius},{lat},{lon});\
              node[\"amenity\"=\"toilets\"](around:{radius},{lat},{lon}););\
-             out center {limit};",
+             out center {server_cap};",
             radius = radius,
             lat = lat,
             lon = lon,
-            limit = limit,
+            server_cap = server_cap,
         ),
         "parking" => format!(
             "[out:json][timeout:15];\
              (node[\"amenity\"=\"parking\"](around:{radius},{lat},{lon});\
              way[\"amenity\"=\"parking\"](around:{radius},{lat},{lon}););\
-             out center {limit};",
+             out center {server_cap};",
             radius = radius,
             lat = lat,
             lon = lon,
-            limit = limit,
+            server_cap = server_cap,
         ),
         _ => unreachable!("category already validated"),
     }
@@ -765,5 +768,17 @@ mod tests {
                 "category {cat} query still uses coordinate-stripping `out tags`: {q}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn overpass_query_fetches_a_generous_set_so_nearest_first_is_real() {
+        let q = build_query("peaks", 36.97, -122.03, 5000, 5);
+        assert!(q.contains("out center 200;"), "{q}");
+        assert!(!q.contains("out center 5;"), "{q}");
     }
 }

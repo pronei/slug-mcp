@@ -76,7 +76,7 @@ impl AcademicsService {
             .map(|t| t.to_string())
             .unwrap_or_else(current_term_code);
 
-        let page_start = page.unwrap_or(0) * 25;
+        let page_start = page_offset(page);
 
         let session_code = session
             .map(str::trim)
@@ -144,5 +144,23 @@ impl AcademicsService {
         }
 
         Ok(result.format())
+    }
+}
+
+/// PISA result offset for a 25-per-page listing; bounded so a huge `page`
+/// can't overflow or send an absurd `rec_start`.
+fn page_offset(page: Option<u32>) -> u32 {
+    page.unwrap_or(0).min(400).saturating_mul(25)
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn page_offset_is_bounded_and_never_overflows() {
+        assert_eq!(page_offset(None), 0);
+        assert_eq!(page_offset(Some(2)), 50);
+        assert!(page_offset(Some(200_000_000)) <= 10_000);
     }
 }

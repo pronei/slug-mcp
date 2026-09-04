@@ -64,7 +64,7 @@ impl TidesService {
         let station = station.unwrap_or(DEFAULT_STATION).to_string();
         let days = days.unwrap_or(3).clamp(1, 7);
 
-        let cache_key = format!("tides:{}:{}", station, days);
+        let cache_key = tide_cache_key(&station, days, &now_pacific().date_naive().to_string());
         let http = self.http.clone();
         let station_for_fetch = station.clone();
         let bundle = self
@@ -318,5 +318,24 @@ mod tests {
         assert!(out.contains("4.45 ft"));
         // should have two date sections
         assert_eq!(out.matches("## ").count(), 2);
+    }
+}
+
+/// Cache key for a prediction bundle. Includes the start date because the
+/// bundle's window begins "today" and must roll over at midnight.
+fn tide_cache_key(station: &str, days: u32, date: &str) -> String {
+    format!("tides:{station}:{days}:{date}")
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn tide_cache_key_rolls_over_daily() {
+        assert_eq!(
+            tide_cache_key("9413450", 1, "2026-09-03"),
+            "tides:9413450:1:2026-09-03"
+        );
     }
 }

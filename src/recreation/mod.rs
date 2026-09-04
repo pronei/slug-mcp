@@ -66,7 +66,12 @@ impl RecreationService {
     }
 
     pub async fn get_schedule(&self, facility_id: &str) -> Result<String> {
-        let cache_key = format!("recreation:schedule:{}", facility_id);
+        // The 7-day window starts today, so the key must roll over at midnight.
+        let cache_key = format!(
+            "recreation:schedule:{}:{}",
+            facility_id,
+            crate::util::now_pacific().date_naive()
+        );
         let http = &self.http;
         let mut schedule: FacilitySchedule = match self
             .cache
@@ -132,8 +137,8 @@ impl RecreationService {
         }
 
         let mut out = format!(
-            "## UCSC Group Exercise Schedule ({})\n\n",
-            crate::academics::scraper::current_term_name()
+            "## UCSC Group Exercise Schedule ({} \u{2014} most recent published)\n\n",
+            scraper::group_exercise_term()
         );
         let mut current_day = "";
         for class in &filtered {

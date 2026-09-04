@@ -303,7 +303,10 @@ impl BiodiversityService {
         let notable = req.notable_only.unwrap_or(false);
 
         // Decide region vs geo mode. Region wins if both are supplied.
-        let use_region = req.region.is_some() || (req.lat.is_none() && req.lon.is_none());
+        let use_region = match resolve_geo_mode(req.region.as_deref(), req.lat, req.lon) {
+            Ok(geo) => !geo,
+            Err(msg) => return Ok(msg),
+        };
 
         // Resolve species name → code if requested.
         let species_code = if let Some(q) = req.species.as_deref().filter(|s| !s.trim().is_empty())
@@ -559,7 +562,10 @@ impl BiodiversityService {
         let max_results = req.max_results.unwrap_or(25).min(200) as usize;
         let back = req.back.map(|b| b.clamp(1, 30));
 
-        let use_region = req.region.is_some() || (req.lat.is_none() && req.lon.is_none());
+        let use_region = match resolve_geo_mode(req.region.as_deref(), req.lat, req.lon) {
+            Ok(geo) => !geo,
+            Err(msg) => return Ok(msg),
+        };
 
         let mut spots: Vec<Hotspot> = if use_region {
             let region = req.region.as_deref().unwrap_or(DEFAULT_REGION).to_string();
@@ -746,5 +752,43 @@ mod tests {
     fn validate_date_rejects_out_of_range_year() {
         assert!(validate_date(1899, 1, 1).is_err());
         assert!(validate_date(3000, 1, 1).is_err());
+    }
+}
+
+/// Region vs geo mode. Region wins if both are supplied; a half-specified
+/// coordinate pair is rejected instead of silently backfilled with defaults.
+fn resolve_geo_mode(
+    region: Option<&str>,
+    lat: Option<f64>,
+    lon: Option<f64>,
+) -> Result<bool, String> {
+    if region.is_some() {
+        return Ok(false);
+    }
+    match (lat, lon) {
+        (None, None) => Ok(false),
+        (Some(_), Some(_)) => Ok(true),
+        _ => Err("Provide both `lat` and `lon` for a coordinate search (or neither for the default region).".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn half_specified_coordinates_are_rejected() {
+        assert!(resolve_geo_mode(None, Some(36.9), None).is_err());
+        assert!(resolve_geo_mode(None, None, Some(-122.0)).is_err());
+    }
+
+    #[test]
+    fn full_pair_is_geo_mode_and_region_wins() {
+        assert_eq!(resolve_geo_mode(None, Some(36.9), Some(-122.0)), Ok(true));
+        assert_eq!(
+            resolve_geo_mode(Some("US-CA-087"), Some(36.9), Some(-122.0)),
+            Ok(false)
+        );
+        assert_eq!(resolve_geo_mode(None, None, None), Ok(false));
     }
 }

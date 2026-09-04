@@ -73,16 +73,25 @@ impl WeatherService {
         let mountains = self.load_alerts_for_zone(nws::ZONE_MOUNTAINS);
         let (coastal_res, mountains_res) = futures_util::future::join(coastal, mountains).await;
 
-        let coastal_alerts = coastal_res.unwrap_or_else(|e| {
-            tracing::warn!("NWS coastal alerts fetch failed: {}", e);
-            AlertsResponse { features: vec![] }
-        });
-        let mountain_alerts = mountains_res.unwrap_or_else(|e| {
-            tracing::warn!("NWS mountain alerts fetch failed: {}", e);
-            AlertsResponse { features: vec![] }
-        });
+        let mut errors = Vec::new();
+        let coastal_alerts = coastal_res
+            .map_err(|e| {
+                tracing::warn!("NWS coastal alerts fetch failed: {}", e);
+                errors.push(format!("coastal: {e}"));
+            })
+            .ok();
+        let mountain_alerts = mountains_res
+            .map_err(|e| {
+                tracing::warn!("NWS mountain alerts fetch failed: {}", e);
+                errors.push(format!("mountains: {e}"));
+            })
+            .ok();
 
-        Ok(format_alerts(&coastal_alerts, &mountain_alerts))
+        Ok(format_alerts_outcomes(
+            coastal_alerts.as_ref(),
+            mountain_alerts.as_ref(),
+            &errors,
+        ))
     }
 
     async fn load_point(&self) -> Result<PointResponse> {
@@ -277,5 +286,59 @@ mod tests {
             serde_json::from_str(r#"{"features": [{"properties": {}}]}"#).unwrap();
         let out = format_alerts(&coastal, &AlertsResponse { features: vec![] });
         assert!(out.contains("(1 total)"));
+    }
+}
+
+/// Render alerts while distinguishing "no alerts" from "couldn't reach NWS":
+/// a zone whose fetch failed is reported as unavailable, never as all-clear.
+fn format_alerts_outcomes(
+    coastal: Option<&AlertsResponse>,
+    mountains: Option<&AlertsResponse>,
+    errors: &[String],
+) -> String {
+    if coastal.is_none() && mountains.is_none() {
+        return format!(
+            "\u{26a0} NWS alerts feed unavailable for both Santa Cruz zones (coastal CAZ529, mountains CAZ512) \u{2014} \
+             cannot confirm an all-clear. Try again in a minute.\n(details: {})\n",
+            errors.join("; ")
+        );
+    }
+    let empty = AlertsResponse { features: vec![] };
+    let mut out = format_alerts(coastal.unwrap_or(&empty), mountains.unwrap_or(&empty));
+    if coastal.is_none() || mountains.is_none() {
+        let zone = if coastal.is_none() {
+            "coastal (CAZ529)"
+        } else {
+            "mountain (CAZ512)"
+        };
+        out.push_str(&format!(
+            "\n\u{26a0} The {zone} zone could not be checked \u{2014} its alerts are unknown, not absent. (details: {})\n",
+            errors.join("; ")
+        ));
+    }
+    out
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn total_nws_outage_is_not_reported_as_all_clear() {
+        let out = format_alerts_outcomes(
+            None,
+            None,
+            &["coastal: timeout".into(), "mountains: timeout".into()],
+        );
+        assert!(out.contains("unavailable"), "{out}");
+        assert!(!out.contains("0 total"), "{out}");
+        assert!(!out.contains("No active weather alerts"), "{out}");
+    }
+
+    #[test]
+    fn single_zone_failure_is_flagged_next_to_the_other_zone() {
+        let coastal = AlertsResponse { features: vec![] };
+        let out = format_alerts_outcomes(Some(&coastal), None, &["mountains: HTTP 503".into()]);
+        assert!(out.contains("HTTP 503"), "{out}");
     }
 }

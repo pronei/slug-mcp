@@ -267,10 +267,12 @@ async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
     };
 
     let session_manager = Arc::new(LocalSessionManager::default());
-    // StreamableHttpServerConfig is #[non_exhaustive] as of rmcp 1.x — build
-    // from Default and set the fields we care about.
+    // StreamableHttpServerConfig is #[non_exhaustive] — build from Default and
+    // set the fields we care about. rmcp 3.x serves protocol 2026-07-28+
+    // statelessly (SEP-2567); `legacy_session_mode` keeps Mcp-Session-Id
+    // sessions for older protocol versions, which is what current clients use.
     let mut sse_config = StreamableHttpServerConfig::default();
-    sse_config.stateful_mode = true;
+    sse_config.legacy_session_mode = true;
     // rmcp 1.x rejects any inbound `Host` not in `allowed_hosts` (DNS-rebinding
     // protection), defaulting to loopback only. Behind nginx the Host header is
     // the public domain, so every /mcp request 403s ("Host header is not

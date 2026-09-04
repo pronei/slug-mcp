@@ -161,7 +161,9 @@ pub async fn scrape_class_search(
         .form(&form)
         .send()
         .await
-        .context("Failed to submit class search")?;
+        .context("Failed to submit class search")?
+        .error_for_status()
+        .context("PISA class search returned an error status")?;
 
     let html = resp
         .text()
@@ -431,12 +433,6 @@ const TERMS: &[Term] = &[
     },
 ];
 
-/// Convenience: compute the human-readable name of the current/upcoming term
-/// (e.g. "Spring 2026"). Useful for output headers in other modules.
-pub fn current_term_name() -> String {
-    term_code_to_name(&current_term_code())
-}
-
 fn term_code_to_name(code: &str) -> String {
     let Ok(num) = code.parse::<i32>() else {
         return code.to_string();
@@ -554,6 +550,8 @@ pub async fn scrape_directory(
         .send()
         .await
         .context("Failed to fetch directory homepage")?
+        .error_for_status()
+        .context("UCSC directory returned an error status")?
         .text()
         .await
         .context("Failed to read directory homepage")?;
@@ -580,6 +578,8 @@ pub async fn scrape_directory(
         .send()
         .await
         .context("Failed to POST directory search")?
+        .error_for_status()
+        .context("UCSC directory returned an error status")?
         .text()
         .await
         .context("Failed to read directory results")?;

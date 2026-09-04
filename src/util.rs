@@ -122,3 +122,44 @@ mod tests {
         assert_eq!(degrees_to_compass(720.0 + 180.0), "S");
     }
 }
+
+/// Refuse to treat a zero-length scrape of a *catalog* (classrooms, summer
+/// calendar) as a real answer: an empty catalog means the page changed or an
+/// error page was parsed, and caching it would pin "no results" for the TTL.
+pub fn reject_empty_catalog<T>(items: Vec<T>, what: &str) -> anyhow::Result<Vec<T>> {
+    if items.is_empty() {
+        anyhow::bail!("{what}: page parsed to zero entries (layout change or error page?)");
+    }
+    Ok(items)
+}
+
+/// Strict `YYYY-MM-DD` parse for user-supplied dates.
+pub fn parse_iso_date(s: &str) -> Option<chrono::NaiveDate> {
+    let s = s.trim();
+    if s.len() != 10 {
+        return None;
+    }
+    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn empty_catalog_is_an_error_not_a_result() {
+        assert!(reject_empty_catalog(Vec::<u8>::new(), "classrooms").is_err());
+        assert_eq!(
+            reject_empty_catalog(vec![1u8], "classrooms").unwrap(),
+            vec![1u8]
+        );
+    }
+
+    #[test]
+    fn iso_date_parse_is_strict() {
+        assert!(parse_iso_date("2026-09-03").is_some());
+        assert!(parse_iso_date("tomorrow").is_none());
+        assert!(parse_iso_date("04/10/2026").is_none());
+        assert!(parse_iso_date("2026-9-3").is_none());
+    }
+}

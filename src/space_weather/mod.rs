@@ -179,8 +179,16 @@ async fn fetch_all(http: &reqwest::Client) -> Result<SpaceWeatherData> {
 
     let (kp_res, scales_res, wind_res) =
         futures_util::future::join3(kp_fut, scales_fut, wind_fut).await;
+    assemble(kp_res, scales_res, wind_res)
+}
 
-    // Partial success: include whatever succeeded.
+/// Partial success keeps whatever legs succeeded; a total failure is an
+/// error so nothing gets cached and the next call retries SWPC.
+fn assemble(
+    kp_res: Result<Vec<KpEntry>>,
+    scales_res: Result<ScalesResponse>,
+    wind_res: Result<SolarWindResponse>,
+) -> Result<SpaceWeatherData> {
     let kp_entries = match kp_res {
         Ok(v) => Some(v),
         Err(e) => {
@@ -203,6 +211,9 @@ async fn fetch_all(http: &reqwest::Client) -> Result<SpaceWeatherData> {
         }
     };
 
+    if kp_entries.is_none() && scales.is_none() && solar_wind.is_none() {
+        anyhow::bail!("all three NOAA SWPC feeds failed");
+    }
     Ok(SpaceWeatherData {
         kp_entries,
         scales,
@@ -743,5 +754,30 @@ mod tests {
         assert_eq!(capitalize("none"), "None");
         assert_eq!(capitalize(""), "");
         assert_eq!(capitalize("A"), "A");
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn total_swpc_failure_is_an_error_not_an_empty_summary() {
+        let r = assemble(
+            Err(anyhow::anyhow!("kp")),
+            Err(anyhow::anyhow!("scales")),
+            Err(anyhow::anyhow!("wind")),
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn partial_success_is_kept() {
+        let r = assemble(
+            Ok(vec![]),
+            Err(anyhow::anyhow!("scales")),
+            Err(anyhow::anyhow!("wind")),
+        );
+        assert!(r.is_ok());
     }
 }

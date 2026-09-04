@@ -133,7 +133,6 @@ impl MarineService {
             })
             .await
     }
-
 }
 
 // ───── formatting ─────
@@ -411,7 +410,9 @@ mod tests {
         assert!(out.contains("## Next 12 hours"));
         assert!(out.contains("| 2026-04-10T00:00 | 3.3 | 10s |"));
         // Missing entries degrade to em-dash cells.
-        assert!(out.contains("| 2026-04-10T02:00 | \u{2014} | \u{2014} | \u{2014} | \u{2014} | \u{2014} |"));
+        assert!(out.contains(
+            "| 2026-04-10T02:00 | \u{2014} | \u{2014} | \u{2014} | \u{2014} | \u{2014} |"
+        ));
     }
 
     #[test]

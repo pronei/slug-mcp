@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed — dependencies (2026-09-03)
+- **rmcp 2.1 → 3.2**: `call_tool` returns `CallToolResponse`; `ListToolsResult` gains cache-hint fields; `StreamableHttpServerConfig::stateful_mode` is now `legacy_session_mode`.
+- **aes-gcm 0.10 → 0.11 / sha2 0.10 → 0.11** (RustCrypto hybrid-array line): session nonce via `aead::Generate`, digest returned directly as the AES key.
+- **base64 0.22 → 0.23, quick-xml 0.41 → 0.42**, plus all semver-compatible updates (tokio 1.53, clap 4.6.6, regex 1.13, moka 0.12.16, schemars 1.2.2, …).
+
+### Fixed — tool audit (2026-09-03)
+- **Transit**: stop search folds `&`/"and", accepts a majority of query tokens, and resolves hub aliases ("Metro Center" → Pacific & Center, "Main Entrance" → Bay & High); BusTime is now the primary prediction source (its stop ids match the catalog; GTFS-RT trip_updates uses a different id namespace) with a 30 s cache and occupancy joined from the GTFS-RT vehicles feed; system alerts are filtered by `active_period` with an Upcoming section; per-route alert bulletins are cached as data (errors are never cached); a partially failed stops fan-out is no longer cached for a day; unassigned buses render as "Not in service"; `get_route_delays` explains that SC Metro publishes no delay values.
+- **Dining**: the upstream `Mo 1:00-13:00` placeholder is dropped at parse time; dated ranges that carry opens/closes are hours, not closures; `M/D/YYYY` menu dates normalize to ISO (closure detection and cache keys agree); multi-day closures are always kept in "Upcoming Special Hours".
+- **Events**: all-day Tribe events render as dates (a DST-shifted `00:59:59` end no longer spills to the next day).
+- **Recreation**: group-exercise term label derives from the scraped page's URL (description no longer hardcodes a term); facility schedules render the open windows implied by "Facility Closed" blocks; `BYSETPOS=-1` (last weekday of month) expands correctly; schedule cache key includes the date.
+- **Ocean**: SC Wharf falls back to the newest available sample (`orderByMax`) with a STALE banner when the ERDDAP dataset lags; the research-snapshot checksum now hashes a source manifest (a missing source can't collide with a complete snapshot) and reports `sources_present`; ERDDAP no-data answers are a typed error; oversized responses are rejected by `Content-Length` before buffering.
+- **Buoys / climbing / air / sky**: wave-buoy defaults drop the dead 46114 feed for 46239 (Point Sur); climbing area search ranks exact-name and California matches first; AirNow observations are labelled PDT/PST correctly; tide, twilight, and Open-Meteo caches roll over at midnight; twilight is requested for the Pacific date instead of the UTC date.
+- **Robustness**: NWS alert outages are reported as unavailable rather than "0 alerts"; USGS earthquake windows are computed in UTC; empty classroom/summer-calendar scrapes are never cached; PISA/LibCal/directory fetches check HTTP status; library dates are validated; half-specified bird-search coordinates are rejected; SWPC total failures are not cached; Overpass fetches a generous set so nearest-first is real; class-search page offsets are bounded.
+
 ### Added
 
 #### Environmental & Recreational Tools

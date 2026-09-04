@@ -81,13 +81,16 @@ pub async fn scrape_classrooms(client: &reqwest::Client) -> Result<Vec<Classroom
         .get(CLASSROOMS_URL)
         .send()
         .await
-        .context("Failed to fetch classrooms page")?;
+        .context("Failed to fetch classrooms page")?
+        .error_for_status()
+        .context("classrooms.ucsc.edu returned an error status")?;
 
     let html = resp
         .text()
         .await
         .context("Failed to read classrooms body")?;
-    Ok(parse_classrooms(&html))
+    // Never cache an empty catalog: it would pin "no classrooms" for a day.
+    crate::util::reject_empty_catalog(parse_classrooms(&html), "classrooms")
 }
 
 fn parse_classrooms(html: &str) -> Vec<Classroom> {

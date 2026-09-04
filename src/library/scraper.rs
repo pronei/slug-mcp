@@ -333,6 +333,8 @@ pub async fn scrape_availability(
         .send()
         .await
         .context("Failed to load library spaces page")?
+        .error_for_status()
+        .context("LibCal spaces page returned an error status")?
         .text()
         .await
         .context("Failed to read spaces page")?;

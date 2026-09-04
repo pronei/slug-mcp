@@ -59,6 +59,7 @@ pub struct ResearchSnapshot {
     pub birds: Option<BirdSummary>,
     pub inat: Vec<InatSummary>,
     pub deterministic_checksum: String,
+    pub sources_present: Vec<String>,
     pub partial_failures: Vec<PartialFailure>,
 }
 
@@ -724,14 +725,36 @@ fn collect_f64s(snap: &FullSnapshot) -> Vec<f64> {
     vals
 }
 
-fn compute_checksum(vals: &[f64]) -> String {
-    let payload: String = vals
+/// Which sources contributed to a snapshot. Hashed alongside the values so a
+/// snapshot with a lagging source never collides with a complete one.
+fn source_manifest(snap: &FullSnapshot) -> Vec<(&'static str, bool)> {
+    vec![
+        ("upwelling", snap.upwelling.is_some()),
+        ("m1", snap.m1.is_some()),
+        ("wharf", snap.wharf.is_some()),
+        ("hab", snap.hab.is_some()),
+        ("sst", snap.sst_snap.is_some()),
+        ("hfr", snap.hfr_snap.is_some()),
+        ("birds", snap.birds.is_some()),
+        ("inat", !snap.inat.is_empty()),
+    ]
+}
+
+fn compute_checksum(vals: &[f64], sources: &[(&str, bool)]) -> String {
+    let manifest: String = sources
+        .iter()
+        .map(|(name, present)| format!("{name}={present}"))
+        .collect::<Vec<_>>()
+        .join(";");
+    let values: String = vals
         .iter()
         .map(|v| format!("{:.6}", v))
         .collect::<Vec<_>>()
         .join(",");
+    let payload = format!("{manifest}|{values}");
     let hash = Sha256::digest(payload.as_bytes());
-    format!("sha256:{:x}", hash)
+    let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+    format!("sha256:{hex}")
 }
 
 // ─── Public entry points (called from OceanService) ───
@@ -747,7 +770,12 @@ pub async fn upwelling_state(
     let fmt = req.format.as_deref().unwrap_or("narrative");
     if fmt == "json" {
         let vals = collect_f64s(&snap);
-        let checksum = compute_checksum(&vals);
+        let checksum = compute_checksum(&vals, &source_manifest(&snap));
+        let sources_present: Vec<String> = source_manifest(&snap)
+            .into_iter()
+            .filter(|(_, ok)| *ok)
+            .map(|(name, _)| name.to_string())
+            .collect();
         let rs = ResearchSnapshot {
             retrieved_utc: chrono::Utc::now().to_rfc3339(),
             upwelling: snap.upwelling,
@@ -759,6 +787,7 @@ pub async fn upwelling_state(
             birds: snap.birds,
             inat: snap.inat,
             deterministic_checksum: checksum,
+            sources_present,
             partial_failures: snap.partial_failures,
         };
         Ok(serde_json::to_string_pretty(&rs)?)
@@ -797,7 +826,12 @@ pub async fn research_snapshot(
     }
 
     let vals = collect_f64s(&snap);
-    let checksum = compute_checksum(&vals);
+    let checksum = compute_checksum(&vals, &source_manifest(&snap));
+    let sources_present: Vec<String> = source_manifest(&snap)
+        .into_iter()
+        .filter(|(_, ok)| *ok)
+        .map(|(name, _)| name.to_string())
+        .collect();
 
     let rs = ResearchSnapshot {
         retrieved_utc: chrono::Utc::now().to_rfc3339(),
@@ -810,6 +844,7 @@ pub async fn research_snapshot(
         birds: snap.birds,
         inat: snap.inat,
         deterministic_checksum: checksum,
+        sources_present,
         partial_failures: snap.partial_failures,
     };
 
@@ -837,8 +872,8 @@ mod tests {
     #[test]
     fn checksum_deterministic() {
         let vals = vec![1.0, 2.5, 3.625];
-        let c1 = compute_checksum(&vals);
-        let c2 = compute_checksum(&vals);
+        let c1 = compute_checksum(&vals, &[]);
+        let c2 = compute_checksum(&vals, &[]);
         assert_eq!(c1, c2);
         assert!(c1.starts_with("sha256:"));
     }
@@ -848,8 +883,8 @@ mod tests {
         // An all-unavailable snapshot must still produce a stable, well-formed
         // checksum (empty input → fixed hash), never a panic.
         assert!(collect_f64s(&empty_snapshot()).is_empty());
-        let c1 = compute_checksum(&collect_f64s(&empty_snapshot()));
-        let c2 = compute_checksum(&collect_f64s(&empty_snapshot()));
+        let c1 = compute_checksum(&collect_f64s(&empty_snapshot()), &[]);
+        let c2 = compute_checksum(&collect_f64s(&empty_snapshot()), &[]);
         assert_eq!(c1, c2);
         assert!(c1.starts_with("sha256:"));
     }
@@ -904,13 +939,13 @@ mod tests {
         assert!(vals.contains(&14.0) && vals.contains(&16.0) && vals.contains(&0.4));
         assert!(vals.contains(&5.0), "finite wind speed kept");
         // The checksum over filtered values is well-formed.
-        assert!(compute_checksum(&vals).starts_with("sha256:"));
+        assert!(compute_checksum(&vals, &[]).starts_with("sha256:"));
     }
 
     #[test]
     fn checksum_changes_with_data() {
-        let c1 = compute_checksum(&[1.0, 2.0]);
-        let c2 = compute_checksum(&[1.0, 3.0]);
+        let c1 = compute_checksum(&[1.0, 2.0], &[]);
+        let c2 = compute_checksum(&[1.0, 3.0], &[]);
         assert_ne!(c1, c2);
     }
 
@@ -975,5 +1010,25 @@ mod tests {
         assert_eq!(summary.total_observations, 10);
         assert_eq!(summary.notable.len(), 5);
         assert_eq!(summary.query, "test query");
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn checksum_changes_when_a_source_is_missing_even_if_values_match() {
+        let with = compute_checksum(&[1.5, 2.5], &[("wharf", true), ("m1", true)]);
+        let without = compute_checksum(&[1.5, 2.5], &[("wharf", false), ("m1", true)]);
+        assert_ne!(with, without);
+    }
+
+    #[test]
+    fn checksum_is_deterministic() {
+        let a = compute_checksum(&[1.5], &[("wharf", true)]);
+        let b = compute_checksum(&[1.5], &[("wharf", true)]);
+        assert_eq!(a, b);
+        assert!(a.starts_with("sha256:"));
     }
 }

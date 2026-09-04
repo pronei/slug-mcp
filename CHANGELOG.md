@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed — live tool check follow-ups (2026-09-04)
+- **`search_classes`**: the instructor filter posted `binds[:instr_name]`, but PISA reads `binds[:instructor]` — every instructor query silently returned no results.
+- **eBird species lookups**: the taxonomy index asked for all ~1050 California species codes in one `species=` value (~7.5 KB), which eBird answers 400; codes are now fetched in batches. Fixes `find_nearest_bird_sighting` and species-filtered `search_bird_observations`.
+- **`search_events`**: the category is checked against the events API's own slug catalog (cached 6 h; a failed catalog fetch doesn't block the search) instead of forwarding an unknown slug and surfacing the upstream 400. The parameter description no longer suggests `"lecture"`, which is not a valid slug.
+- **Invalid-argument failures** (`search_events`, `search_outdoors`) are returned as tool-level errors (`isError: true`) instead of `-32603`, which most MCP clients render opaquely — the list of valid values now actually reaches the caller.
+- **`get_nutrition_info`**: an unknown recipe id returns a not-found message instead of a well-formed label with an empty title and every nutrient `N/A`.
+- **`get_tides`**: non-default stations are named from NOAA's station metadata, degrading to the bare id — `San Francisco, CA (9414290)` rather than `station 9414290 (9414290)`.
+- **`get_sc_wharf_state`**: sample age renders as `18 days ago` instead of `latency 25998m`.
+
 ### Changed — dependencies (2026-09-03)
 - **rmcp 2.1 → 3.2**: `call_tool` returns `CallToolResponse`; `ListToolsResult` gains cache-hint fields; `StreamableHttpServerConfig::stateful_mode` is now `legacy_session_mode`.
 - **aes-gcm 0.10 → 0.11 / sha2 0.10 → 0.11** (RustCrypto hybrid-array line): session nonce via `aead::Generate`, digest returned directly as the AES key.

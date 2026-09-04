@@ -14,13 +14,28 @@ use tribe::{TribeClient, TribeEvent};
 /// Default location for Eventbrite searches (Eventbrite URL slug format).
 const DEFAULT_LOCATION_SLUG: &str = "ca--santa-cruz";
 
+/// Reject a category the events API doesn't know, so the caller gets the valid
+/// slugs back instead of an opaque upstream 400. An empty `slugs` means the
+/// catalog fetch failed — don't block the search on it.
+fn validate_event_category(category: &str, slugs: &[String]) -> Result<()> {
+    if slugs.is_empty() || slugs.iter().any(|s| s == category) {
+        return Ok(());
+    }
+    Err(crate::util::InvalidInput::err(format!(
+        "Unknown event category '{}'. Valid categories: {}",
+        category,
+        slugs.join(", ")
+    )))
+}
+
 // ─── Request types ───
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchEventsRequest {
     /// Search query string
     pub query: Option<String>,
-    /// Event category/type filter (e.g., "workshop", "lecture")
+    /// Event category slug (e.g., "workshop", "lectures-presentations",
+    /// "seminars", "exhibits"). Must match an events.ucsc.edu category slug.
     pub category: Option<String>,
     /// Max results (default 10, max 50)
     pub limit: Option<u32>,
@@ -77,6 +92,20 @@ impl EventsService {
         );
 
         let client = &self.tribe;
+
+        if let Some(cat) = category {
+            // Category slugs are near-static; a failed catalog fetch degrades to
+            // no validation rather than blocking the search.
+            let slugs: Vec<String> = self
+                .cache
+                .get_or_fetch("events:tribe:category-slugs", 21_600, || async {
+                    client.fetch_category_slugs().await
+                })
+                .await
+                .unwrap_or_default();
+            validate_event_category(cat, &slugs)?;
+        }
+
         let events: Vec<TribeEvent> = self
             .cache
             .get_or_fetch(&cache_key, 900, || async {
@@ -132,5 +161,41 @@ impl EventsService {
             .await?;
 
         Ok(events)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slugs() -> Vec<String> {
+        ["workshop", "lectures-presentations", "seminars", "exhibits"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn known_slug_is_accepted() {
+        assert!(validate_event_category("workshop", &slugs()).is_ok());
+        assert!(validate_event_category("lectures-presentations", &slugs()).is_ok());
+    }
+
+    #[test]
+    fn unknown_slug_is_rejected_with_the_valid_list() {
+        // "lecture" was the tool's own documented example; upstream 400s on it.
+        let err = validate_event_category("lecture", &slugs()).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("lecture"), "{msg}");
+        assert!(msg.contains("lectures-presentations"), "{msg}");
+        assert!(
+            err.downcast_ref::<crate::util::InvalidInput>().is_some(),
+            "not typed as a caller error: {msg}"
+        );
+    }
+
+    #[test]
+    fn empty_catalog_does_not_block_the_search() {
+        assert!(validate_event_category("anything", &[]).is_ok());
     }
 }

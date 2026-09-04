@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::util;
 
 const EVENTS_API_URL: &str = "https://events.ucsc.edu/wp-json/tribe/events/v1/events";
+const CATEGORIES_API_URL: &str = "https://events.ucsc.edu/wp-json/tribe/events/v1/categories";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeEventsResponse {
@@ -52,6 +53,12 @@ pub struct TribeOrganizer {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TribeCategoriesResponse {
+    #[serde(default)]
+    pub categories: Vec<TribeCategory>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeCategory {
     pub name: String,
     pub slug: String,
@@ -69,6 +76,19 @@ pub struct TribeClient {
 impl TribeClient {
     pub fn new(http: reqwest::Client) -> Self {
         Self { http }
+    }
+
+    /// The category slugs the events API accepts. Anything else is answered 400.
+    pub async fn fetch_category_slugs(&self) -> Result<Vec<String>> {
+        let resp = self
+            .http
+            .get(CATEGORIES_API_URL)
+            .query(&[("per_page", "100")])
+            .send()
+            .await?
+            .error_for_status()?;
+        let data: TribeCategoriesResponse = resp.json().await?;
+        Ok(data.categories.into_iter().map(|c| c.slug).collect())
     }
 
     pub async fn fetch_events(&self, params: &[(&str, &str)]) -> Result<TribeEventsResponse> {

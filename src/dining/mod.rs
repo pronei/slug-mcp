@@ -228,6 +228,13 @@ impl DiningService {
 
     pub async fn get_nutrition(&self, recipe_id: &str) -> Result<String> {
         let info = scrape_nutrition(&self.http, recipe_id).await?;
+        if info.is_empty() {
+            return Ok(format!(
+                "No nutrition label found for recipe `{recipe_id}`. Recipe IDs look \
+                 like `075033*6` and come from get_dining_menu output — they change \
+                 between menu cycles, so re-read the menu for a current one."
+            ));
+        }
         Ok(info.format())
     }
 

@@ -22,6 +22,7 @@ use crate::cache::CacheStore;
 const COOPS_BASE: &str = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
 const DEFAULT_STATION: &str = "9413450"; // Monterey
 const DEFAULT_STATION_NAME: &str = "Monterey, CA";
+const STATION_META_URL: &str = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations";
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TidesRequest {
@@ -74,7 +75,9 @@ impl TidesService {
                 let name = if station_for_fetch == DEFAULT_STATION {
                     DEFAULT_STATION_NAME.to_string()
                 } else {
-                    format!("station {}", station_for_fetch)
+                    fetch_station_name(&http, &station_for_fetch)
+                        .await
+                        .unwrap_or_else(|| station_for_fetch.clone())
                 };
                 Ok(TideBundle {
                     station: station_for_fetch,
@@ -86,6 +89,54 @@ impl TidesService {
 
         Ok(format_tides(&bundle, days))
     }
+}
+
+/// Station name from NOAA's mdapi station-metadata response, rendered like the
+/// default ("San Francisco, CA"). `None` whenever the shape isn't what we expect
+/// so the caller can fall back to the bare id.
+fn parse_station_name(json: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Resp {
+        #[serde(default)]
+        stations: Vec<Station>,
+    }
+    #[derive(Deserialize)]
+    struct Station {
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        state: String,
+    }
+
+    let resp: Resp = serde_json::from_str(json).ok()?;
+    let station = resp.stations.into_iter().next()?;
+    let name = station.name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let state = station.state.trim();
+    Some(if state.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name}, {state}")
+    })
+}
+
+/// Station metadata is static, so this rides the tide bundle's own cache entry
+/// rather than getting one of its own. Any failure degrades to the bare id.
+async fn fetch_station_name(http: &reqwest::Client, station: &str) -> Option<String> {
+    let url = format!("{STATION_META_URL}/{station}.json");
+    let body = http
+        .get(&url)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .text()
+        .await
+        .ok()?;
+    parse_station_name(&body)
 }
 
 async fn fetch_predictions(
@@ -165,8 +216,12 @@ fn parse_predictions(body: &str) -> Result<Vec<TidePrediction>> {
 
 fn format_tides(bundle: &TideBundle, days: u32) -> String {
     let mut out = format!(
-        "# Tide predictions — {} ({})\n\n",
-        bundle.station_name, bundle.station
+        "# Tide predictions — {}\n\n",
+        if bundle.station_name == bundle.station {
+            format!("station {}", bundle.station)
+        } else {
+            format!("{} ({})", bundle.station_name, bundle.station)
+        }
     );
     let day_word = if days == 1 { "day" } else { "days" };
     out.push_str(&format!(
@@ -221,6 +276,25 @@ mod tests {
 
     // Live capture 2026-07-07, station 9413450.
     const FIXTURE: &str = include_str!("fixtures/predictions.json");
+
+    #[test]
+    fn parse_station_name_from_live_capture() {
+        // Live capture, station 9414290.
+        let name = parse_station_name(include_str!("fixtures/station_meta.json"));
+        assert_eq!(name.as_deref(), Some("San Francisco, CA"));
+    }
+
+    #[test]
+    fn parse_station_name_of_unknown_station_is_none() {
+        let name = parse_station_name(include_str!("fixtures/station_meta_empty.json"));
+        assert_eq!(name, None);
+    }
+
+    #[test]
+    fn parse_station_name_of_garbage_is_none() {
+        assert_eq!(parse_station_name("not json"), None);
+        assert_eq!(parse_station_name("{}"), None);
+    }
 
     #[test]
     fn parse_predictions_fixture() {

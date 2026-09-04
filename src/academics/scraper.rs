@@ -112,19 +112,10 @@ pub struct ClassSearchParams {
     pub page_size: u32,
 }
 
-pub async fn scrape_class_search(
-    client: &reqwest::Client,
-    params: &ClassSearchParams,
-) -> Result<ClassSearchResult> {
-    // First GET the form page to pick up any session cookies
-    let _ = client
-        .get(CLASS_SEARCH_URL)
-        .send()
-        .await
-        .context("Failed to load class search form")?;
-
-    // Build the POST form data
-    let mut form: Vec<(&str, String)> = vec![
+/// PISA's search form is a flat set of `binds[:...]` fields. Split out from the
+/// request itself so the field names can be asserted without hitting the network.
+fn build_search_form(params: &ClassSearchParams) -> Vec<(&'static str, String)> {
+    let mut form: Vec<(&'static str, String)> = vec![
         ("action", "results".to_string()),
         ("binds[:term]", params.term.clone()),
         ("binds[:reg_status]", params.reg_status.clone()),
@@ -140,7 +131,7 @@ pub async fn scrape_class_search(
         form.push(("binds[:catalog_nbr_op]", "=".to_string()));
     }
     if let Some(ref i) = params.instructor {
-        form.push(("binds[:instr_name]", i.clone()));
+        form.push(("binds[:instructor]", i.clone()));
         form.push(("binds[:instr_name_op]", "contains".to_string()));
     }
     if let Some(ref t) = params.title {
@@ -155,6 +146,22 @@ pub async fn scrape_class_search(
     if let Some(ref sc) = params.session_code {
         form.push(("binds[:session_code]", sc.clone()));
     }
+
+    form
+}
+
+pub async fn scrape_class_search(
+    client: &reqwest::Client,
+    params: &ClassSearchParams,
+) -> Result<ClassSearchResult> {
+    // First GET the form page to pick up any session cookies
+    let _ = client
+        .get(CLASS_SEARCH_URL)
+        .send()
+        .await
+        .context("Failed to load class search form")?;
+
+    let form = build_search_form(params);
 
     let resp = client
         .post(CLASS_SEARCH_URL)
@@ -697,6 +704,43 @@ mod tests {
         assert_eq!(am10.session.as_deref(), Some("Summer Session 1 (5 Weeks)"));
         assert_eq!(am10.enrolled.as_deref(), Some("87 of 150 Enrolled"));
         assert_eq!(am10.mode.as_deref(), Some("Synchronous Online"));
+    }
+
+    fn search_params(instructor: Option<&str>) -> ClassSearchParams {
+        ClassSearchParams {
+            term: "2262".to_string(),
+            subject: None,
+            catalog_number: None,
+            instructor: instructor.map(str::to_string),
+            title: None,
+            ge: None,
+            reg_status: "all".to_string(),
+            career: None,
+            session_code: None,
+            page_start: 0,
+            page_size: 25,
+        }
+    }
+
+    #[test]
+    fn instructor_search_uses_pisa_field_name() {
+        let form = build_search_form(&search_params(Some("Jullig")));
+        // PISA's form field is `binds[:instructor]`; `binds[:instr_name]` is
+        // silently ignored upstream, so every instructor query came back empty.
+        assert!(
+            form.contains(&("binds[:instructor]", "Jullig".to_string())),
+            "instructor not sent under the field PISA reads: {form:?}"
+        );
+        assert!(
+            form.contains(&("binds[:instr_name_op]", "contains".to_string())),
+            "comparison operator missing: {form:?}"
+        );
+    }
+
+    #[test]
+    fn omitted_instructor_sends_no_instructor_field() {
+        let form = build_search_form(&search_params(None));
+        assert!(!form.iter().any(|(k, _)| k.starts_with("binds[:instr")));
     }
 
     #[test]

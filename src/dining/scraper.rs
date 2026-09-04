@@ -815,6 +815,17 @@ pub struct NutritionInfo {
     pub allergens: String,
 }
 
+impl NutritionInfo {
+    /// FoodPro answers 200 with an empty label for a recipe id it doesn't know.
+    /// Require every headline field to be blank so a real item with a sparse
+    /// label still renders.
+    pub fn is_empty(&self) -> bool {
+        self.item_name.trim().is_empty()
+            && self.serving_size.trim().is_empty()
+            && self.calories.is_none()
+    }
+}
+
 const LABEL_URL: &str = "https://nutrition.sa.ucsc.edu/label.aspx";
 
 pub async fn scrape_nutrition(client: &reqwest::Client, recipe_id: &str) -> Result<NutritionInfo> {
@@ -1386,6 +1397,43 @@ mod tests {
     }
 
     const LABEL_FIXTURE: &str = include_str!("fixtures/label.html");
+
+    #[test]
+    fn blank_label_is_detected_as_missing() {
+        // What FoodPro returns for a bogus RecNumAndPort like "000000*0".
+        let blank = NutritionInfo {
+            item_name: String::new(),
+            serving_size: String::new(),
+            calories: None,
+            total_fat: None,
+            saturated_fat: None,
+            trans_fat: None,
+            cholesterol: None,
+            sodium: None,
+            total_carbs: None,
+            dietary_fiber: None,
+            sugars: None,
+            protein: None,
+            ingredients: String::new(),
+            allergens: String::new(),
+        };
+        assert!(blank.is_empty());
+    }
+
+    #[test]
+    fn real_label_is_not_missing() {
+        assert!(!parse_nutrition_label(LABEL_FIXTURE).is_empty());
+    }
+
+    #[test]
+    fn sparse_but_named_label_is_not_missing() {
+        let mut sparse = parse_nutrition_label("<html></html>");
+        sparse.item_name = "Steamed Rice".to_string();
+        assert!(
+            !sparse.is_empty(),
+            "an item with a name is present, just sparsely labelled"
+        );
+    }
 
     #[test]
     fn test_parse_nutrition_label_real_capture() {

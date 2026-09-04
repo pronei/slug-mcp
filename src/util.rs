@@ -163,3 +163,24 @@ mod audit_tests {
         assert!(parse_iso_date("2026-9-3").is_none());
     }
 }
+
+/// A failure caused by the caller's arguments rather than by this server or an
+/// upstream. `server.rs` surfaces these as tool-level errors (`isError: true`)
+/// so the explanation reaches the caller — most MCP clients render protocol
+/// errors opaquely, which loses the message.
+#[derive(Debug)]
+pub struct InvalidInput(pub String);
+
+impl InvalidInput {
+    pub fn err(msg: impl Into<String>) -> anyhow::Error {
+        anyhow::Error::new(InvalidInput(msg.into()))
+    }
+}
+
+impl std::fmt::Display for InvalidInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for InvalidInput {}

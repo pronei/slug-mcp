@@ -59,6 +59,19 @@ fn internal_err(e: impl std::fmt::Display) -> ErrorData {
     ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
 }
 
+/// Caller-input failures are returned as tool-level errors (`isError: true`) so
+/// the explanation reaches the caller. Most MCP clients render protocol errors
+/// opaquely, which would swallow the list of valid values.
+fn caller_or_internal(e: anyhow::Error) -> Result<CallToolResult, ErrorData> {
+    if e.downcast_ref::<crate::util::InvalidInput>().is_some() {
+        Ok(CallToolResult::error(vec![ContentBlock::text(
+            e.to_string(),
+        )]))
+    } else {
+        Err(internal_err(e))
+    }
+}
+
 /// Shared service dependencies, constructed once and cloned into each MCP session.
 #[derive(Clone)]
 pub struct ServiceContext {
@@ -285,15 +298,14 @@ macro_rules! define_tools {
                 &self,
                 Parameters(req): Parameters<SearchEventsRequest>,
             ) -> Result<CallToolResult, ErrorData> {
-                let events = self
+                let events = match self
                     .events
-                    .search_events(
-                        req.query.as_deref(),
-                        req.category.as_deref(),
-                        req.limit,
-                    )
+                    .search_events(req.query.as_deref(), req.category.as_deref(), req.limit)
                     .await
-                    .map_err(internal_err)?;
+                {
+                    Ok(e) => e,
+                    Err(e) => return caller_or_internal(e),
+                };
 
                 if events.is_empty() {
                     return Ok(CallToolResult::success(vec![ContentBlock::text(
@@ -905,11 +917,10 @@ macro_rules! define_tools {
                 &self,
                 Parameters(req): Parameters<OutdoorsRequest>,
             ) -> Result<CallToolResult, ErrorData> {
-                let result = self
-                    .outdoors
-                    .search(&req)
-                    .await
-                    .map_err(internal_err)?;
+                let result = match self.outdoors.search(&req).await {
+                    Ok(r) => r,
+                    Err(e) => return caller_or_internal(e),
+                };
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
@@ -1318,5 +1329,26 @@ impl ServerHandler for SlugMcpServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("slug-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caller_error_becomes_a_tool_level_error() {
+        let out = caller_or_internal(crate::util::InvalidInput::err("bad category 'bogus'"))
+            .expect("caller errors must not become protocol errors");
+        assert_eq!(out.is_error, Some(true));
+        let rendered = format!("{:?}", out.content);
+        assert!(rendered.contains("bogus"), "message lost: {rendered}");
+    }
+
+    #[test]
+    fn upstream_failure_stays_a_protocol_error() {
+        let err = caller_or_internal(anyhow::anyhow!("upstream 503"))
+            .expect_err("infrastructure failures stay protocol errors");
+        assert_eq!(err.code, ErrorCode::INTERNAL_ERROR);
     }
 }

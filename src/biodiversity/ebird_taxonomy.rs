@@ -151,6 +151,30 @@ struct TaxonRow {
     com_name_codes: Vec<String>,
 }
 
+/// Query-string budget for one `species=` batch. Measured: ~7.5 KB is rejected,
+/// a few hundred bytes is fine; 1500 keeps each request far inside the limit.
+const MAX_SPECIES_CSV_LEN: usize = 1500;
+
+/// Split species codes into `species=` CSV batches. eBird rejects an overlong
+/// query string, so the whole California list can't go in one request.
+fn species_chunks(codes: &[String], max_csv_len: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut cur = String::new();
+    for code in codes {
+        if !cur.is_empty() && cur.len() + 1 + code.len() > max_csv_len {
+            chunks.push(std::mem::take(&mut cur));
+        }
+        if !cur.is_empty() {
+            cur.push(',');
+        }
+        cur.push_str(code);
+    }
+    if !cur.is_empty() {
+        chunks.push(cur);
+    }
+    chunks
+}
+
 /// Build the taxonomy index by fetching the California species list, then the
 /// taxonomy rows for just those codes. Caller is responsible for caching the
 /// result (we don't write to `CacheStore` from here — keeps this function pure
@@ -173,20 +197,25 @@ pub async fn build_index(http: &reqwest::Client, key: &str) -> Result<TaxonomyIn
         anyhow::bail!("eBird spplist returned no species codes");
     }
 
-    // 2. Taxonomy rows for those codes. The `species=` param is a CSV.
-    let csv = spplist.join(",");
-    let rows: Vec<TaxonRow> = http
-        .get("https://api.ebird.org/v2/ref/taxonomy/ebird")
-        .header("X-eBirdApiToken", key)
-        .query(&[("fmt", "json"), ("species", csv.as_str())])
-        .send()
-        .await
-        .context("eBird taxonomy HTTP request failed")?
-        .error_for_status()
-        .context("eBird taxonomy non-success status")?
-        .json()
-        .await
-        .context("parsing eBird taxonomy JSON")?;
+    // 2. Taxonomy rows for those codes, in batches. The `species=` param is a
+    //    CSV, and eBird answers 400 once the query string gets long — the
+    //    California list alone is ~7.5 KB, well past the limit.
+    let mut rows: Vec<TaxonRow> = Vec::with_capacity(spplist.len());
+    for csv in species_chunks(&spplist, MAX_SPECIES_CSV_LEN) {
+        let batch: Vec<TaxonRow> = http
+            .get("https://api.ebird.org/v2/ref/taxonomy/ebird")
+            .header("X-eBirdApiToken", key)
+            .query(&[("fmt", "json"), ("species", csv.as_str())])
+            .send()
+            .await
+            .context("eBird taxonomy HTTP request failed")?
+            .error_for_status()
+            .context("eBird taxonomy non-success status")?
+            .json()
+            .await
+            .context("parsing eBird taxonomy JSON")?;
+        rows.extend(batch);
+    }
 
     // 3. Build the index.
     let mut by_lower_name: HashMap<String, String> = HashMap::with_capacity(rows.len() * 3);
@@ -221,6 +250,41 @@ pub async fn build_index(http: &reqwest::Client, key: &str) -> Result<TaxonomyIn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn codes(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("sp{i:04}")).collect()
+    }
+
+    #[test]
+    fn species_chunks_stay_under_the_length_budget() {
+        // The California list outgrew eBird's query-string limit: 1050 codes is
+        // a ~7.5 KB `species=` value, which the taxonomy endpoint answers 400.
+        let all = codes(1050);
+        let chunks = species_chunks(&all, 4000);
+        assert!(
+            chunks.len() > 1,
+            "1050 codes must not go out as one request"
+        );
+        for c in &chunks {
+            assert!(c.len() <= 4000, "chunk of {} chars exceeds budget", c.len());
+            assert!(!c.is_empty(), "empty chunk");
+        }
+    }
+
+    #[test]
+    fn species_chunks_preserve_every_code_in_order() {
+        let all = codes(1050);
+        let rejoined: Vec<String> = species_chunks(&all, 4000)
+            .iter()
+            .flat_map(|c| c.split(',').map(str::to_string).collect::<Vec<_>>())
+            .collect();
+        assert_eq!(rejoined, all, "chunking dropped or reordered codes");
+    }
+
+    #[test]
+    fn species_chunks_of_empty_input_is_empty() {
+        assert!(species_chunks(&[], 4000).is_empty());
+    }
 
     fn fixture() -> TaxonomyIndex {
         let entries = vec![

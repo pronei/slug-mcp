@@ -191,8 +191,9 @@ fn format_wharf(t: &ErddapTable, hours: u32) -> Result<String> {
     let mut out = format!(
         "# UCSC Santa Cruz Municipal Wharf\n\n\
          _36.96°N, 122.02°W — in-situ continuous monitoring (Kudela Lab, UCSC)_\n\n\
-         **Latest observation**: {} (latency {}m)\n\n",
-        time_str, latency_min,
+         **Latest observation**: {} ({} ago)\n\n",
+        time_str,
+        format_latency(latency_min),
     );
     if let Some(banner) = stale_banner(latency_min) {
         out.push_str(&banner);
@@ -418,17 +419,29 @@ mod tests {
     }
 }
 
+/// Human-readable age of the newest sample.
+fn format_latency(minutes: i64) -> String {
+    let (n, unit) = if minutes >= 1440 {
+        (minutes / 1440, "day")
+    } else if minutes >= 60 {
+        (minutes / 60, "hour")
+    } else {
+        return format!("{minutes} min");
+    };
+    if n == 1 {
+        format!("1 {unit}")
+    } else {
+        format!("{n} {unit}s")
+    }
+}
+
 /// Banner shown when the newest available sample is old enough that the
 /// dataset is clearly lagging (not just a maintenance gap).
 fn stale_banner(latency_minutes: i64) -> Option<String> {
     if latency_minutes <= 180 {
         return None;
     }
-    let age = if latency_minutes >= 1440 {
-        format!("{} days old", latency_minutes / 1440)
-    } else {
-        format!("{} hours old", latency_minutes / 60)
-    };
+    let age = format!("{} old", format_latency(latency_minutes));
     Some(format!(
         "\u{26a0} **STALE DATA** \u{2014} the newest available sample is {age}; the upstream ERDDAP dataset is lagging.\n\n"
     ))
@@ -437,6 +450,16 @@ fn stale_banner(latency_minutes: i64) -> Option<String> {
 #[cfg(test)]
 mod audit_tests {
     use super::*;
+
+    #[test]
+    fn latency_renders_in_human_units() {
+        assert_eq!(format_latency(35), "35 min");
+        assert_eq!(format_latency(60), "1 hour");
+        assert_eq!(format_latency(240), "4 hours");
+        assert_eq!(format_latency(1440), "1 day");
+        // The 2026-08-17 sample was reported as "latency 25998m".
+        assert_eq!(format_latency(25998), "18 days");
+    }
 
     #[test]
     fn fresh_sample_has_no_banner() {

@@ -154,11 +154,11 @@ fn validate_category(category: &str) -> Result<()> {
     if VALID_CATEGORIES.contains(&category) {
         Ok(())
     } else {
-        bail!(
+        Err(crate::util::InvalidInput::err(format!(
             "Unknown category '{}'. Valid categories: {}",
             category,
             VALID_CATEGORIES.join(", ")
-        )
+        )))
     }
 }
 
@@ -642,6 +642,17 @@ mod tests {
         assert!(output.contains("**La Corona** (137 m)"));
         assert!(output.contains("Showing 2 results"));
         assert!(output.contains("OpenStreetMap via Overpass API"));
+    }
+
+    #[test]
+    fn invalid_category_is_typed_as_caller_error() {
+        // Must be an InvalidInput so server.rs can return it as a tool-level
+        // error; as a plain anyhow error it becomes an opaque -32603.
+        let err = validate_category("bogus").unwrap_err();
+        assert!(
+            err.downcast_ref::<crate::util::InvalidInput>().is_some(),
+            "validation error is not typed as InvalidInput: {err}"
+        );
     }
 
     #[test]

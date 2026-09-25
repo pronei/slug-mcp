@@ -153,6 +153,11 @@ Then wire it in three places:
   `certs/InCommon_ECC_OV_SSL_CA_3.crt`. Menus that fail only in production are
   this, not the parser.
 
+- **Eventbrite blocks the hosted server.** Its CloudFront answers Fly's IPs with a
+  405 CAPTCHA page, so `search_eventbrite_events` errors on
+  `slug-mcp.fly.dev` while working from campus and home networks. Headers won't
+  get past a CAPTCHA.
+
 - **`events.ucsc.edu` is WordPress + Tribe Events plugin** at
   `/wp-json/tribe/events/v1/events`. It is *not* Localist, despite earlier campus
   pages suggesting that. Eventbrite is a separate API for community events; both

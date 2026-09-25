@@ -147,6 +147,12 @@ Then wire it in three places:
 - **`nutrition.sa.ucsc.edu` (FoodPro) is intermittently down.** Treat upstream
   HTTP errors as expected; surface them as text rather than 500-ing the tool.
 
+- **`nutrition.sa.ucsc.edu` also sends the wrong intermediate certificate.**
+  macOS and browsers repair the chain through AIA, so menus work on a laptop;
+  OpenSSL on Linux doesn't, so the Docker image installs
+  `certs/InCommon_ECC_OV_SSL_CA_3.crt`. Menus that fail only in production are
+  this, not the parser.
+
 - **`events.ucsc.edu` is WordPress + Tribe Events plugin** at
   `/wp-json/tribe/events/v1/events`. It is *not* Localist, despite earlier campus
   pages suggesting that. Eventbrite is a separate API for community events; both
@@ -162,7 +168,7 @@ Then wire it in three places:
   positions/occupancy and system alerts. Real GTFS-RT predictions (and true
   per-route delays) need a static-GTFS `stops.txt`/`stop_times.txt` loader.
 
-- **The public build exposes 50 tools, not 54.** `deploy.sh` builds
+- **The public build exposes 54 tools, not 58.** The Dockerfile builds
   `--no-default-features`, which compiles out the four auth tools.
 
 - **`docs/` is git-ignored.** Local design notes and audit write-ups live there
@@ -195,6 +201,27 @@ Then wire it in three places:
    and listing tools from a connected client (or eyeball the list in
    `tool_router`).
 
+## Deploy
+
+Hosted on Fly.io as app `slug-mcp` (region `sjc`) at
+`https://slug-mcp.fly.dev/mcp`. Every push to `main` on GitHub deploys through
+[.github/workflows/fly-deploy.yml](.github/workflows/fly-deploy.yml). To deploy
+by hand:
+
+```bash
+fly deploy --remote-only --ha=false
+```
+
+- **One machine, always on.** The tool cache and legacy MCP sessions live in
+  process memory. `fly.toml` turns auto-stop off, and `--ha=false` stops Fly
+  from adding a second machine that would split sessions.
+- **Public hostnames go in `SLUG_MCP_ALLOWED_HOSTS`** (set in `fly.toml`). rmcp
+  answers 403 to any `/mcp` request whose Host header isn't listed; `/healthz`
+  isn't checked. A custom domain needs adding there.
+- **The container binds `--host 0.0.0.0`.** The default is `127.0.0.1` for local
+  runs, which Fly's proxy can't reach.
+- **API keys are Fly secrets** (`fly secrets list`), never `[env]` in `fly.toml`.
+
 ## Where to look
 
 - **Canonical service example:** [src/dining/mod.rs](src/dining/mod.rs) +
@@ -207,5 +234,6 @@ Then wire it in three places:
 - **Prior design notes:** [docs/plans/](docs/plans/) holds the original
   design and dining-scraper specs. Use them for historical context, not as
   current API reference — code wins on conflicts.
-- **Deploy:** [deploy.sh](deploy.sh) and [.gitlab-ci.yml](.gitlab-ci.yml).
-  Hosted at `https://2262-cse115b-02.be.ucsc.edu/mcp` on UCSC ITS infra.
+- **Deploy:** [Dockerfile](Dockerfile), [fly.toml](fly.toml), and
+  [.github/workflows/fly-deploy.yml](.github/workflows/fly-deploy.yml); see
+  [Deploy](#deploy).

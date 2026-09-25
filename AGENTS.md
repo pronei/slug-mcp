@@ -209,13 +209,22 @@ Then wire it in three places:
 ## Deploy
 
 Hosted on Fly.io as app `slug-mcp` (region `sjc`) at
-`https://slug-mcp.fly.dev/mcp`. Every push to `main` on GitHub deploys through
-[.github/workflows/fly-deploy.yml](.github/workflows/fly-deploy.yml). To deploy
-by hand:
+`https://slug-mcp.fly.dev/mcp`. Pushes to the `deploy/flyio` branch on GitHub
+deploy through [.github/workflows/fly-deploy.yml](.github/workflows/fly-deploy.yml);
+pushes to `main` don't. To ship what's on `main`, fast-forward the deploy branch:
+
+```bash
+git push origin main:deploy/flyio
+```
+
+To deploy by hand instead:
 
 ```bash
 fly deploy --remote-only --ha=false
 ```
+
+- **`deploy/flyio` is long-lived.** Merge PRs from it with a merge commit, not a
+  squash, so it can keep fast-forwarding to `main`; don't delete it after a merge.
 
 - **One machine, always on.** The tool cache and legacy MCP sessions live in
   process memory. `fly.toml` turns auto-stop off, and `--ha=false` stops Fly

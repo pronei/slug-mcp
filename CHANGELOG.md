@@ -6,7 +6,7 @@
 - The public server moved from the retired UCSC ITS VM (`2262-cse115b-02.be.ucsc.edu`) to Fly.io at **`https://slug-mcp.fly.dev/mcp`**. Existing connectors need re-adding with the new URL.
 - **`serve --host`** sets the SSE bind address (default `127.0.0.1`; the container passes `0.0.0.0`).
 - `SLUG_MCP_ALLOWED_HOSTS` no longer defaults to including the VM hostname; unset, only loopback Host headers are accepted.
-- Added `Dockerfile`, `fly.toml`, and a GitHub Actions deploy on push to `main`; removed `deploy.sh` and `.gitlab-ci.yml`.
+- Added `Dockerfile`, `fly.toml`, and a GitHub Actions deploy on pushes to the `deploy/flyio` branch; removed `deploy.sh` and `.gitlab-ci.yml`.
 - The image bundles the InCommon ECC intermediate that `nutrition.sa.ucsc.edu` fails to send, so dining menus load from Linux.
 - **`search_eventbrite_events`** fails with the upstream status when Eventbrite refuses the discover page, instead of reporting "No Eventbrite events found". Eventbrite's CDN serves Fly's IPs a 405 CAPTCHA page, so the hosted server can't reach it.
 

@@ -80,18 +80,18 @@ The fastest path is the hosted instance — no build required. Build locally if 
 
 ### Hosted (no install)
 
-A public instance is hosted on the UCSC ITS infra at:
+A public instance runs on Fly.io at:
 
 ```
-https://2262-cse115b-02.be.ucsc.edu/mcp
+https://slug-mcp.fly.dev/mcp
 ```
 
-Read-only tools work out of the box. Authenticated tools require a portable token (see [Authentication](#authentication)).
+It runs the public build: every read-only tool, none of the authenticated ones.
 
 **Claude Code:**
 
 ```bash
-claude mcp add --transport http slug-mcp https://2262-cse115b-02.be.ucsc.edu/mcp
+claude mcp add --transport http slug-mcp https://slug-mcp.fly.dev/mcp
 ```
 
 **Claude Desktop / other HTTP-MCP clients:**
@@ -100,7 +100,7 @@ claude mcp add --transport http slug-mcp https://2262-cse115b-02.be.ucsc.edu/mcp
 {
   "mcpServers": {
     "slug-mcp": {
-      "url": "https://2262-cse115b-02.be.ucsc.edu/mcp"
+      "url": "https://slug-mcp.fly.dev/mcp"
     }
   }
 }

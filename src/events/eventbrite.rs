@@ -236,7 +236,7 @@ impl EventbriteClient {
     ) -> Result<Vec<Event>> {
         // Step 1: Scrape event IDs from the discover page
         let discover_url = build_discover_url(location_slug, query);
-        let html = self
+        let resp = self
             .http
             .get(&discover_url)
             .header(
@@ -245,7 +245,13 @@ impl EventbriteClient {
             )
             .send()
             .await
-            .context("failed to fetch Eventbrite discover page")?
+            .context("failed to fetch Eventbrite discover page")?;
+        // Eventbrite's CDN answers cloud-host IPs (Fly included) with a 405
+        // CAPTCHA page, which would otherwise parse as "no events".
+        if !resp.status().is_success() {
+            anyhow::bail!("Eventbrite discover page returned {}", resp.status());
+        }
+        let html = resp
             .text()
             .await
             .context("failed to read Eventbrite discover page")?;

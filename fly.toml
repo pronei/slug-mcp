@@ -1,0 +1,37 @@
+app = "slug-mcp"
+primary_region = "sjc"
+
+[env]
+  # Add a custom domain here too, or rmcp answers its /mcp requests with 403.
+  SLUG_MCP_ALLOWED_HOSTS = "slug-mcp.fly.dev"
+
+[deploy]
+  # The new machine must pass /healthz before it takes traffic, so a bad build
+  # never replaces the running one.
+  strategy = "bluegreen"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Exactly one machine, always on: the tool cache and legacy MCP sessions live
+  # in process memory. An idle stop empties the cache, and a second machine
+  # splits sessions, so deploy with --ha=false.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

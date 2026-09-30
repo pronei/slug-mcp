@@ -44,10 +44,10 @@ Real questions that come up living and studying in Santa Cruz — each one threa
 
 | Service | Tools |
 |---------|-------|
-| **Dining** | Menus for all 5 dining halls with dietary/allergen tags, nutrition facts per item, operating hours, Slug Points / Banana Bucks balance |
+| **Dining** | Menus for all 5 dining halls with dietary/allergen tags, nutrition facts per item, operating hours. Slug Points / Banana Bucks balance is **non-functional as of 2026-09-30** (the CruzID auth flow is broken) |
 | **Events** | Search campus events by keyword or category, plus Eventbrite community events for full coverage, list upcoming chronologically |
 | **Recreation** | Live headcounts for gym, pool, fields, climbing wall, wellness center; facility schedules; group exercise class search |
-| **Library** | Study room availability at McHenry and S&E by time slot, room booking |
+| **Library** | Study room availability at McHenry and S&E by time slot, with a link to the LibCal booking page. Room booking is **non-functional as of 2026-09-30** (the CruzID auth flow is broken) |
 | **Academics** | Class search by subject, instructor, GE, course number, career level — enrollment, meeting times, instruction mode; degree requirements + progress tracking; faculty/staff directory |
 | **Classrooms** | Find rooms by capacity, building, AV equipment, seating style, accessibility |
 | **Transit** | Real-time SC Metro bus predictions, GTFS-RT vehicle positions, system + route service alerts, per-route delay stats |
@@ -143,10 +143,11 @@ For remote connections, start the SSE server and point your client at the endpoi
 
 ## Authentication
 
-> ⚠️ **Work in progress.** The CruzID + Duo MFA flow is functional locally but not yet stable across the hosted server, headless environments, and all clients. Expect rough edges — flow details, token format, and the `login` / `authenticate` / `export-token` surface may change. Read-only tools are unaffected; the items below are the only ones gated on auth.
+> ⚠️ **Non-functional as of 2026-09-30.** The CruzID + Duo MFA flow is broken, so the auth-gated tools below do not work on any build, hosted or local. Read-only tools are unaffected; the items below are the only ones gated on auth. The rest of this section describes how the flow is meant to work once it is repaired.
 
-Most tools work without login. One tool requires UCSC authentication:
+Most tools work without login. Two tools require UCSC authentication, and neither works today:
 - **Meal balance** — Slug Points / Banana Bucks
+- **Room booking** — `get_study_room_availability` links to the LibCal booking page instead
 
 When you ask for something that needs auth, the assistant will call the `login` tool, which opens a Chrome window for CruzID + Duo MFA. The session is captured automatically and lasts 8 hours.
 

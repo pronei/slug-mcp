@@ -1255,7 +1255,7 @@ impl ServerHandler for SlugMcpServer {
         self.tool_router.get(name).cloned()
     }
 
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let instructions = if cfg!(feature = "auth") {
             "UCSC + Santa Cruz MCP server. Campus services: dining menus, \
              nutrition info, meal plan balances, campus events and Eventbrite \
@@ -1326,7 +1326,7 @@ impl ServerHandler for SlugMcpServer {
              reproducibility."
         };
 
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("slug-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions)
     }

@@ -9,7 +9,7 @@ name = "slug-mcp"
 path = "src/main.rs"
 
 [dependencies]
-rmcp = { version = "3.2", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "3.5.1", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
@@ -48,6 +48,10 @@ auth = ["dep:chromiumoxide", "dep:aes-gcm", "dep:hostname"]
 
 [dev-dependencies]
 tempfile = "3"
+# Integration tests drive the built binary as a real MCP client over stdio
+# and Streamable HTTP. Dev-only features are not unified into normal builds
+# (resolver 2), so the deploy image never compiles the client side.
+rmcp = { version = "3.5.1", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 
 # Inherits from `release` but cranks up cross-crate optimization.
 # Build with: cargo build --profile release-optimized --no-default-features

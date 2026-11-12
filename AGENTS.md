@@ -95,12 +95,16 @@ Then wire it in three places:
 - **rmcp 3.x API.** Tool handler params use `Parameters<T>` wrapping the request
   struct — *not* `#[tool(aggr)]` (older API). Tool results wrap
   `ContentBlock::text(...)`. `ServerHandler::call_tool` returns
-  `CallToolResponse` (the router's result converts via `Into`), and
-  `ListToolsResult` has cache-hint fields — build it with `..Default::default()`.
-  `ServerInfo::new(...)` is a builder; the underlying struct is
-  `#[non_exhaustive]`, so don't construct it directly. Streamable HTTP config
-  uses `legacy_session_mode` (sessions only for protocol versions before
-  2026-07-28; newer clients are served statelessly per SEP-2567).
+  `CallToolResponse` (the router's result converts via `Into`).
+  `ListToolsResult` carries cache hints (`ttlMs`, `cacheScope`): build it with
+  `ListToolsResult::with_all_items(..)` and set them only for 2026-07-28+ peers
+  (`context.protocol_version()`). `get_info` returns `ServerConfig` (the
+  `ServerInfo` alias is deprecated), a builder over a `#[non_exhaustive]`
+  struct, so don't construct it directly. Streamable HTTP config uses
+  `legacy_session_mode` (sessions only for protocol versions before
+  2026-07-28; newer clients are served statelessly per SEP-2567) and enforces
+  an Origin allow-list (`SLUG_MCP_ALLOWED_ORIGINS`; requests without an Origin
+  header pass).
 
 - **Optional API keys degrade, never error.** If a key is `None`, return a friendly
   string explaining the env var to set. Don't return `Err`. The exception is
@@ -200,8 +204,11 @@ Then wire it in three places:
    return a "not configured" string on `None`.
 5. In `server.rs`: add `Arc<NewService>` to both `ServiceContext` and
    `SlugMcpServer`, and copy it in `SlugMcpServer::new`.
-6. Add the `#[tool(description = "...")]` handler **inside `define_tools! { ... }`**.
-   Auth-only tools go in the `$extra` branch.
+6. Add the `#[tool(title = "...", annotations(...), description = "...")]` handler
+   **inside `define_tools! { ... }`**. Auth-only tools go in the `$extra` branch.
+   Data tools take `annotations(read_only_hint = true, open_world_hint = true)`;
+   a tool that changes state also sets `destructive_hint` and `idempotent_hint`.
+   `tests/mcp_protocol.rs` fails when a tool leaves a hint or its title unset.
 7. `cargo clippy` and `cargo test`. Sanity-check by running `cargo run -- serve`
    and listing tools from a connected client (or eyeball the list in
    `tool_router`).

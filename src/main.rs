@@ -292,6 +292,31 @@ async fn run_sse(host: std::net::IpAddr, port: u16, ctx: server::ServiceContext)
             .filter(|s| !s.is_empty())
             .collect();
     }
+    // The spec requires Origin validation so a web page can't drive /mcp
+    // cross-site or through DNS rebinding: a present, unlisted Origin gets 403.
+    // Claude Code, Claude Desktop and ChatGPT's backend send no Origin and still
+    // pass. The loopback default admits browser dev tools such as MCP Inspector;
+    // SLUG_MCP_ALLOWED_ORIGINS (comma-separated, with scheme, `:*` for any port)
+    // replaces it. rmcp skips the check for an empty list unless enforced.
+    sse_config.allowed_origins = match std::env::var("SLUG_MCP_ALLOWED_ORIGINS") {
+        Ok(v) => v
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        Err(_) => vec![
+            "http://localhost:*".into(),
+            "http://127.0.0.1:*".into(),
+            "http://[::1]:*".into(),
+        ],
+    };
+    sse_config = sse_config.enforce_origin_validation();
+    // Tool arguments are small. This caps what an anonymous caller can make the
+    // server buffer per request; rmcp's default is 4 MiB.
+    sse_config.max_request_body_bytes = 64 * 1024;
+    // Answer stateless (2026-07-28) requests with plain JSON instead of a
+    // one-event SSE stream. Legacy sessions are unaffected.
+    sse_config.json_response = true;
 
     let service = StreamableHttpService::new(
         move || Ok(server::SlugMcpServer::new(ctx.clone())),

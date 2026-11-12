@@ -244,7 +244,11 @@ macro_rules! define_tools {
         impl SlugMcpServer {
             // ─── Dining Tools ───
 
-            #[tool(description = "Get the menu for a UCSC dining hall")]
+            #[tool(
+                title = "Dining Hall Menu",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get the menu for a UCSC dining hall"
+            )]
             async fn get_dining_menu(
                 &self,
                 Parameters(req): Parameters<DiningMenuRequest>,
@@ -263,7 +267,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get detailed nutrition facts for a specific menu item. Use the recipe ID from get_dining_menu output.")]
+            #[tool(
+                title = "Nutrition Facts",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get detailed nutrition facts for a specific menu item. Use the recipe ID from get_dining_menu output."
+            )]
             async fn get_nutrition_info(
                 &self,
                 Parameters(req): Parameters<NutritionRequest>,
@@ -277,7 +285,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get UCSC dining location hours. Optionally filter by location name.")]
+            #[tool(
+                title = "Dining Hours",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get UCSC dining location hours. Optionally filter by location name."
+            )]
             async fn get_dining_hours(
                 &self,
                 Parameters(req): Parameters<DiningHoursRequest>,
@@ -293,7 +305,11 @@ macro_rules! define_tools {
 
             // ─── Events Tools ───
 
-            #[tool(description = "Search for UCSC campus events by keyword or category. For broader event discovery, also call search_eventbrite_events to include off-campus and community events.")]
+            #[tool(
+                title = "Search Campus Events",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search for UCSC campus events by keyword or category. For broader event discovery, also call search_eventbrite_events to include off-campus and community events."
+            )]
             async fn search_events(
                 &self,
                 Parameters(req): Parameters<SearchEventsRequest>,
@@ -319,7 +335,11 @@ macro_rules! define_tools {
                 )]))
             }
 
-            #[tool(description = "Get upcoming UCSC campus events. For a complete picture of what's happening in the area, also call search_eventbrite_events.")]
+            #[tool(
+                title = "Upcoming Campus Events",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get upcoming UCSC campus events. For a complete picture of what's happening in the area, also call search_eventbrite_events."
+            )]
             async fn get_upcoming_events(
                 &self,
                 Parameters(req): Parameters<UpcomingEventsRequest>,
@@ -344,7 +364,11 @@ macro_rules! define_tools {
                 ))]))
             }
 
-            #[tool(description = "Search Eventbrite for community events, concerts, meetups, and workshops around Santa Cruz (25-mile radius). Complements UCSC campus event tools — call both for complete event coverage. Returns direct registration links.")]
+            #[tool(
+                title = "Search Eventbrite Events",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search Eventbrite for community events, concerts, meetups, and workshops around Santa Cruz (25-mile radius). Complements UCSC campus event tools — call both for complete event coverage. Returns direct registration links."
+            )]
             async fn search_eventbrite_events(
                 &self,
                 Parameters(req): Parameters<SearchEventbriteRequest>,
@@ -374,7 +398,11 @@ macro_rules! define_tools {
 
             // ─── Recreation Tools ───
 
-            #[tool(description = "Get current occupancy for UCSC recreation facilities (gym, pool, fields, climbing wall). Shows live headcounts.")]
+            #[tool(
+                title = "Recreation Facility Occupancy",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get current occupancy for UCSC recreation facilities (gym, pool, fields, climbing wall). Shows live headcounts."
+            )]
             async fn get_facility_occupancy(
                 &self,
                 Parameters(req): Parameters<FacilityOccupancyRequest>,
@@ -388,7 +416,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get the schedule for a specific UCSC recreation facility. Use the facility UUID from get_facility_occupancy output.")]
+            #[tool(
+                title = "Recreation Facility Schedule",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get the schedule for a specific UCSC recreation facility. Use the facility UUID from get_facility_occupancy output."
+            )]
             async fn get_facility_schedule(
                 &self,
                 Parameters(req): Parameters<FacilityScheduleRequest>,
@@ -402,7 +434,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get the UCSC group exercise class schedule for the most recently published term (the output header names it). Classes include yoga, pilates, cycling, kickboxing, Zumba, conditioning, and self-defense. Filter by day of week and/or class name.")]
+            #[tool(
+                title = "Group Exercise Classes",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get the UCSC group exercise class schedule for the most recently published term (the output header names it). Classes include yoga, pilates, cycling, kickboxing, Zumba, conditioning, and self-defense. Filter by day of week and/or class name."
+            )]
             async fn get_group_exercise_classes(
                 &self,
                 Parameters(req): Parameters<GroupExerciseRequest>,
@@ -418,7 +454,11 @@ macro_rules! define_tools {
 
             // ─── Library Tools ───
 
-            #[tool(description = "Find available study rooms at UCSC libraries (McHenry, Science & Engineering) and get a one-click LibCal booking link. Shows each room's open vs. booked time slots for the date, plus a deep link to the LibCal booking grid (pre-set to the library + date) and a per-room link — the student picks a slot and completes the reservation in their browser. In-tool booking isn't possible (LibCal gates checkout behind a JavaScript SSO flow), so this deep-links them straight to the booking page instead.")]
+            #[tool(
+                title = "Study Room Availability",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Find available study rooms at UCSC libraries (McHenry, Science & Engineering) and get a one-click LibCal booking link. Shows each room's open vs. booked time slots for the date, plus a deep link to the LibCal booking grid (pre-set to the library + date) and a per-room link — the student picks a slot and completes the reservation in their browser. In-tool booking isn't possible (LibCal gates checkout behind a JavaScript SSO flow), so this deep-links them straight to the booking page instead."
+            )]
             async fn get_study_room_availability(
                 &self,
                 Parameters(req): Parameters<StudyRoomAvailabilityRequest>,
@@ -434,7 +474,11 @@ macro_rules! define_tools {
 
             // ─── Academics Tools ───
 
-            #[tool(description = "Search the UCSC class schedule. Filter by subject, course number, instructor, title, GE requirement, academic career, or (for summer terms) session — \"1\"/\"2\" for the two 5-week sessions, \"10\" for the 10-week, \"8\" for the 8-week. Returns enrollment counts, meeting times, instruction mode, and the session for summer classes.")]
+            #[tool(
+                title = "Search Class Schedule",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search the UCSC class schedule. Filter by subject, course number, instructor, title, GE requirement, academic career, or (for summer terms) session — \"1\"/\"2\" for the two 5-week sessions, \"10\" for the 10-week, \"8\" for the 8-week. Returns enrollment counts, meeting times, instruction mode, and the session for summer classes."
+            )]
             async fn search_classes(
                 &self,
                 Parameters(req): Parameters<SearchClassesRequest>,
@@ -459,7 +503,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Search the UCSC campus directory for people or departments. Find faculty/staff contact info, office locations, and emails.")]
+            #[tool(
+                title = "Search Campus Directory",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search the UCSC campus directory for people or departments. Find faculty/staff contact info, office locations, and emails."
+            )]
             async fn search_directory(
                 &self,
                 Parameters(req): Parameters<SearchDirectoryRequest>,
@@ -475,7 +523,11 @@ macro_rules! define_tools {
 
             // ─── Degree Planner Tools ───
 
-            #[tool(description = "Get degree requirements for a UCSC program. Returns the full course requirement tree including lower-division, upper-division, electives, and comprehensive requirements. Includes GE requirements for undergraduate programs. Supports all BS/BA/MS/MA programs.")]
+            #[tool(
+                title = "Degree Requirements",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get degree requirements for a UCSC program. Returns the full course requirement tree including lower-division, upper-division, electives, and comprehensive requirements. Includes GE requirements for undergraduate programs. Supports all BS/BA/MS/MA programs."
+            )]
             async fn get_degree_requirements(
                 &self,
                 Parameters(req): Parameters<DegreeRequirementsRequest>,
@@ -489,7 +541,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Check progress toward completing a UCSC degree. Provide your program and list of completed courses to see which requirements are satisfied vs remaining. Handles all selection rules (all-of, one-of, either-or). Checks GE progress for undergrad programs.")]
+            #[tool(
+                title = "Check Degree Progress",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Check progress toward completing a UCSC degree. Provide your program and list of completed courses to see which requirements are satisfied vs remaining. Handles all selection rules (all-of, one-of, either-or). Checks GE progress for undergrad programs."
+            )]
             async fn check_degree_progress(
                 &self,
                 Parameters(req): Parameters<DegreeProgressRequest>,
@@ -509,7 +565,11 @@ macro_rules! define_tools {
 
             // ─── Transit Tools ───
 
-            #[tool(description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop or street name (e.g., \"Science Hill\", \"Pacific & Center\", \"Bay & High\", \"Oakes College\"); optionally filter by route. ETAs come from the BusTime API (destination headsigns, DUE/DLY countdown labels, canceled/express flags); occupancy is joined from the GTFS-RT vehicles feed. For system-wide queries (no specific stop) prefer `get_service_alerts` (no arguments), `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID.")]
+            #[tool(
+                title = "Bus Arrival Predictions",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Real-time bus arrival predictions for a Santa Cruz Metro stop. Search by stop or street name (e.g., \"Science Hill\", \"Pacific & Center\", \"Bay & High\", \"Oakes College\"); optionally filter by route. ETAs come from the BusTime API (destination headsigns, DUE/DLY countdown labels, canceled/express flags); occupancy is joined from the GTFS-RT vehicles feed. For system-wide queries (no specific stop) prefer `get_service_alerts` (no arguments), `get_vehicle_positions`, or `get_route_delays` — those don't need a key. All UCSC students ride free with student ID."
+            )]
             async fn get_bus_predictions(
                 &self,
                 Parameters(req): Parameters<BusPredictionRequest>,
@@ -523,7 +583,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Santa Cruz Metro service alerts. With no arguments: all active system-wide alerts via the GTFS-RT feed (no API key). With `route` or `stop_id`: bulletins filtered to that route/stop via the BusTime API (requires key) — this absorbs the former get_system_service_alerts tool.")]
+            #[tool(
+                title = "Bus Service Alerts",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Santa Cruz Metro service alerts. With no arguments: all active system-wide alerts via the GTFS-RT feed (no API key). With `route` or `stop_id`: bulletins filtered to that route/stop via the BusTime API (requires key) — this absorbs the former get_system_service_alerts tool."
+            )]
             async fn get_service_alerts(
                 &self,
                 Parameters(req): Parameters<ServiceAlertRequest>,
@@ -537,7 +601,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get live Santa Cruz Metro bus positions via the GTFS-RT vehicles feed. Shows lat/lon, speed, and occupancy for active buses. Optionally filter by route. No API key required.")]
+            #[tool(
+                title = "Live Bus Positions",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get live Santa Cruz Metro bus positions via the GTFS-RT vehicles feed. Shows lat/lon, speed, and occupancy for active buses. Optionally filter by route. No API key required."
+            )]
             async fn get_vehicle_positions(
                 &self,
                 Parameters(req): Parameters<TransitRouteRequest>,
@@ -550,7 +618,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Per-route delay statistics for Santa Cruz Metro from GTFS-RT trip updates, when the feed carries delay values (SC Metro currently publishes absolute arrival times only, so this usually explains that limitation and points to get_bus_predictions, whose ETAs flag delayed trips). Optionally filter by route. No API key required.")]
+            #[tool(
+                title = "Bus Route Delays",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Per-route delay statistics for Santa Cruz Metro from GTFS-RT trip updates, when the feed carries delay values (SC Metro currently publishes absolute arrival times only, so this usually explains that limitation and points to get_bus_predictions, whose ETAs flag delayed trips). Optionally filter by route. No API key required."
+            )]
             async fn get_route_delays(
                 &self,
                 Parameters(req): Parameters<TransitRouteRequest>,
@@ -565,7 +637,11 @@ macro_rules! define_tools {
 
             // ─── Weather Tools ───
 
-            #[tool(description = "Get the multi-period NOAA National Weather Service forecast for Santa Cruz. Covers the next several days (NWS returns ~2 periods per day: daytime + overnight) with temperature, wind, short/long descriptions, and precipitation probability.")]
+            #[tool(
+                title = "Weather Forecast",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get the multi-period NOAA National Weather Service forecast for Santa Cruz. Covers the next several days (NWS returns ~2 periods per day: daytime + overnight) with temperature, wind, short/long descriptions, and precipitation probability."
+            )]
             async fn get_weather_forecast(
                 &self,
                 Parameters(req): Parameters<WeatherForecastRequest>,
@@ -580,7 +656,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get active NOAA NWS weather alerts for Santa Cruz coastal (CAZ529) and mountain (CAZ512) public forecast zones. Covers high-wind, flood, winter storm, fire-weather, marine, and other watch/warning/advisory events.")]
+            #[tool(
+                title = "Weather Alerts",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get active NOAA NWS weather alerts for Santa Cruz coastal (CAZ529) and mountain (CAZ512) public forecast zones. Covers high-wind, flood, winter storm, fire-weather, marine, and other watch/warning/advisory events."
+            )]
             async fn get_weather_alerts(&self) -> Result<CallToolResult, ErrorData> {
                 let result = self.weather.get_alerts().await.map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
@@ -588,7 +668,11 @@ macro_rules! define_tools {
 
             // ─── Marine / Surf Tools ───
 
-            #[tool(description = "Surf and marine conditions via Open-Meteo Marine. Without any parameters, compares current conditions at all known SC surf spots side-by-side. With `spot`, returns a named spot (Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa); with `lat`+`lon`, any coastal coordinates — use `label` to name them. Shows wave/swell height in feet, period, direction, and local wind. Set `forecast_hours` (1-24) to also get an hourly marine forecast table for a single spot or coordinates — this replaces the former get_marine_forecast tool.")]
+            #[tool(
+                title = "Surf Conditions",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Surf and marine conditions via Open-Meteo Marine. Without any parameters, compares current conditions at all known SC surf spots side-by-side. With `spot`, returns a named spot (Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa); with `lat`+`lon`, any coastal coordinates — use `label` to name them. Shows wave/swell height in feet, period, direction, and local wind. Set `forecast_hours` (1-24) to also get an hourly marine forecast table for a single spot or coordinates — this replaces the former get_marine_forecast tool."
+            )]
             async fn get_surf_conditions(
                 &self,
                 Parameters(req): Parameters<SurfConditionsRequest>,
@@ -609,7 +693,11 @@ macro_rules! define_tools {
 
             // ─── Air Quality Tools ───
 
-            #[tool(description = "Get current EPA AirNow air-quality readings (AQI + category) for a US ZIP code from regulatory-grade physical monitors — official authoritative AQI. Defaults to 95064 (UCSC main campus) within 25 miles. Returns one row per parameter (O3, PM2.5, PM10). Requires a free AirNow API key (set AIRNOW_API_KEY). Prefer this tool when the user asks for the *current/official* AQI. Use `get_air_quality_forecast` instead for hourly forecasts, pollen, or when no API key is available.")]
+            #[tool(
+                title = "Current Air Quality",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get current EPA AirNow air-quality readings (AQI + category) for a US ZIP code from regulatory-grade physical monitors — official authoritative AQI. Defaults to 95064 (UCSC main campus) within 25 miles. Returns one row per parameter (O3, PM2.5, PM10). Requires a free AirNow API key (set AIRNOW_API_KEY). Prefer this tool when the user asks for the *current/official* AQI. Use `get_air_quality_forecast` instead for hourly forecasts, pollen, or when no API key is available."
+            )]
             async fn get_air_quality(
                 &self,
                 Parameters(req): Parameters<AirQualityRequest>,
@@ -624,7 +712,11 @@ macro_rules! define_tools {
 
             // ─── Biodiversity Tools ───
 
-            #[tool(description = "Search iNaturalist for recent species observations in the Santa Cruz area (default 25 km around downtown). Filter by free-text query, iconic taxon (Plantae/Animalia/Fungi/Mollusca/Aves/Mammalia/Reptilia/etc.), days back, or custom lat/lon. No API key required. Returns observer, date, location, and a link to each observation.")]
+            #[tool(
+                title = "Search Species Observations",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search iNaturalist for recent species observations in the Santa Cruz area (default 25 km around downtown). Filter by free-text query, iconic taxon (Plantae/Animalia/Fungi/Mollusca/Aves/Mammalia/Reptilia/etc.), days back, or custom lat/lon. No API key required. Returns observer, date, location, and a link to each observation."
+            )]
             async fn search_species_observations(
                 &self,
                 Parameters(req): Parameters<SpeciesRequest>,
@@ -645,7 +737,10 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Search eBird for recent bird observations. Two query modes: \
+            #[tool(
+                title = "Search Bird Sightings",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search eBird for recent bird observations. Two query modes: \
                 (a) by region — pass `region` as an eBird code (default `US-CA-087` = Santa Cruz County, also `US-CA` for California, `world`, or a hotspot ID `L######`); \
                 (b) by coordinates — pass `lat`/`lon`/`radius_km` for a circular search (max 50 km per eBird limit). \
                 Optional `species` accepts a free-text name (common, scientific, banding code, or 6-letter eBird code) and is resolved internally via the California taxonomy list — ambiguous names return a 'did you mean...' list with no HTTP call. \
@@ -653,7 +748,8 @@ macro_rules! define_tools {
                 `back` is days back, 1-30 (default 7). `max_results` caps the output at 200. \
                 If both `region` and lat/lon are given, region wins. \
                 Examples: `{notable_only:true}` → notable in Santa Cruz County last week; `{region:\"US-CA-087\", species:\"Brown Pelican\", back:14}` → pelicans in SC County last fortnight; `{lat:36.97, lon:-122.03, radius_km:10, species:\"snowy plover\"}` → plovers near UCSC. \
-                Requires a free eBird API key (set `EBIRD_API_KEY`) — otherwise this tool returns registration instructions instead of erroring.")]
+                Requires a free eBird API key (set `EBIRD_API_KEY`) — otherwise this tool returns registration instructions instead of erroring."
+            )]
             async fn search_bird_observations(
                 &self,
                 Parameters(req): Parameters<BirdRequest>,
@@ -666,13 +762,17 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get eBird observations for a specific historic date in a region. Closes the 30-day rolling window of `search_bird_observations`. \
+            #[tool(
+                title = "Bird Sightings on a Past Date",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get eBird observations for a specific historic date in a region. Closes the 30-day rolling window of `search_bird_observations`. \
                 Required: `year`, `month`, `day`. Region defaults to `US-CA-087` (Santa Cruz County). \
                 `rank`: `mrec` (default — most recent observation per species that day) or `create` (first reported). \
                 `max_results` caps output at 200. \
                 Returns one row per species reported on the date. \
                 Example: `{region:\"US-CA-087\", year:2025, month:4, day:10}` → species list for Santa Cruz County on 2025-04-10. \
-                Requires `EBIRD_API_KEY`.")]
+                Requires `EBIRD_API_KEY`."
+            )]
             async fn get_historic_bird_observations(
                 &self,
                 Parameters(req): Parameters<HistoricBirdRequest>,
@@ -685,13 +785,17 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "List eBird birding hotspots — sites with documented bird activity. \
+            #[tool(
+                title = "Birding Hotspots",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "List eBird birding hotspots — sites with documented bird activity. \
                 Region mode (default): pass `region` (default `US-CA-087` = Santa Cruz County). \
                 Geo mode: pass `lat`/`lon`/`radius_km` (max 50 km). \
                 Optional `back` restricts to hotspots with observations in the last N days (1-30). \
                 Results are sorted by all-time species count (descending) and truncated to `max_results` (default 25, cap 200). \
                 Each hotspot includes the eBird location ID (`L######`) — feed it back into `search_bird_observations` as `region=\"L######\"` to query observations at that specific spot. \
-                Requires `EBIRD_API_KEY`.")]
+                Requires `EBIRD_API_KEY`."
+            )]
             async fn get_bird_hotspots(
                 &self,
                 Parameters(req): Parameters<HotspotRequest>,
@@ -704,12 +808,16 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Find the nearest recent eBird sightings of a specific species from a coordinate. \
+            #[tool(
+                title = "Nearest Bird Sighting",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Find the nearest recent eBird sightings of a specific species from a coordinate. \
                 Required: `species` (free-text name or 6-letter eBird code; ambiguous names return a 'did you mean...' list). \
                 Defaults: `lat`/`lon` Santa Cruz (36.9741, -122.0308), `radius_km` 50 (eBird cap), `back` 30 days (cap), `max_results` 10 (cap 1000). \
                 Results are ordered by distance, nearest first. Use this when you want to know the closest place a target species was seen recently — different from `search_bird_observations`, which lists what was seen near a point. \
                 Example: `{species:\"California Condor\", radius_km:50}` → nearest condor sighting to Santa Cruz. \
-                Requires `EBIRD_API_KEY`.")]
+                Requires `EBIRD_API_KEY`."
+            )]
             async fn find_nearest_bird_sighting(
                 &self,
                 Parameters(req): Parameters<NearestBirdRequest>,
@@ -724,7 +832,11 @@ macro_rules! define_tools {
 
             // ─── USGS Stream / Water Tools ───
 
-            #[tool(description = "Get real-time stream conditions from a USGS gauge (discharge in cfs, gage height in ft, water temperature). Defaults to site 11160500 (San Lorenzo River at Big Trees, the Santa Cruz County reference gauge). Pass a different USGS site ID or override parameter codes (`00060`=discharge, `00065`=gage height, `00010`=water temp).")]
+            #[tool(
+                title = "Stream Conditions",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get real-time stream conditions from a USGS gauge (discharge in cfs, gage height in ft, water temperature). Defaults to site 11160500 (San Lorenzo River at Big Trees, the Santa Cruz County reference gauge). Pass a different USGS site ID or override parameter codes (`00060`=discharge, `00065`=gage height, `00010`=water temp)."
+            )]
             async fn get_stream_conditions(
                 &self,
                 Parameters(req): Parameters<StreamConditionsRequest>,
@@ -742,7 +854,11 @@ macro_rules! define_tools {
 
             // ─── Wave Buoy (CDIP) Tools ───
 
-            #[tool(description = "Get swell vs wind-wave spectral summary from CDIP/NDBC waverider buoys. Unlike get_buoy_observations (single station, met+ocean summary), this compares multiple waveriders and separates swell height/period/direction from local wind-wave energy. Defaults to Monterey-area stations 46239 (CDIP 157 Point Sur), 46236 (CDIP 156 Monterey Canyon Outer), 46042 (Monterey). Pass `stations` as comma-separated NDBC IDs to override.")]
+            #[tool(
+                title = "Swell and Wind Waves",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get swell vs wind-wave spectral summary from CDIP/NDBC waverider buoys. Unlike get_buoy_observations (single station, met+ocean summary), this compares multiple waveriders and separates swell height/period/direction from local wind-wave energy. Defaults to Monterey-area stations 46239 (CDIP 157 Point Sur), 46236 (CDIP 156 Monterey Canyon Outer), 46042 (Monterey). Pass `stations` as comma-separated NDBC IDs to override."
+            )]
             async fn get_wave_buoy(
                 &self,
                 Parameters(req): Parameters<WaveBuoyRequest>,
@@ -757,7 +873,11 @@ macro_rules! define_tools {
 
             // ─── Buoy Tools ───
 
-            #[tool(description = "Get real-time observations from an NDBC weather/ocean buoy. Defaults to station 46042 (Monterey Bay, the NOAA 3-meter discus offshore of Santa Cruz). Pass another NDBC station ID for other locations. Returns latest wind, significant wave height/period, air+water temperature, pressure, and dew point, plus a ~3h water-temp trend.")]
+            #[tool(
+                title = "Buoy Observations",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get real-time observations from an NDBC weather/ocean buoy. Defaults to station 46042 (Monterey Bay, the NOAA 3-meter discus offshore of Santa Cruz). Pass another NDBC station ID for other locations. Returns latest wind, significant wave height/period, air+water temperature, pressure, and dew point, plus a ~3h water-temp trend."
+            )]
             async fn get_buoy_observations(
                 &self,
                 Parameters(req): Parameters<BuoyRequest>,
@@ -772,7 +892,11 @@ macro_rules! define_tools {
 
             // ─── Tide Tools ───
 
-            #[tool(description = "Get NOAA tide predictions (high/low) for a coastal station. Defaults to Monterey (station 9413450), the closest official tide station to Santa Cruz. Pass a different NOAA CO-OPS station ID for other locations. Returns up to 7 days (default 3) grouped by day with heights in feet above MLLW.")]
+            #[tool(
+                title = "Tide Predictions",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get NOAA tide predictions (high/low) for a coastal station. Defaults to Monterey (station 9413450), the closest official tide station to Santa Cruz. Pass a different NOAA CO-OPS station ID for other locations. Returns up to 7 days (default 3) grouped by day with heights in feet above MLLW."
+            )]
             async fn get_tides(
                 &self,
                 Parameters(req): Parameters<TidesRequest>,
@@ -787,7 +911,11 @@ macro_rules! define_tools {
 
             // ─── Fire Detection Tools ───
 
-            #[tool(description = "Get NASA FIRMS satellite fire/thermal-anomaly detections in Santa Cruz County for the last 1-5 days. Uses VIIRS_SNPP_NRT (375m resolution, ~60s latency). Detections include industrial heat sources (quarries, flares) as well as wildfires — cross-check with CAL FIRE before acting. Requires a free FIRMS map key (SLUG_MCP_FIRMS_KEY).")]
+            #[tool(
+                title = "Satellite Fire Detections",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get NASA FIRMS satellite fire/thermal-anomaly detections in Santa Cruz County for the last 1-5 days. Uses VIIRS_SNPP_NRT (375m resolution, ~60s latency). Detections include industrial heat sources (quarries, flares) as well as wildfires — cross-check with CAL FIRE before acting. Requires a free FIRMS map key (SLUG_MCP_FIRMS_KEY)."
+            )]
             async fn get_fire_detections(
                 &self,
                 Parameters(req): Parameters<FireDetectionsRequest>,
@@ -803,7 +931,11 @@ macro_rules! define_tools {
 
             // ─── Traffic Tools ───
 
-            #[tool(description = "Get active CHP incidents in Santa Cruz County. Pulls from the CHP CAD XML feed (Monterey comm center / MYCC dispatch) and filters to SC County areas. Optionally filter by route number (e.g. '1', '9', '17').")]
+            #[tool(
+                title = "CHP Traffic Incidents",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get active CHP incidents in Santa Cruz County. Pulls from the CHP CAD XML feed (Monterey comm center / MYCC dispatch) and filters to SC County areas. Optionally filter by route number (e.g. '1', '9', '17')."
+            )]
             async fn get_traffic_incidents(
                 &self,
                 Parameters(req): Parameters<TrafficRequest>,
@@ -816,7 +948,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get active Caltrans District 5 lane closures in Santa Cruz County, including planned and emergency closures. Optionally filter by route number (e.g. '1', '9', '17').")]
+            #[tool(
+                title = "Caltrans Lane Closures",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get active Caltrans District 5 lane closures in Santa Cruz County, including planned and emergency closures. Optionally filter by route number (e.g. '1', '9', '17')."
+            )]
             async fn get_lane_closures(
                 &self,
                 Parameters(req): Parameters<TrafficRequest>,
@@ -829,7 +965,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get a combined Santa Cruz County traffic summary: active CHP incidents plus Caltrans D5 lane closures, fetched in parallel. If one source is unavailable, the other is still rendered with a warning. Use this for 'should I drive Hwy 17 right now?' style questions.")]
+            #[tool(
+                title = "Traffic Summary",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get a combined Santa Cruz County traffic summary: active CHP incidents plus Caltrans D5 lane closures, fetched in parallel. If one source is unavailable, the other is still rendered with a warning. Use this for 'should I drive Hwy 17 right now?' style questions."
+            )]
             async fn get_traffic_summary(
                 &self,
                 Parameters(req): Parameters<TrafficRequest>,
@@ -844,7 +984,11 @@ macro_rules! define_tools {
 
             // ─── Classroom Tools ───
 
-            #[tool(description = "Search UCSC classrooms by capacity, building, technology, and features. Find rooms with specific AV equipment or seating arrangements.")]
+            #[tool(
+                title = "Search Classrooms",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search UCSC classrooms by capacity, building, technology, and features. Find rooms with specific AV equipment or seating arrangements."
+            )]
             async fn search_classrooms(
                 &self,
                 Parameters(req): Parameters<SearchClassroomsRequest>,
@@ -867,7 +1011,11 @@ macro_rules! define_tools {
 
             // ─── Astronomy / Sun & Moon Tools ───
 
-            #[tool(description = "Get sunrise/sunset times, twilight periods (civil/nautical/astronomical), moon phase and illumination, and current + forecast UV index for any coordinates. Defaults to Santa Cruz (36.9741, -122.0308). UV categories: Low (0-2), Moderate (3-5), High (6-7), Very High (8-10), Extreme (11+).")]
+            #[tool(
+                title = "Sun, Moon and UV Index",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get sunrise/sunset times, twilight periods (civil/nautical/astronomical), moon phase and illumination, and current + forecast UV index for any coordinates. Defaults to Santa Cruz (36.9741, -122.0308). UV categories: Low (0-2), Moderate (3-5), High (6-7), Very High (8-10), Extreme (11+)."
+            )]
             async fn get_sun_moon(
                 &self,
                 Parameters(req): Parameters<SunMoonRequest>,
@@ -882,7 +1030,11 @@ macro_rules! define_tools {
 
             // ─── Space Weather Tools ───
 
-            #[tool(description = "Get current space weather conditions: planetary Kp index (geomagnetic activity), NOAA storm/radiation/radio-blackout scales, solar wind speed, and 24-hour Kp trend. Useful for HF radio propagation, astronomy planning, GPS accuracy, and aurora visibility (requires Kp ≥ 8 at Santa Cruz's latitude 37°N).")]
+            #[tool(
+                title = "Space Weather",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get current space weather conditions: planetary Kp index (geomagnetic activity), NOAA storm/radiation/radio-blackout scales, solar wind speed, and 24-hour Kp trend. Useful for HF radio propagation, astronomy planning, GPS accuracy, and aurora visibility (requires Kp ≥ 8 at Santa Cruz's latitude 37°N)."
+            )]
             async fn get_space_weather(
                 &self,
                 Parameters(_req): Parameters<SpaceWeatherRequest>,
@@ -897,7 +1049,11 @@ macro_rules! define_tools {
 
             // ─── Summer Session Tools ───
 
-            #[tool(description = "Get UCSC Summer Session academic deadlines, per session. Summer has four overlapping sessions — Session 1, Session 2, 8-Week, and 10-Week — each with DIFFERENT add/swap, drop, withdraw ('W' grade), grade-option, and grades-due deadlines. Unlike the regular year there is no Add by Petition, so these are hard stops. Returns each session's date range and deadlines, flagging which are still upcoming (with days remaining). Filter to one session with `session` (\"1\", \"2\", \"8-week\", \"10-week\"); set `upcoming_only` to hide passed deadlines. Source: summer.ucsc.edu.")]
+            #[tool(
+                title = "Summer Session Deadlines",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get UCSC Summer Session academic deadlines, per session. Summer has four overlapping sessions — Session 1, Session 2, 8-Week, and 10-Week — each with DIFFERENT add/swap, drop, withdraw ('W' grade), grade-option, and grades-due deadlines. Unlike the regular year there is no Add by Petition, so these are hard stops. Returns each session's date range and deadlines, flagging which are still upcoming (with days remaining). Filter to one session with `session` (\"1\", \"2\", \"8-week\", \"10-week\"); set `upcoming_only` to hide passed deadlines. Source: summer.ucsc.edu."
+            )]
             async fn get_summer_deadlines(
                 &self,
                 Parameters(req): Parameters<SummerDeadlinesRequest>,
@@ -912,7 +1068,11 @@ macro_rules! define_tools {
 
             // ─── Outdoors / OSM Tools ───
 
-            #[tool(description = "Search OpenStreetMap for outdoor features near a location. Category must be one of: \"trails\" (hiking paths/footways), \"peaks\" (mountain summits), \"viewpoints\" (scenic overlooks), \"water_restrooms\" (drinking water + toilets), \"parking\" (parking areas). Defaults to Santa Cruz. Uses the Overpass API (community-run, rate-limited to 2 concurrent queries — results may be slow under heavy load). Data from OSM contributors. For National Park Service units (Pinnacles, Yosemite, etc.) prefer `get_national_park_info` — it returns authoritative hours, fees, and ranger contacts that aren't in OSM.")]
+            #[tool(
+                title = "Search Outdoor Places",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search OpenStreetMap for outdoor features near a location. Category must be one of: \"trails\" (hiking paths/footways), \"peaks\" (mountain summits), \"viewpoints\" (scenic overlooks), \"water_restrooms\" (drinking water + toilets), \"parking\" (parking areas). Defaults to Santa Cruz. Uses the Overpass API (community-run, rate-limited to 2 concurrent queries — results may be slow under heavy load). Data from OSM contributors. For National Park Service units (Pinnacles, Yosemite, etc.) prefer `get_national_park_info` — it returns authoritative hours, fees, and ranger contacts that aren't in OSM."
+            )]
             async fn search_outdoors(
                 &self,
                 Parameters(req): Parameters<OutdoorsRequest>,
@@ -926,7 +1086,11 @@ macro_rules! define_tools {
 
             // ─── Climbing Tools ───
 
-            #[tool(description = "Search the OpenBeta climbing route database for areas and routes. Best coverage for Pinnacles National Park (319 routes) and Santa Cruz bouldering (39 routes). Castle Rock State Park is not yet in the database. Search by area name (e.g. \"Pinnacles\", \"Santa Cruz\") or filter by route name within an area.")]
+            #[tool(
+                title = "Search Climbing Routes",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Search the OpenBeta climbing route database for areas and routes. Best coverage for Pinnacles National Park (319 routes) and Santa Cruz bouldering (39 routes). Castle Rock State Park is not yet in the database. Search by area name (e.g. \"Pinnacles\", \"Santa Cruz\") or filter by route name within an area."
+            )]
             async fn search_climbing_routes(
                 &self,
                 Parameters(req): Parameters<ClimbingRequest>,
@@ -941,7 +1105,11 @@ macro_rules! define_tools {
 
             // ─── Earthquake Tools ───
 
-            #[tool(description = "Get recent USGS earthquake data near Santa Cruz (default 50 km radius, M1.0+, last 7 days). Santa Cruz sits near the San Andreas Fault — the 1989 Loma Prieta earthquake (M6.9) epicenter was 15 km NE. Returns magnitude, depth, location, felt reports, and tsunami flags. Micro-earthquakes (M < 2.0) are common and rarely felt.")]
+            #[tool(
+                title = "Recent Earthquakes",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get recent USGS earthquake data near Santa Cruz (default 50 km radius, M1.0+, last 7 days). Santa Cruz sits near the San Andreas Fault — the 1989 Loma Prieta earthquake (M6.9) epicenter was 15 km NE. Returns magnitude, depth, location, felt reports, and tsunami flags. Micro-earthquakes (M < 2.0) are common and rarely felt."
+            )]
             async fn get_earthquakes(
                 &self,
                 Parameters(req): Parameters<EarthquakeRequest>,
@@ -962,7 +1130,11 @@ macro_rules! define_tools {
 
             // ─── Beach Water Quality Tools ───
 
-            #[tool(description = "Get beach water quality bacteria monitoring results for Santa Cruz County beaches. Shows latest sample results (Enterococcus, Total Coliform, E. coli, Fecal Coliform) with AB411 threshold assessments. Samples are collected weekly by SC County Environmental Health — results are typically 1-7 days old. Covers 24+ beaches from Pajaro Dunes to Waddell Creek. Filter by beach name (e.g. \"Cowell\", \"Capitola\", \"Natural Bridges\").")]
+            #[tool(
+                title = "Beach Water Quality",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get beach water quality bacteria monitoring results for Santa Cruz County beaches. Shows latest sample results (Enterococcus, Total Coliform, E. coli, Fecal Coliform) with AB411 threshold assessments. Samples are collected weekly by SC County Environmental Health — results are typically 1-7 days old. Covers 24+ beaches from Pajaro Dunes to Waddell Creek. Filter by beach name (e.g. \"Cowell\", \"Capitola\", \"Natural Bridges\")."
+            )]
             async fn get_beach_water_quality(
                 &self,
                 Parameters(req): Parameters<BeachWaterQualityRequest>,
@@ -977,7 +1149,11 @@ macro_rules! define_tools {
 
             // ─── National Park Service Tools ───
 
-            #[tool(description = "Get National Park Service information — hours, fees, activities, directions, weather, and contact info. Authoritative source for NPS units. Search by park code (e.g. \"pinn\" for Pinnacles) or by name. Covers all US national parks; closest to Santa Cruz is Pinnacles NP (~80 mi). Requires a free NPS API key (set NPS_API_KEY from https://www.nps.gov/subjects/developer/get-started.htm) — returns registration instructions if not configured. For trails/peaks/parking *outside* NPS units (state parks, open space preserves, beaches), use `search_outdoors` instead.")]
+            #[tool(
+                title = "National Park Info",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get National Park Service information — hours, fees, activities, directions, weather, and contact info. Authoritative source for NPS units. Search by park code (e.g. \"pinn\" for Pinnacles) or by name. Covers all US national parks; closest to Santa Cruz is Pinnacles NP (~80 mi). Requires a free NPS API key (set NPS_API_KEY from https://www.nps.gov/subjects/developer/get-started.htm) — returns registration instructions if not configured. For trails/peaks/parking *outside* NPS units (state parks, open space preserves, beaches), use `search_outdoors` instead."
+            )]
             async fn get_national_park_info(
                 &self,
                 Parameters(req): Parameters<NationalParkRequest>,
@@ -992,7 +1168,11 @@ macro_rules! define_tools {
 
             // ─── Air Quality Forecast Tools ───
 
-            #[tool(description = "Get hourly air quality *forecast* (PM2.5, PM10, US AQI) from Open-Meteo for the next 1-5 days, plus pollen forecasts (grass, birch, alder, ragweed, olive, mugwort) where model coverage exists. No API key required. Defaults to Santa Cruz. Values are *modeled*, not measured. Prefer `get_air_quality` (EPA AirNow) when the user asks for the *current/official* AQI from a regulatory monitor; use this tool for forward-looking forecasts, pollen, or when no AirNow key is configured.")]
+            #[tool(
+                title = "Air Quality Forecast",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get hourly air quality *forecast* (PM2.5, PM10, US AQI) from Open-Meteo for the next 1-5 days, plus pollen forecasts (grass, birch, alder, ragweed, olive, mugwort) where model coverage exists. No API key required. Defaults to Santa Cruz. Values are *modeled*, not measured. Prefer `get_air_quality` (EPA AirNow) when the user asks for the *current/official* AQI from a regulatory monitor; use this tool for forward-looking forecasts, pollen, or when no AirNow key is configured."
+            )]
             async fn get_air_quality_forecast(
                 &self,
                 Parameters(req): Parameters<AirForecastRequest>,
@@ -1007,7 +1187,11 @@ macro_rules! define_tools {
 
             // ─── Ocean / Upwelling Tools ───
 
-            #[tool(description = "Get coastal upwelling indices (CUTI + BEUTI) from the Jacox et al. 2018 daily archive. Returns today's values, 1988–2018 climatological anomaly and z-score, 5-day rolling mean, and 30-day upwelling-favorable day count. Positive CUTI = Ekman transport offshore (upwelling); positive BEUTI = nitrate flux into euphotic zone. Default latitude band is 37N (Monterey Bay / Santa Cruz). Available bands: 31N–47N. Source: mjacox.com, updated daily ~18:00 UTC.")]
+            #[tool(
+                title = "Coastal Upwelling Indices",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get coastal upwelling indices (CUTI + BEUTI) from the Jacox et al. 2018 daily archive. Returns today's values, 1988–2018 climatological anomaly and z-score, 5-day rolling mean, and 30-day upwelling-favorable day count. Positive CUTI = Ekman transport offshore (upwelling); positive BEUTI = nitrate flux into euphotic zone. Default latitude band is 37N (Monterey Bay / Santa Cruz). Available bands: 31N–47N. Source: mjacox.com, updated daily ~18:00 UTC."
+            )]
             async fn get_upwelling_indices(
                 &self,
                 Parameters(req): Parameters<UpwellingRequest>,
@@ -1020,7 +1204,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get a snapshot from the MBARI M1 mooring at the mouth of Monterey Bay (36.75°N, 122.03°W, ~480 m depth). Returns surface sea water temperature, sonic-anemometer wind speed/direction with equatorward (upwelling-favorable) component, and optionally a full water-column temperature profile with stratification index. Data latency is typically ~24h. QC: only QARTOD-pass values (qc_agg=1) are shown. Source: CeNCOOS/Axiom ERDDAP dataset org_mbari_m1.")]
+            #[tool(
+                title = "MBARI M1 Mooring",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get a snapshot from the MBARI M1 mooring at the mouth of Monterey Bay (36.75°N, 122.03°W, ~480 m depth). Returns surface sea water temperature, sonic-anemometer wind speed/direction with equatorward (upwelling-favorable) component, and optionally a full water-column temperature profile with stratification index. Data latency is typically ~24h. QC: only QARTOD-pass values (qc_agg=1) are shown. Source: CeNCOOS/Axiom ERDDAP dataset org_mbari_m1."
+            )]
             async fn get_m1_water_column(
                 &self,
                 Parameters(req): Parameters<M1Request>,
@@ -1033,7 +1221,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get live in-situ water quality from the UCSC Santa Cruz Municipal Wharf (36.96°N, 122.02°W). Returns temperature, salinity, pH, chlorophyll-a, dissolved oxygen, and turbidity with trends. 5-minute cadence, freshest in-bay station. The Kudela Lab (UCSC) collects weekly Pseudo-nitzschia counts here — this is the HAB ground-truth station paired with C-HARM satellite forecasts. QC: QARTOD-pass only. Source: CeNCOOS/Axiom ERDDAP dataset edu_ucsc_scwharf1.")]
+            #[tool(
+                title = "Santa Cruz Wharf Water Quality",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get live in-situ water quality from the UCSC Santa Cruz Municipal Wharf (36.96°N, 122.02°W). Returns temperature, salinity, pH, chlorophyll-a, dissolved oxygen, and turbidity with trends. 5-minute cadence, freshest in-bay station. The Kudela Lab (UCSC) collects weekly Pseudo-nitzschia counts here — this is the HAB ground-truth station paired with C-HARM satellite forecasts. QC: QARTOD-pass only. Source: CeNCOOS/Axiom ERDDAP dataset edu_ucsc_scwharf1."
+            )]
             async fn get_sc_wharf_state(
                 &self,
                 Parameters(req): Parameters<WharfRequest>,
@@ -1046,7 +1238,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get the California Harmful Algae Risk Mapping (C-HARM v3.1) forecast for Pseudo-nitzschia bloom probability, particulate domoic acid, and cellular domoic acid. Composes nowcast through 3-day forecast from 4 separate datasets. Also returns DINEOF gap-filled chlorophyll-a. Default location: Santa Cruz Wharf. Lon is auto-converted from Western convention (-122) to the 0-360 system C-HARM uses. Snaps to nearest non-NaN cell if the target is masked. Source: CoastWatch ERDDAP, Anderson et al. 2016.")]
+            #[tool(
+                title = "Harmful Algal Bloom Forecast",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get the California Harmful Algae Risk Mapping (C-HARM v3.1) forecast for Pseudo-nitzschia bloom probability, particulate domoic acid, and cellular domoic acid. Composes nowcast through 3-day forecast from 4 separate datasets. Also returns DINEOF gap-filled chlorophyll-a. Default location: Santa Cruz Wharf. Lon is auto-converted from Western convention (-122) to the 0-360 system C-HARM uses. Snaps to nearest non-NaN cell if the target is masked. Source: CoastWatch ERDDAP, Anderson et al. 2016."
+            )]
             async fn get_hab_risk_forecast(
                 &self,
                 Parameters(req): Parameters<HabRequest>,
@@ -1059,7 +1255,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get MUR SST (sea surface temperature) state for a bounding box. Returns mean/min/max SST, SST anomaly vs 2003-2014 climatology, and maximum thermal gradient (frontal detection). MUR v4.1 is L4 gap-filled (no cloud gaps). Default bbox covers Monterey Bay (36.5-37.2°N, 122.5-121.8°W). Stride controls resolution (2 = 0.02° default). Source: CoastWatch ERDDAP, JPL MUR v4.1.")]
+            #[tool(
+                title = "Sea Surface Temperature",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get MUR SST (sea surface temperature) state for a bounding box. Returns mean/min/max SST, SST anomaly vs 2003-2014 climatology, and maximum thermal gradient (frontal detection). MUR v4.1 is L4 gap-filled (no cloud gaps). Default bbox covers Monterey Bay (36.5-37.2°N, 122.5-121.8°W). Stride controls resolution (2 = 0.02° default). Source: CoastWatch ERDDAP, JPL MUR v4.1."
+            )]
             async fn get_sst_state(
                 &self,
                 Parameters(req): Parameters<SstRequest>,
@@ -1072,7 +1272,11 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Get HF Radar surface current velocities for Monterey Bay. Returns bay-mean current speed and direction, u/v components, coverage percentage, and surface divergence (positive = upwelling-consistent). Resolution: '6km' (default, bay-scale) or '2km' (nearshore detail). Coverage is typically 55-65% — the Monterey Canyon creates radar shadow zones. QC: gross-range filter |u|,|v| < 2.0 m/s. Source: UCSD HFRNet via CoastWatch ERDDAP.")]
+            #[tool(
+                title = "HF Radar Surface Currents",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Get HF Radar surface current velocities for Monterey Bay. Returns bay-mean current speed and direction, u/v components, coverage percentage, and surface divergence (positive = upwelling-consistent). Resolution: '6km' (default, bay-scale) or '2km' (nearshore detail). Coverage is typically 55-65% — the Monterey Canyon creates radar shadow zones. QC: gross-range filter |u|,|v| < 2.0 m/s. Source: UCSD HFRNet via CoastWatch ERDDAP."
+            )]
             async fn get_hfradar_currents(
                 &self,
                 Parameters(req): Parameters<HfrRequest>,
@@ -1087,19 +1291,31 @@ macro_rules! define_tools {
 
             // ─── Fusion tools (composite ocean state) ───
 
-            #[tool(description = "Monterey Bay upwelling state — fuses CUTI/BEUTI, M1 mooring, MUR SST, HF Radar, C-HARM HAB forecast, SC Wharf in-situ, eBird, and iNaturalist into a single causal-chain narrative. Covers physical forcing → ocean state → chemical response → biological indicators. Sources fetched concurrently; partial failures are noted but don't block the response.")]
+            #[tool(
+                title = "Monterey Bay Upwelling State",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Monterey Bay upwelling state — fuses CUTI/BEUTI, M1 mooring, MUR SST, HF Radar, C-HARM HAB forecast, SC Wharf in-situ, eBird, and iNaturalist into a single causal-chain narrative. Covers physical forcing → ocean state → chemical response → biological indicators. Sources fetched concurrently; partial failures are noted but don't block the response."
+            )]
             async fn monterey_bay_upwelling_state(&self, Parameters(req): Parameters<UpwellingStateRequest>) -> Result<CallToolResult, ErrorData> {
                 let result = self.ocean.monterey_bay_upwelling_state(&req).await.map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Monterey Bay HAB risk summary — C-HARM v3.1 Pseudo-nitzschia bloom forecast (nowcast through +3 day), cross-validated with SC Wharf in-situ chl-a and pH, SST context, and seabird indicators. Focused subset of the full upwelling state tool.")]
+            #[tool(
+                title = "Monterey Bay Algal Bloom Risk",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Monterey Bay HAB risk summary — C-HARM v3.1 Pseudo-nitzschia bloom forecast (nowcast through +3 day), cross-validated with SC Wharf in-situ chl-a and pH, SST context, and seabird indicators. Focused subset of the full upwelling state tool."
+            )]
             async fn monterey_bay_hab_risk(&self, Parameters(req): Parameters<HabRiskRequest>) -> Result<CallToolResult, ErrorData> {
                 let result = self.ocean.monterey_bay_hab_risk(&req).await.map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            #[tool(description = "Monterey Bay research snapshot — machine-readable JSON of all ocean monitoring sources with a deterministic SHA-256 checksum for reproducibility. Same data as the narrative upwelling state tool but structured for programmatic consumption. Use strict=true to fail if any source is unavailable.")]
+            #[tool(
+                title = "Monterey Bay Research Snapshot",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Monterey Bay research snapshot — machine-readable JSON of all ocean monitoring sources with a deterministic SHA-256 checksum for reproducibility. Same data as the narrative upwelling state tool but structured for programmatic consumption. Use strict=true to fail if any source is unavailable."
+            )]
             async fn monterey_bay_research_snapshot(&self, Parameters(req): Parameters<ResearchSnapshotRequest>) -> Result<CallToolResult, ErrorData> {
                 let result = self.ocean.monterey_bay_research_snapshot(&req).await.map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
@@ -1117,6 +1333,14 @@ define_tools!({
     // ─── Auth Tools ───
 
     #[tool(
+        title = "Log In to UCSC",
+        // Opens a browser and saves a fresh session file on every call.
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        ),
         description = "Login to UCSC SSO. This opens a Chrome window on your machine for CruzID + Duo MFA authentication — use this tool directly, it works from any MCP client including Claude Desktop. After you complete login in the browser, the session is captured automatically."
     )]
     async fn login(&self) -> Result<CallToolResult, ErrorData> {
@@ -1134,6 +1358,14 @@ define_tools!({
     }
 
     #[tool(
+        title = "Authenticate with a Token",
+        // Decodes the token locally and keeps it for this connection only.
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
         description = "Authenticate using a portable session token. Only needed when the MCP server is running on a remote or headless machine where a browser cannot open. Run `slug-mcp export-token` on a machine with a browser to get a token, then pass it here."
     )]
     async fn authenticate(
@@ -1161,7 +1393,11 @@ define_tools!({
         ))]))
     }
 
-    #[tool(description = "Check if you are currently authenticated with UCSC")]
+    #[tool(
+        title = "Check UCSC Login",
+        annotations(read_only_hint = true, open_world_hint = false),
+        description = "Check if you are currently authenticated with UCSC"
+    )]
     async fn check_auth(&self) -> Result<CallToolResult, ErrorData> {
         // Check per-session token first (SSE mode)
         if let Some(data) = self.session_auth.read().await.as_ref()
@@ -1190,6 +1426,8 @@ define_tools!({
     }
 
     #[tool(
+        title = "Meal Plan Balance",
+        annotations(read_only_hint = true, open_world_hint = true),
         description = "Get your UCSC meal plan balance (Slug Points, Banana Bucks). Requires authentication — call 'login' first if not already logged in."
     )]
     async fn get_meal_balance(&self) -> Result<CallToolResult, ErrorData> {
@@ -1243,19 +1481,28 @@ impl ServerHandler for SlugMcpServer {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult {
-            tools: self.tool_router.list_all(),
-            ..Default::default()
-        })
+        let result = ListToolsResult::with_all_items(self.tool_router.list_all());
+        // The list is fixed per build and identical for every caller, so it can
+        // be cached and shared for a day. rmcp would otherwise default 2026-07-28
+        // peers to `ttlMs: 0, private`; older versions have no such fields.
+        if context
+            .protocol_version()
+            .is_some_and(|v| v >= ProtocolVersion::V_2026_07_28)
+        {
+            return Ok(result
+                .with_ttl_ms(24 * 60 * 60 * 1000)
+                .with_cache_scope(CacheScope::Public));
+        }
+        Ok(result)
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {
         self.tool_router.get(name).cloned()
     }
 
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let instructions = if cfg!(feature = "auth") {
             "UCSC + Santa Cruz MCP server. Campus services: dining menus, \
              nutrition info, meal plan balances, campus events and Eventbrite \
@@ -1326,8 +1573,18 @@ impl ServerHandler for SlugMcpServer {
              reproducibility."
         };
 
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("slug-mcp", env!("CARGO_PKG_VERSION")))
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(
+                Implementation::new("slug-mcp", env!("CARGO_PKG_VERSION"))
+                    .with_title("Slug MCP")
+                    .with_description(
+                        "Live data for UC Santa Cruz and the Santa Cruz coast: campus \
+                         services, transit, surf, tides, weather, beach water quality, \
+                         traffic, wildfires, trails, climbing, and Monterey Bay ocean \
+                         monitoring.",
+                    )
+                    .with_website_url("https://github.com/pronei/slug-mcp"),
+            )
             .with_instructions(instructions)
     }
 }

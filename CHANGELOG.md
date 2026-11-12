@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed — MCP 2026-07-28 conformance (2026-10-19)
+- **rmcp 3.2 → 3.5.1**: `tools/list` now carries the `ttlMs` / `cacheScope` hints that 2026-07-28 makes required, and explicit-port entries in the Origin allow-list match origins that omit the default port. `get_info` returns `ServerConfig`; the `ServerInfo` alias is deprecated.
+- **Tool titles and annotations**: every tool has a display `title` and explicit hints. The 54 public tools are `readOnlyHint: true, openWorldHint: true`. Of the auth tools, `login` (opens a browser, saves a session file) and `authenticate` (stores a token for the connection) are marked as changing state, `check_auth` as read-only and local, and `get_meal_balance` as read-only and open-world.
+- **Server identity**: `serverInfo` adds the title "Slug MCP", a description and the repository URL.
+- **`tools/list` cache hints**: 2026-07-28 clients are told the list is fresh for 24 hours and may be cached publicly. rmcp's fallback is `ttlMs: 0, private`. Older protocol versions get no hint fields.
+- **Streamable HTTP hardening**: Origin validation is enforced, as the spec requires. A request whose `Origin` isn't on the allow-list gets 403. Requests without an `Origin` header still pass, which covers Claude Code, Claude Desktop and ChatGPT's backend. The default list is the loopback origins (`http://localhost:*`, `http://127.0.0.1:*`, `http://[::1]:*`), so MCP Inspector keeps working; `SLUG_MCP_ALLOWED_ORIGINS` (comma-separated, scheme required, `:*` for any port) replaces it. Request bodies are capped at 64 KiB (413 above; rmcp's default was 4 MiB). Stateless 2026-07-28 requests get plain JSON replies instead of one-event SSE streams.
+- **Tests** (`tests/mcp_protocol.rs`): every tool's title and hints, and that only the auth tools change state; `serverInfo` identity; a hand-built 2026-07-28 `tools/list` returns JSON with the 24-hour public hints while a legacy session gets none; cross-site and `null` origins get 403 while loopback and absent origins pass; a body over 64 KiB gets 413.
+
 ### Changed — hosting moved to Fly.io (2026-09-25)
 - The public server moved from the retired UCSC ITS VM (`2262-cse115b-02.be.ucsc.edu`) to Fly.io at **`https://slug-mcp.fly.dev/mcp`**. Existing connectors need re-adding with the new URL.
 - **`serve --host`** sets the SSE bind address (default `127.0.0.1`; the container passes `0.0.0.0`).

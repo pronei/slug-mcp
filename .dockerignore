@@ -1,0 +1,9 @@
+target/
+.git/
+.claude/
+.firecrawl/
+docs/
+eval/
+*.enc
+cache.db
+.fly/

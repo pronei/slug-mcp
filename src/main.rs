@@ -57,6 +57,12 @@ enum Command {
         /// Run as an SSE server instead of stdio
         #[arg(long)]
         sse: bool,
+        // An IP literal rather than "localhost": that name can resolve to ::1
+        // first, leaving a reverse proxy that dials 127.0.0.1 with connection
+        // refused.
+        /// Address for the SSE server to bind (0.0.0.0 inside a container)
+        #[arg(long, default_value = "127.0.0.1")]
+        host: std::net::IpAddr,
         /// Port for the SSE server
         #[arg(long, default_value_t = 3000)]
         port: u16,
@@ -73,11 +79,12 @@ async fn main() -> Result<()> {
 
     match cli.command.unwrap_or(Command::Serve {
         sse: false,
+        host: std::net::Ipv4Addr::LOCALHOST.into(),
         port: 3000,
     }) {
         #[cfg(feature = "auth")]
         Command::ExportToken => run_export_token().await,
-        Command::Serve { sse, port } => {
+        Command::Serve { sse, host, port } => {
             tracing_subscriber::fmt()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::from_default_env()
@@ -86,7 +93,7 @@ async fn main() -> Result<()> {
                 .with_writer(std::io::stderr)
                 .init();
 
-            run_serve(sse, port).await
+            run_serve(sse, host, port).await
         }
     }
 }
@@ -135,7 +142,7 @@ async fn run_export_token() -> Result<()> {
     Ok(())
 }
 
-async fn run_serve(sse: bool, port: u16) -> Result<()> {
+async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
     let config = Arc::new(config::Config::load()?);
     let cache = Arc::new(cache::CacheStore::new(10_000));
 
@@ -252,7 +259,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     });
 
     if sse {
-        run_sse(port, ctx).await
+        run_sse(host, port, ctx).await
     } else {
         let server = server::SlugMcpServer::new(ctx);
         let service = server.serve(rmcp::transport::io::stdio()).await?;
@@ -261,7 +268,7 @@ async fn run_serve(sse: bool, port: u16) -> Result<()> {
     }
 }
 
-async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
+async fn run_sse(host: std::net::IpAddr, port: u16, ctx: server::ServiceContext) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     };
@@ -273,24 +280,18 @@ async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
     // sessions for older protocol versions, which is what current clients use.
     let mut sse_config = StreamableHttpServerConfig::default();
     sse_config.legacy_session_mode = true;
-    // rmcp 1.x rejects any inbound `Host` not in `allowed_hosts` (DNS-rebinding
-    // protection), defaulting to loopback only. Behind nginx the Host header is
-    // the public domain, so every /mcp request 403s ("Host header is not
-    // allowed"). Allow the deployment host plus loopback; override the whole
-    // list with SLUG_MCP_ALLOWED_HOSTS (comma-separated host or host:port).
-    sse_config.allowed_hosts = match std::env::var("SLUG_MCP_ALLOWED_HOSTS") {
-        Ok(v) => v
+    // rmcp rejects any inbound `Host` not in `allowed_hosts` (DNS-rebinding
+    // protection), defaulting to loopback only. Behind a proxy the Host header
+    // is the public domain, so every /mcp request 403s ("Host header is not
+    // allowed") unless the deployment lists it in SLUG_MCP_ALLOWED_HOSTS
+    // (comma-separated host or host:port), which replaces the default.
+    if let Ok(v) = std::env::var("SLUG_MCP_ALLOWED_HOSTS") {
+        sse_config.allowed_hosts = v
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
-            .collect(),
-        Err(_) => vec![
-            "localhost".into(),
-            "127.0.0.1".into(),
-            "::1".into(),
-            "2262-cse115b-02.be.ucsc.edu".into(),
-        ],
-    };
+            .collect();
+    }
 
     let service = StreamableHttpService::new(
         move || Ok(server::SlugMcpServer::new(ctx.clone())),
@@ -299,15 +300,12 @@ async fn run_sse(port: u16, ctx: server::ServiceContext) -> Result<()> {
     );
 
     let app = axum::Router::new()
-        // Liveness probe for the deploy script / nginx upstream check.
+        // Liveness probe for Fly's health check. It sits outside /mcp, so the
+        // Host allowlist doesn't apply to it.
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .nest_service("/mcp", service);
 
-    // Bind to the IPv4 loopback explicitly. Binding "localhost" resolves to
-    // whichever family is first in the resolver (often IPv6 ::1), which leaves
-    // nginx's `proxy_pass http://127.0.0.1:PORT` with a connection refused —
-    // the server looks "down" even though it's listening on ::1.
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let addr = std::net::SocketAddr::new(host, port);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("SSE server listening on http://{addr}/mcp");
 

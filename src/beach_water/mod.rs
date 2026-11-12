@@ -13,6 +13,9 @@ use crate::cache::CacheStore;
 
 const RESOURCE_ID: &str = "15a63495-8d9f-4a49-b43a-3092ef3106b9";
 const CKAN_BASE: &str = "https://data.ca.gov/api/3/action/datastore_search_sql";
+// Station codes aren't county-scoped (Orange County's "OSB01" also starts with
+// "O"), so the county comes from the BeachWatch project name.
+const PROJECT: &str = "BeachWatch_Santa Cruz County";
 
 // ─── Request ───
 
@@ -95,11 +98,23 @@ struct CkanRecord {
     #[serde(rename = "Unit")]
     unit: Option<String>,
     #[serde(
-        rename = "30DayGeoMean",
+        rename = "GeoMean_30Day",
         default,
         deserialize_with = "de_number_as_string"
     )]
     geo_mean_30d: Option<String>,
+    #[serde(
+        rename = "Count_30Day",
+        default,
+        deserialize_with = "de_number_as_string"
+    )]
+    count_30d: Option<String>,
+    #[serde(
+        rename = "GeoMean_6Week",
+        default,
+        deserialize_with = "de_number_as_string"
+    )]
+    geo_mean_6wk: Option<String>,
     #[serde(
         rename = "TargetLatitude",
         default,
@@ -215,8 +230,8 @@ async fn fetch_records(
         .to_string();
 
     let mut sql = format!(
-        r#"SELECT "StationName", "StationCode", "SampleDate", "Analyte", "Result", "Unit", "30DayGeoMean", "TargetLatitude", "TargetLongitude" FROM "{}" WHERE "StationCode" LIKE 'O%' AND "SampleDate" >= '{}'"#,
-        RESOURCE_ID, start_date
+        r#"SELECT "StationName", "StationCode", "SampleDate", "Analyte", "Result", "Unit", "GeoMean_30Day", "Count_30Day", "GeoMean_6Week", "TargetLatitude", "TargetLongitude" FROM "{}" WHERE "Project" = '{}' AND "SampleDate" >= '{}'"#,
+        RESOURCE_ID, PROJECT, start_date
     );
 
     if let Some(beach) = beach_filter {
@@ -250,11 +265,18 @@ async fn fetch_records(
         .await
         .context("CKAN HTTP request failed")?;
 
-    if !resp.status().is_success() {
-        anyhow::bail!("data.ca.gov returned HTTP {}", resp.status());
-    }
-
+    let status = resp.status();
     let body = resp.text().await.context("reading CKAN response body")?;
+    if !status.is_success() {
+        // CKAN answers bad SQL (e.g. a renamed column) with 409 and a JSON
+        // error envelope; its message says what changed upstream.
+        return match parse_ckan_body(&body) {
+            Err(e) if e.to_string().starts_with("CKAN API error") => {
+                Err(e.context(format!("data.ca.gov returned HTTP {status}")))
+            }
+            _ => anyhow::bail!("data.ca.gov returned HTTP {status}"),
+        };
+    }
     parse_ckan_body(&body)
 }
 
@@ -263,17 +285,30 @@ fn parse_ckan_body(body: &str) -> Result<Vec<CkanRecord>> {
 
     if !ckan.success {
         let detail = match &ckan.error {
-            Some(e) => e
-                .get("message")
-                .and_then(|m| m.as_str())
-                .map(str::to_string)
-                .unwrap_or_else(|| e.to_string()),
+            Some(e) => ckan_error_detail(e),
             None => "no error detail provided".to_string(),
         };
         anyhow::bail!("CKAN API error: {}", detail);
     }
 
     Ok(ckan.result.map(|r| r.records).unwrap_or_default())
+}
+
+/// The most specific line of a CKAN error: `message`, else the first line of
+/// the Postgres error in `info.orig`, else the whole object.
+fn ckan_error_detail(e: &serde_json::Value) -> String {
+    if let Some(m) = e.get("message").and_then(|m| m.as_str()) {
+        return m.to_string();
+    }
+    let orig = e
+        .pointer("/info/orig/0")
+        .and_then(|o| o.as_str())
+        .and_then(|o| o.lines().next());
+    match (e.get("__type").and_then(|t| t.as_str()), orig) {
+        (Some(kind), Some(line)) => format!("{kind}: {line}"),
+        (None, Some(line)) => line.to_string(),
+        _ => e.to_string(),
+    }
 }
 
 // ─── Formatting ───
@@ -289,6 +324,12 @@ fn format_sample_date(raw: &str) -> String {
         return d.format("%B %-d, %Y").to_string();
     }
     raw.to_string()
+}
+
+/// `Count_30Day` is numeric in the schema, so it may arrive as "3" or "3.0".
+fn sample_count(raw: &str) -> Option<u32> {
+    let n = raw.parse::<f64>().ok()?;
+    (n >= 0.0 && n.fract() == 0.0).then_some(n as u32)
 }
 
 fn format_output(records: &[CkanRecord], filtered: bool) -> String {
@@ -403,14 +444,14 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
             if let Some(geo_str) = rec.geo_mean_30d.as_deref()
                 && let Ok(geo_val) = geo_str.parse::<f64>()
             {
+                let label = match rec.count_30d.as_deref().and_then(sample_count) {
+                    Some(1) => format!("30-day geo mean ({}, 1 sample)", rec.analyte),
+                    Some(n) => format!("30-day geo mean ({}, {n} samples)", rec.analyte),
+                    None => format!("30-day geo mean ({})", rec.analyte),
+                };
                 let (threshold, exceeds) = check_geo_threshold(&rec.analyte, geo_val);
                 if threshold == "—" {
-                    writeln!(
-                        out,
-                        "| 30-day geo mean ({}) | {} | — | — |",
-                        rec.analyte, geo_str
-                    )
-                    .unwrap();
+                    writeln!(out, "| {} | {} | — | — |", label, geo_str).unwrap();
                 } else {
                     let status = if exceeds { "Exceeds" } else { "Pass" };
                     let icon = if exceeds {
@@ -420,11 +461,23 @@ fn format_output(records: &[CkanRecord], filtered: bool) -> String {
                     };
                     writeln!(
                         out,
-                        "| 30-day geo mean ({}) | {} | {} | {} {} |",
-                        rec.analyte, geo_str, threshold, icon, status
+                        "| {} | {} | {} | {} {} |",
+                        label, geo_str, threshold, icon, status
                     )
                     .unwrap();
                 }
+            }
+
+            // AB411 sets no 6-week standard, so this row carries no status.
+            if let Some(geo6) = rec.geo_mean_6wk.as_deref()
+                && geo6.parse::<f64>().is_ok()
+            {
+                writeln!(
+                    out,
+                    "| 6-week geo mean ({}) | {} | — | — |",
+                    rec.analyte, geo6
+                )
+                .unwrap();
             }
         }
 
@@ -542,7 +595,7 @@ mod tests {
                         "Analyte": "Total Coliform",
                         "Result": "220",
                         "Unit": "CFU/100mL",
-                        "30DayGeoMean": "287.3",
+                        "GeoMean_30Day": "287.3",
                         "TargetLatitude": "36.9618",
                         "TargetLongitude": "-122.023"
                     },
@@ -553,7 +606,7 @@ mod tests {
                         "Analyte": "Enterococcus",
                         "Result": "156",
                         "Unit": "CFU/100mL",
-                        "30DayGeoMean": null,
+                        "GeoMean_30Day": null,
                         "TargetLatitude": "36.9722",
                         "TargetLongitude": "-121.9533"
                     }
@@ -594,6 +647,8 @@ mod tests {
                 result: Some("220".to_string()),
                 unit: Some("CFU/100mL".to_string()),
                 geo_mean_30d: Some("287.3".to_string()),
+                count_30d: None,
+                geo_mean_6wk: None,
                 latitude: Some("36.9618".to_string()),
                 longitude: Some("-122.023".to_string()),
             },
@@ -605,6 +660,8 @@ mod tests {
                 result: Some("28".to_string()),
                 unit: Some("CFU/100mL".to_string()),
                 geo_mean_30d: Some("22.4".to_string()),
+                count_30d: None,
+                geo_mean_6wk: None,
                 latitude: Some("36.9618".to_string()),
                 longitude: Some("-122.023".to_string()),
             },
@@ -616,6 +673,8 @@ mod tests {
                 result: Some("156".to_string()),
                 unit: Some("CFU/100mL".to_string()),
                 geo_mean_30d: None,
+                count_30d: None,
+                geo_mean_6wk: None,
                 latitude: Some("36.9722".to_string()),
                 longitude: Some("-121.9533".to_string()),
             },
@@ -703,6 +762,8 @@ mod tests {
             result: Some("99999".to_string()),
             unit: Some("MPN/100 mL".to_string()),
             geo_mean_30d: Some("88888".to_string()),
+            count_30d: None,
+            geo_mean_6wk: None,
             latitude: None,
             longitude: None,
         }];
@@ -718,25 +779,74 @@ mod tests {
     #[test]
     fn parse_live_fixture() {
         let records = parse_ckan_body(CKAN_FIXTURE).unwrap();
-        assert_eq!(records.len(), 5);
+        assert_eq!(records.len(), 4);
         assert_eq!(records[0].analyte, "Coliform, Total");
-        assert_eq!(records[0].result.as_deref(), Some("10.0"));
+        assert_eq!(records[0].result.as_deref(), Some("20.0"));
         assert_eq!(records[0].unit.as_deref(), Some("MPN/100 mL"));
+        // The 2026-11 republish renamed 30DayGeoMean and added count/6-week columns.
+        assert_eq!(records[2].geo_mean_30d.as_deref(), Some("12.599"));
+        assert_eq!(records[2].count_30d.as_deref(), Some("3"));
+        assert_eq!(records[2].geo_mean_6wk.as_deref(), Some("11.892"));
         // Null-heavy record: all optional fields None.
-        let nullish = &records[4];
+        let nullish = &records[3];
         assert_eq!(nullish.station_code, "O490");
         assert!(nullish.result.is_none());
         assert!(nullish.unit.is_none());
         assert!(nullish.geo_mean_30d.is_none());
+        assert!(nullish.count_30d.is_none());
+        assert!(nullish.geo_mean_6wk.is_none());
         assert!(nullish.latitude.is_none());
         assert!(nullish.longitude.is_none());
 
         // The live-shape records render with real threshold checks.
         let out = format_output(&records, false);
         assert!(out.contains("## Rio del Mar Beach (O110)"));
-        assert!(out.contains("Pass"));
+        assert!(
+            out.contains(
+                "| 30-day geo mean (Enterococcus, 3 samples) | 12.599 | <35 | \u{2705} Pass |"
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains("| 6-week geo mean (Enterococcus) | 11.892 | — | — |"),
+            "{out}"
+        );
         // Null result renders the em-dash placeholder, not a status.
         assert!(out.contains("| Enterococcus | —  | — | — |"));
+        assert!(!out.contains("6-week geo mean (Enterococcus) | —"));
+    }
+
+    #[test]
+    fn renamed_column_409_surfaces_the_postgres_error() {
+        let body = include_str!("fixtures/ckan_undefined_column_409.json");
+        let err = parse_ckan_body(body).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            r#"CKAN API error: Validation Error: column "30DayGeoMean" does not exist"#
+        );
+    }
+
+    #[test]
+    fn single_sample_geo_mean_says_so() {
+        let rec = CkanRecord {
+            station_name: "O010-Pajaro Dunes Beach, Santa Cruz".to_string(),
+            station_code: "O010".to_string(),
+            sample_date: Some("2026-10-13T00:00:00".to_string()),
+            analyte: "E. coli".to_string(),
+            result: Some("20.0".to_string()),
+            unit: Some("MPN/100 mL".to_string()),
+            geo_mean_30d: Some("20.0".to_string()),
+            count_30d: Some("1.0".to_string()),
+            geo_mean_6wk: None,
+            latitude: None,
+            longitude: None,
+        };
+        let out = format_output(&[rec], false);
+        assert!(
+            out.contains("| 30-day geo mean (E. coli, 1 sample) | 20.0 | <126 |"),
+            "{out}"
+        );
+        assert!(!out.contains("6-week"), "{out}");
     }
 
     #[test]
@@ -759,7 +869,7 @@ mod tests {
 
     #[test]
     fn numeric_fields_accept_json_numbers() {
-        // The datastore schema declares Result/30DayGeoMean/TargetLatitude/
+        // The datastore schema declares Result/GeoMean_30Day/TargetLatitude/
         // TargetLongitude as `numeric`; datastore_search_sql stringifies them
         // today but the plain datastore_search endpoint returns JSON numbers —
         // tolerate both.
@@ -773,7 +883,7 @@ mod tests {
                     "Analyte": "Coliform, Total",
                     "Result": 650.0,
                     "Unit": "MPN/100 mL",
-                    "30DayGeoMean": 58.626,
+                    "GeoMean_30Day": 58.626,
                     "TargetLatitude": 36.9688,
                     "TargetLongitude": -121.906
                 }]

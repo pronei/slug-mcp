@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed — upstream drift (2026-11-12)
+- **`get_air_quality`**: AirNow retired its ZIP-code, lat/long and forecast web services on 2026-10-01, so every call returned 410 Gone. The ZIP is now geocoded through Open-Meteo (cached a day) and observations come from the bounding-box data service (`/aq/data/?BBOX=…`). Each pollutant reports the nearest monitor inside `distance_miles` from the last three hours, with the site name and distance, in the ZIP's local time.
+- **`get_beach_water_quality`**: the BeachWatch republish renamed `30DayGeoMean` to `GeoMean_30Day`, and the query failed with 409. The tool reads the new column and adds the new `Count_30Day` and `GeoMean_6Week` columns. It now filters on the Santa Cruz County project, because the `O%` station-code filter also matched Orange, San Diego, San Luis Obispo and San Francisco beaches. A CKAN error envelope on a non-2xx response is reported with its Postgres message, for example `column "30DayGeoMean" does not exist`.
+- **`get_group_exercise_classes`**: the tool scrapes the goslugs.com hub page, which always shows the current term. It reads the term from the hub's one unlinked label, so it no longer serves the pinned Spring 2026 schedule. Cells that stack two classes now give one entry each (Fall 2026: 40 classes, up from 27, and each class has its own room). An empty program link in front of the real one no longer drops the class.
+- **`get_upcoming_events` / `search_events`**: Tribe titles, venues, organizers, categories, tags and costs are decoded from HTML (`&#8211;` → –, `&amp;` → &). Descriptions are converted the same way, so entities no longer reach the model.
+
 ### Fixed — live tool check follow-ups (2026-09-04)
 - **`search_classes`**: the instructor filter posted `binds[:instr_name]`, but PISA reads `binds[:instructor]` — every instructor query silently returned no results.
 - **eBird species lookups**: the taxonomy index asked for all ~1050 California species codes in one `species=` value (~7.5 KB), which eBird answers 400; codes are now fetched in batches. Fixes `find_nearest_bird_sighting` and species-filtered `search_bird_observations`.

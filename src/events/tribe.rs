@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::util;
 
@@ -16,12 +16,14 @@ pub struct TribeEventsResponse {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeEvent {
     pub id: u64,
+    #[serde(deserialize_with = "de_html_text")]
     pub title: String,
     pub description: Option<String>,
     pub url: String,
     pub start_date: String,
     pub end_date: String,
     pub all_day: bool,
+    #[serde(default, deserialize_with = "de_opt_html_text")]
     pub cost: Option<String>,
     pub venue: TribeVenueField,
     pub organizer: Vec<TribeOrganizer>,
@@ -42,13 +44,17 @@ pub enum TribeVenueField {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeVenue {
+    #[serde(deserialize_with = "de_html_text")]
     pub venue: String,
+    #[serde(default, deserialize_with = "de_opt_html_text")]
     pub address: Option<String>,
+    #[serde(default, deserialize_with = "de_opt_html_text")]
     pub city: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeOrganizer {
+    #[serde(deserialize_with = "de_html_text")]
     pub organizer: String,
 }
 
@@ -60,13 +66,32 @@ pub struct TribeCategoriesResponse {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeCategory {
+    #[serde(deserialize_with = "de_html_text")]
     pub name: String,
     pub slug: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TribeTag {
+    #[serde(deserialize_with = "de_html_text")]
     pub name: String,
+}
+
+/// WordPress renders Tribe's text fields: names and titles carry HTML
+/// entities (`&#8211;`, `&#038;`, `&amp;`) and descriptions carry markup.
+/// Parsing as an HTML fragment drops the tags and decodes the entities.
+fn html_to_text(html: &str) -> String {
+    let fragment = scraper::Html::parse_fragment(html);
+    let text: String = fragment.root_element().text().collect();
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn de_html_text<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    String::deserialize(d).map(|s| html_to_text(&s))
+}
+
+fn de_opt_html_text<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.map(|s| html_to_text(&s)))
 }
 
 pub struct TribeClient {
@@ -197,7 +222,7 @@ impl TribeEvent {
         out.push_str(&format!("- **Link**: {}\n", self.url));
 
         if let Some(desc) = &self.description {
-            let clean = util::strip_html_tags(desc);
+            let clean = html_to_text(desc);
             let trimmed = util::truncate(&clean, 300);
             if !trimmed.is_empty() {
                 out.push_str(&format!("- **Description**: {}\n", trimmed));
@@ -353,6 +378,56 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("venue"), "got: {err}");
+    }
+
+    const ENTITIES_FIXTURE: &str = include_str!("fixtures/tribe_events_entities.json");
+
+    #[test]
+    fn live_entities_are_decoded_everywhere() {
+        let resp: TribeEventsResponse = serde_json::from_str(ENTITIES_FIXTURE).unwrap();
+        let seminar = &resp.events[0];
+        assert_eq!(
+            seminar.title,
+            "CM Seminar: Dr. Elena Agapie \u{2013} \u{201c}Centering Users in Health \
+             Technologies: Balancing People\u{2019}s Practices with Health Interventions \
+             in Design\u{201d}"
+        );
+        assert_eq!(seminar.categories[0].name, "Lectures & Presentations");
+
+        let coaching = &resp.events[1];
+        assert_eq!(
+            coaching.title,
+            "Career Coaching in the Courtyard \u{2013} Drop-in Coaching at Baskin \
+             Engineering \u{2013} Week 8"
+        );
+        assert!(
+            coaching
+                .venue_name()
+                .unwrap()
+                .contains("(main courtyard between JBE & E2)")
+        );
+
+        for ev in &resp.events {
+            let summary = ev.format_summary();
+            for entity in ["&#8211;", "&#8217;", "&#8220;", "&#038;", "&amp;", "&nbsp;"] {
+                assert!(!summary.contains(entity), "{entity} leaked:\n{summary}");
+            }
+            assert!(!summary.contains("<p>"), "{summary}");
+        }
+        assert!(
+            coaching
+                .format_summary()
+                .contains("Or maybe you\u{2019}d just like")
+        );
+    }
+
+    #[test]
+    fn html_to_text_keeps_literal_angle_brackets_and_collapses_space() {
+        assert_eq!(
+            html_to_text("Q&amp;A &lt;3 \n  <b>live</b>&nbsp;now"),
+            "Q&A <3 live now"
+        );
+        assert_eq!(html_to_text("Plain title"), "Plain title");
     }
 
     #[test]

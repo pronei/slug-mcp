@@ -1,0 +1,93 @@
+{
+  "events": [
+    {
+      "id": 15405,
+      "title": "CM Seminar: Dr. Elena Agapie &#8211; &#8220;Centering Users in Health Technologies: Balancing People’s Practices with Health Interventions in Design&#8221;",
+      "description": "<p><b>CMPM 26-27 Seminar</b></p>\n<p>Welcome to the fourth <strong>Computational Media seminar</strong> of the fall quarter. Open to all, class enrollment is not required. Food will be provided.</p>\n<p>Please join us in-person at <strong>E2-280</strong> or via <a href=\"https://ucsc.zoom.us/j/94103955103?pwd=od4ueavRt06ECpwAwqvgofwn5Suyal.1\"><strong>Zoom</strong></a> to learn more about the works of <strong>Dr. Elena Agapie</strong>:</p>\n<p><b>Title</b>: Centering Users in Health Technologies: Balancing People’s Practices with Health Interventions in Design</p>",
+      "url": "https://events.ucsc.edu/event/cm-seminar-111626/",
+      "start_date": "2026-11-16 12:30:00",
+      "end_date": "2026-11-16 13:30:00",
+      "all_day": false,
+      "cost": "",
+      "venue": {
+        "venue": "Engineering 2",
+        "address": "Engineering 2 1156 High Street",
+        "city": "Santa Cruz"
+      },
+      "organizer": [
+        {
+          "organizer": "Baskin School of Engineering"
+        },
+        {
+          "organizer": "Computational Media Department"
+        },
+        {
+          "organizer": "Human Computer Interaction"
+        },
+        {
+          "organizer": "Silicon Valley Campus"
+        }
+      ],
+      "categories": [
+        {
+          "name": "Lectures &amp; Presentations",
+          "slug": "lectures-presentations"
+        },
+        {
+          "name": "Seminars",
+          "slug": "seminars"
+        }
+      ],
+      "tags": [
+        {
+          "name": "Baskin Engineering"
+        },
+        {
+          "name": "seminar"
+        }
+      ]
+    },
+    {
+      "id": 15218,
+      "title": "Career Coaching in the Courtyard &#8211; Drop-in Coaching at Baskin Engineering &#8211; Week 8",
+      "description": "<p>Do you have any questions or need some insight on your internship/job search? Perhaps you want someone to take a look at your resume or LinkedIn and offer advice? Or maybe you&#8217;d just like to explore different career options with a coach? Baskin Engineering&#8217;s Career Engagement Specialist, Erin Busch, will be hanging out at Baskin Engineering&#8217;s courtyard for casual career coaching on Monday, November 16th from 4:30pm &#8211; 5:30pm, feel free to stop by with any career related question.</p>\n<p>Bring a friend!</p>\n<p>&nbsp;</p>",
+      "url": "https://events.ucsc.edu/event/career-coaching-in-the-courtyard-drop-in-coaching-at-baskin-engineering-week-8/",
+      "start_date": "2026-11-16 16:30:00",
+      "end_date": "2026-11-16 17:30:00",
+      "all_day": false,
+      "cost": "",
+      "venue": {
+        "venue": "Jack Baskin School of Engineering (E1), Baskin Courtyard (main courtyard between JBE &amp; E2), Santa Cruz, California, United States",
+        "address": null,
+        "city": null
+      },
+      "organizer": [
+        {
+          "organizer": "Career Success"
+        }
+      ],
+      "categories": [
+        {
+          "name": "Workshop",
+          "slug": "workshop"
+        }
+      ],
+      "tags": [
+        {
+          "name": "Free Event"
+        },
+        {
+          "name": "Professional Development"
+        },
+        {
+          "name": "Resource Centers"
+        },
+        {
+          "name": "Successful Slug Workshops"
+        }
+      ]
+    }
+  ],
+  "total": 2,
+  "total_pages": 1
+}

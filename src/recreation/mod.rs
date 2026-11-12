@@ -28,8 +28,8 @@ pub struct GroupExerciseRequest {
 
 use crate::cache::CacheStore;
 use scraper::{
-    FacilityOccupancy, FacilitySchedule, GroupExerciseClass, find_facility, scrape_group_exercise,
-    scrape_occupancy, scrape_schedule,
+    FacilityOccupancy, FacilitySchedule, GroupExerciseClass, GroupExerciseSchedule, find_facility,
+    scrape_group_exercise, scrape_occupancy, scrape_schedule,
 };
 
 pub struct RecreationService {
@@ -105,9 +105,10 @@ impl RecreationService {
         day: Option<&str>,
         class_name: Option<&str>,
     ) -> Result<String> {
-        let all = self.fetch_group_exercise().await?;
+        let schedule = self.fetch_group_exercise().await?;
 
-        let filtered: Vec<&GroupExerciseClass> = all
+        let filtered: Vec<&GroupExerciseClass> = schedule
+            .classes
             .iter()
             .filter(|c| {
                 if let Some(d) = day
@@ -138,7 +139,7 @@ impl RecreationService {
 
         let mut out = format!(
             "## UCSC Group Exercise Schedule ({} \u{2014} most recent published)\n\n",
-            scraper::group_exercise_term()
+            schedule.term.as_deref().unwrap_or("term unknown")
         );
         let mut current_day = "";
         for class in &filtered {
@@ -163,7 +164,7 @@ impl RecreationService {
             .await
     }
 
-    async fn fetch_group_exercise(&self) -> Result<Vec<GroupExerciseClass>> {
+    async fn fetch_group_exercise(&self) -> Result<GroupExerciseSchedule> {
         let http = &self.http;
         self.cache
             .get_or_fetch("recreation:group_exercise", 3600, || {

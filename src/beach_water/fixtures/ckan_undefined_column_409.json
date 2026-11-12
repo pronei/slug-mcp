@@ -1,0 +1,21 @@
+{
+  "help": "https://publish.data.ca.gov/api/3/action/help_show?name=datastore_search_sql",
+  "error": {
+    "query": [
+      "(psycopg2.errors.UndefinedColumn) column \"30DayGeoMean\" does not exist\nLINE 1: SELECT * FROM (SELECT \"30DayGeoMean\" FROM \"15a63495-8d9f-4a4...\n                              ^\n\n[SQL: SELECT * FROM (SELECT \"30DayGeoMean\" FROM \"15a63495-8d9f-4a49-b43a-3092ef3106b9\" LIMIT 1) AS blah LIMIT 32001 ;]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+    ],
+    "info": {
+      "statement": [
+        "SELECT * FROM (SELECT \"30DayGeoMean\" FROM \"15a63495-8d9f-4a49-b43a-3092ef3106b9\" LIMIT 1) AS blah LIMIT 32001 ;"
+      ],
+      "params": [
+        {}
+      ],
+      "orig": [
+        "column \"30DayGeoMean\" does not exist\nLINE 1: SELECT * FROM (SELECT \"30DayGeoMean\" FROM \"15a63495-8d9f-4a4...\n                              ^\n"
+      ]
+    },
+    "__type": "Validation Error"
+  },
+  "success": false
+}

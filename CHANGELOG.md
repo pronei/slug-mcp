@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed — upstream drift (2026-11-12)
+- **`get_air_quality`**: AirNow retired its ZIP-code, lat/long and forecast web services on 2026-10-01, so every call returned 410 Gone. The ZIP is now geocoded through Open-Meteo (cached a day) and observations come from the bounding-box data service (`/aq/data/?BBOX=…`). Each pollutant reports the nearest monitor inside `distance_miles` from the last three hours, with the site name and distance, in the ZIP's local time.
+- **`get_beach_water_quality`**: the BeachWatch republish renamed `30DayGeoMean` to `GeoMean_30Day`, and the query failed with 409. The tool reads the new column and adds the new `Count_30Day` and `GeoMean_6Week` columns. It now filters on the Santa Cruz County project, because the `O%` station-code filter also matched Orange, San Diego, San Luis Obispo and San Francisco beaches. A CKAN error envelope on a non-2xx response is reported with its Postgres message, for example `column "30DayGeoMean" does not exist`.
+- **`get_group_exercise_classes`**: the tool scrapes the goslugs.com hub page, which always shows the current term. It reads the term from the hub's one unlinked label, so it no longer serves the pinned Spring 2026 schedule. Cells that stack two classes now give one entry each (Fall 2026: 40 classes, up from 27, and each class has its own room). An empty program link in front of the real one no longer drops the class.
+- **`get_upcoming_events` / `search_events`**: Tribe titles, venues, organizers, categories, tags and costs are decoded from HTML (`&#8211;` → –, `&amp;` → &). Descriptions are converted the same way, so entities no longer reach the model.
+
 ### Changed — MCP 2026-07-28 conformance (2026-10-19)
 - **rmcp 3.2 → 3.5.1**: `tools/list` now carries the `ttlMs` / `cacheScope` hints that 2026-07-28 makes required, and explicit-port entries in the Origin allow-list match origins that omit the default port. `get_info` returns `ServerConfig`; the `ServerInfo` alias is deprecated.
 - **Tool titles and annotations**: every tool has a display `title` and explicit hints. The 54 public tools are `readOnlyHint: true, openWorldHint: true`. Of the auth tools, `login` (opens a browser, saves a session file) and `authenticate` (stores a token for the connection) are marked as changing state, `check_auth` as read-only and local, and `get_meal_balance` as read-only and open-world.

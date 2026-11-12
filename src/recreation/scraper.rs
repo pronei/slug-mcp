@@ -14,7 +14,12 @@ selectors! {
     SEL_TD => "td",
     SEL_TR => "tr",
     SEL_PROGRAM_LINK => "a[href*=\"GetProgramDetails\"]",
+    SEL_LINK => "a",
 }
+
+static TERM_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^(fall|winter|spring|summer)\s+(20\d\d)$").expect("hardcoded regex")
+});
 
 static TIME_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d{1,2}:\d{2}[ap])").expect("hardcoded regex"));
@@ -500,30 +505,39 @@ fn entry_for(appt: &Appointment, start: NaiveDateTime, end: NaiveDateTime) -> Sc
 
 // ───── Group Exercise Classes ─────
 
-// Term-pinned URL: goslugs.com posts each term's schedule at a new dated path
-// and had published no Summer/Fall 2026 edition as of 2026-07 — this Spring
-// 2026 page is still the newest (it 200s and links only fall25/winter26/
-// spring26 siblings). Bump the path when a new term page appears.
-const GROUP_EXERCISE_URL: &str =
-    "https://goslugs.com/sports/2026/2/26/groupexercise_schedules_spring26";
+// The hub always shows the current term; goslugs.com moves past terms to
+// suffixed pages (`_summer26`) linked from the hub's term row.
+const GROUP_EXERCISE_URL: &str = "https://goslugs.com/sports/2025/8/6/groupexercise_schedules";
 
-/// Term label derived from the schedule URL slug ("..._spring26" -> "Spring
-/// 2026"), so the header can never claim a term the data isn't from.
-pub fn term_from_url(url: &str) -> Option<String> {
-    let slug = url.rsplit('_').next()?;
-    let cut = slug.find(|c: char| c.is_ascii_digit())?;
-    let (name, yy) = slug.split_at(cut);
-    if name.is_empty() || yy.len() != 2 || !yy.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    let mut chars = name.chars();
+/// "fall 2026" / "FALL 2026" -> "Fall 2026"; `None` unless the whole string is a term.
+fn normalize_term(text: &str) -> Option<String> {
+    let caps = TERM_RE.captures(text.trim())?;
+    let season = caps[1].to_ascii_lowercase();
+    let mut chars = season.chars();
     let first = chars.next()?.to_ascii_uppercase();
-    Some(format!("{first}{} 20{yy}", chars.as_str()))
+    Some(format!("{first}{} {}", chars.as_str(), &caps[2]))
 }
 
-/// The term of the schedule page currently scraped.
-pub fn group_exercise_term() -> String {
-    term_from_url(GROUP_EXERCISE_URL).unwrap_or_else(|| "term unknown".to_string())
+/// The term the hub page shows. Its "Fall 2026 | <a>Winter 2026</a> | …" row
+/// links every other term, so the current one is the row's only unlinked
+/// label. Falls back to a bare term heading such as `<strong>FALL 2026</strong>`.
+fn term_from_hub(document: &Html) -> Option<String> {
+    let term_rows = document
+        .select(&SEL_LINK)
+        .filter(|a| normalize_term(&a.text().collect::<String>()).is_some())
+        .filter_map(|a| a.parent());
+    for row in term_rows {
+        for child in row.children() {
+            if let Some(text) = child.value().as_text()
+                && let Some(term) = text.split('|').find_map(normalize_term)
+            {
+                return Some(term);
+            }
+        }
+    }
+    document
+        .select(&SEL_STRONG)
+        .find_map(|el| normalize_term(&el.text().collect::<String>()))
 }
 
 /// Location abbreviation expansion.
@@ -560,24 +574,44 @@ impl GroupExerciseClass {
     }
 }
 
-pub async fn scrape_group_exercise(client: &reqwest::Client) -> Result<Vec<GroupExerciseClass>> {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GroupExerciseSchedule {
+    /// `None` when the hub page carries no recognizable term label.
+    pub term: Option<String>,
+    pub classes: Vec<GroupExerciseClass>,
+}
+
+pub async fn scrape_group_exercise(client: &reqwest::Client) -> Result<GroupExerciseSchedule> {
     let resp = client
         .get(GROUP_EXERCISE_URL)
         .send()
         .await
-        .context("Failed to fetch group exercise schedule")?;
+        .context("Failed to fetch group exercise schedule")?
+        .error_for_status()
+        .context("goslugs.com group exercise page")?;
 
     let html = resp
         .text()
         .await
         .context("Failed to read group exercise body")?;
 
-    Ok(parse_group_exercise(&html))
+    Ok(parse_group_exercise_page(&html))
 }
 
-fn parse_group_exercise(html: &str) -> Vec<GroupExerciseClass> {
+fn parse_group_exercise_page(html: &str) -> GroupExerciseSchedule {
     let document = Html::parse_document(html);
+    GroupExerciseSchedule {
+        term: term_from_hub(&document),
+        classes: classes_from_document(&document),
+    }
+}
 
+#[cfg(test)]
+fn parse_group_exercise(html: &str) -> Vec<GroupExerciseClass> {
+    classes_from_document(&Html::parse_document(html))
+}
+
+fn classes_from_document(document: &Html) -> Vec<GroupExerciseClass> {
     // Day names we expect as column headers (the page uses "MONDAYS", "TUESDAYS", etc.)
     let day_names = [
         "Monday",
@@ -628,75 +662,130 @@ fn parse_group_exercise(html: &str) -> Vec<GroupExerciseClass> {
 
     let mut classes = Vec::new();
 
-    // Parse data rows after the header. Each cell has at most one class entry.
     // The real HTML nests class names in <strong><span>NAME</span></strong> inside
     // the <a> tag, and uses "w/INSTRUCTOR" and "@ LOCATION" in surrounding text.
     for row in all_rows.iter().skip(header_row_idx + 1) {
         for &(col_idx, ref day) in &day_columns {
             if let Some(cell) = row.get(col_idx) {
-                let link = match cell.select(&SEL_PROGRAM_LINK).next() {
-                    Some(l) => l,
-                    None => continue,
-                };
-
-                let reg_url = link.value().attr("href").map(String::from);
-                let class_name: String = link
-                    .text()
-                    .collect::<String>()
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ");
-
-                if class_name.is_empty() {
-                    continue;
+                for entry in cell_entries(*cell) {
+                    classes.push(GroupExerciseClass {
+                        day: day.clone(),
+                        location_full: expand_location(&entry.location).to_string(),
+                        name: entry.name,
+                        time: entry.time,
+                        instructor: entry.instructor,
+                        location: entry.location,
+                        registration_url: entry.registration_url,
+                    });
                 }
-
-                // Extract time, instructor, and location from the cell's full text.
-                let full_text: String = cell
-                    .text()
-                    .collect::<String>()
-                    .chars()
-                    .map(|c| if c == '\n' { ' ' } else { c })
-                    .collect();
-                // Collapse runs of whitespace
-                let full_text = full_text.split_whitespace().collect::<Vec<_>>().join(" ");
-
-                let time = TIME_RE
-                    .find(&full_text)
-                    .map(|m| m.as_str().to_string())
-                    .unwrap_or_default();
-
-                // Instructor: text between "w/" and "@" (or end of string)
-                let instructor = full_text
-                    .find("w/")
-                    .map(|i| {
-                        let after = &full_text[i + 2..];
-                        let end = after.find('@').unwrap_or(after.len());
-                        after[..end].trim().to_string()
-                    })
-                    .unwrap_or_default();
-
-                // Location: word after "@"
-                let location = full_text
-                    .rfind('@')
-                    .map(|i| full_text[i + 1..].split_whitespace().next().unwrap_or(""))
-                    .unwrap_or("")
-                    .to_string();
-
-                classes.push(GroupExerciseClass {
-                    name: class_name,
-                    day: day.clone(),
-                    time,
-                    instructor,
-                    location_full: expand_location(&location).to_string(),
-                    location,
-                    registration_url: reg_url,
-                });
             }
         }
     }
 
     classes
+}
+
+struct CellEntry {
+    name: String,
+    time: String,
+    instructor: String,
+    location: String,
+    registration_url: Option<String>,
+}
+
+fn collapse_ws(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A schedule cell holds one class or, since Fall 2026, several stacked ones,
+/// each starting at its time ("12:00p MAT PILATES w/Padma @ DNC 12:00p …").
+/// Splitting the cell text at time tokens keeps each class's name, instructor
+/// and room together; a class name can span several program links.
+fn cell_entries(cell: scraper::ElementRef) -> Vec<CellEntry> {
+    let mut text = String::new();
+    // (byte range in `text`, href) for text inside a program link.
+    let mut link_spans: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    for node in cell.descendants() {
+        let Some(t) = node.value().as_text() else {
+            continue;
+        };
+        let start = text.len();
+        text.push_str(t);
+        let link = node
+            .ancestors()
+            .filter_map(scraper::ElementRef::wrap)
+            .take_while(|el| el.id() != cell.id())
+            .find(|el| SEL_PROGRAM_LINK.matches(el));
+        if let Some(a) = link
+            && !t.trim().is_empty()
+        {
+            let href = a.value().attr("href").unwrap_or_default().to_string();
+            link_spans.push((start..text.len(), href));
+        }
+    }
+    if link_spans.is_empty() {
+        return Vec::new();
+    }
+
+    let mut bounds: Vec<usize> = TIME_RE.find_iter(&text).map(|m| m.start()).collect();
+    if bounds.first() != Some(&0) {
+        // Text before the first time belongs to the first class.
+        if bounds.is_empty() {
+            bounds.push(0);
+        } else {
+            bounds[0] = 0;
+        }
+    }
+    bounds.push(text.len());
+
+    let mut entries = Vec::new();
+    for w in bounds.windows(2) {
+        let seg = w[0]..w[1];
+        let in_seg: Vec<&(std::ops::Range<usize>, String)> = link_spans
+            .iter()
+            .filter(|(r, _)| r.start >= seg.start && r.start < seg.end)
+            .collect();
+        let Some((_, href)) = in_seg.first() else {
+            continue;
+        };
+        let name = collapse_ws(
+            &in_seg
+                .iter()
+                .map(|(r, _)| &text[r.clone()])
+                .collect::<String>(),
+        );
+        if name.is_empty() {
+            continue;
+        }
+        let seg_text = collapse_ws(&text[seg]);
+        let time = TIME_RE
+            .find(&seg_text)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
+        // Instructor: text between "w/" and "@" (or end of segment).
+        let instructor = seg_text
+            .find("w/")
+            .map(|i| {
+                let after = &seg_text[i + 2..];
+                let end = after.find('@').unwrap_or(after.len());
+                after[..end].trim().to_string()
+            })
+            .unwrap_or_default();
+        // Location: word after "@".
+        let location = seg_text
+            .rfind('@')
+            .map(|i| seg_text[i + 1..].split_whitespace().next().unwrap_or(""))
+            .unwrap_or("")
+            .to_string();
+        entries.push(CellEntry {
+            name,
+            time,
+            instructor,
+            location,
+            registration_url: Some(href.clone()).filter(|h| !h.is_empty()),
+        });
+    }
+    entries
 }
 
 #[cfg(test)]
@@ -1081,22 +1170,88 @@ mod audit_tests {
         day(y, m, d).and_hms_opt(h, min, 0).unwrap()
     }
 
+    const HUB_FIXTURE: &str = include_str!("fixtures/group_exercise_hub.html");
+
     #[test]
-    fn term_is_derived_from_the_url_slug() {
+    fn hub_term_is_the_unlinked_label() {
+        let schedule = parse_group_exercise_page(HUB_FIXTURE);
+        assert_eq!(schedule.term.as_deref(), Some("Fall 2026"));
+    }
+
+    #[test]
+    fn hub_fixture_yields_the_current_schedule() {
+        let schedule = parse_group_exercise_page(HUB_FIXTURE);
+        // One entry per time slot in the table, including stacked cells.
+        assert_eq!(schedule.classes.len(), 40);
+        let yoga = schedule
+            .classes
+            .iter()
+            .find(|c| c.name == "SUNRISE YOGA" && c.day == "Tuesday")
+            .expect("Tuesday sunrise yoga");
+        assert_eq!(yoga.time, "7:30a");
+        assert_eq!(yoga.instructor, "Padma");
+        assert_eq!(yoga.location_full, "Martial Arts Studio");
+    }
+
+    #[test]
+    fn stacked_cell_yields_one_entry_per_class() {
+        let schedule = parse_group_exercise_page(HUB_FIXTURE);
+        let find = |day: &str, name: &str, who: &str| {
+            schedule
+                .classes
+                .iter()
+                .find(|c| c.day == day && c.name == name && c.instructor == who)
+                .unwrap_or_else(|| panic!("{day} {name} w/{who}"))
+        };
+        let pilates = find("Tuesday", "MAT PILATES", "Padma");
         assert_eq!(
-            term_from_url("https://goslugs.com/sports/2026/2/26/groupexercise_schedules_spring26")
-                .as_deref(),
-            Some("Spring 2026")
+            (pilates.time.as_str(), pilates.location.as_str()),
+            ("12:00p", "DNC")
         );
+        let cycling = find("Tuesday", "INDOOR CYCLING", "Mireya");
         assert_eq!(
-            term_from_url("https://goslugs.com/x/groupexercise_schedules_fall26").as_deref(),
-            Some("Fall 2026")
+            (cycling.time.as_str(), cycling.location.as_str()),
+            ("12:00p", "ACT")
         );
+        // A name split across two program links stays one class.
+        let core = find("Monday", "CORE CONDITIONING", "Isabella");
         assert_eq!(
-            term_from_url("https://goslugs.com/x/groupexercise_schedules_winter27").as_deref(),
-            Some("Winter 2027")
+            (core.time.as_str(), core.location.as_str()),
+            ("6:45p", "DNC")
         );
-        assert_eq!(term_from_url("https://goslugs.com/x/schedule"), None);
+        assert!(
+            core.registration_url
+                .as_deref()
+                .unwrap()
+                .contains("GetProgramDetails")
+        );
+        // An empty program link ahead of the real one must not swallow the class.
+        let power = find("Tuesday", "POWER YOGA", "Padma");
+        assert!(
+            power
+                .registration_url
+                .as_deref()
+                .unwrap()
+                .contains("db7e2b6c")
+        );
+    }
+
+    #[test]
+    fn term_moves_with_the_unlinked_label() {
+        let html = r#"<p><span><a href="/x_fall26">Fall 2026</a> | Winter 2027 | <a href="/x_spring26">Spring 2026</a></span></p>"#;
+        let schedule = parse_group_exercise_page(html);
+        assert_eq!(schedule.term.as_deref(), Some("Winter 2027"));
+    }
+
+    #[test]
+    fn term_falls_back_to_heading_then_none() {
+        let heading = r#"<h2><span><strong>SPRING 2027</strong></span></h2>"#;
+        assert_eq!(
+            parse_group_exercise_page(heading).term.as_deref(),
+            Some("Spring 2027")
+        );
+        let bare = "<html><body><p>Fall into fitness | 2026</p></body></html>";
+        assert_eq!(parse_group_exercise_page(bare).term, None);
     }
 
     #[test]

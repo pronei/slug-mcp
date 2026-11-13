@@ -28,6 +28,30 @@ fn validate_event_category(category: &str, slugs: &[String]) -> Result<()> {
     )))
 }
 
+// Tribe's default (and its `start_date`) is day-granular, so by evening the
+// list leads with events that ended that morning. These filters take a time.
+#[derive(Clone, Copy)]
+enum Window {
+    /// Starts after now: what `get_upcoming_events` promises.
+    StartsLater,
+    /// Hasn't ended yet, so a search still finds an exhibit that's running.
+    NotYetEnded,
+}
+
+impl Window {
+    fn param(self) -> &'static str {
+        match self {
+            Window::StartsLater => "starts_after",
+            Window::NotYetEnded => "ends_after",
+        }
+    }
+}
+
+/// Tribe compares against the site's local (Pacific) wall-clock time.
+fn tribe_timestamp(now: chrono::DateTime<chrono_tz::Tz>) -> String {
+    now.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 // ─── Request types ───
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -81,11 +105,23 @@ impl EventsService {
         category: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Vec<TribeEvent>> {
+        self.fetch_tribe(query, category, limit, Window::NotYetEnded)
+            .await
+    }
+
+    async fn fetch_tribe(
+        &self,
+        query: Option<&str>,
+        category: Option<&str>,
+        limit: Option<u32>,
+        window: Window,
+    ) -> Result<Vec<TribeEvent>> {
         let limit = limit.unwrap_or(10).min(50);
         let limit_str = limit.to_string();
 
         let cache_key = format!(
-            "events:tribe:{}:{}:{}",
+            "events:tribe:{}:{}:{}:{}",
+            window.param(),
             query.unwrap_or(""),
             category.unwrap_or(""),
             limit
@@ -109,7 +145,9 @@ impl EventsService {
         let events: Vec<TribeEvent> = self
             .cache
             .get_or_fetch(&cache_key, 900, || async {
-                let mut params: Vec<(&str, &str)> = vec![("per_page", &limit_str)];
+                let now = tribe_timestamp(crate::util::now_pacific());
+                let mut params: Vec<(&str, &str)> =
+                    vec![("per_page", &limit_str), (window.param(), &now)];
                 if let Some(q) = query {
                     params.push(("search", q));
                 }
@@ -126,7 +164,8 @@ impl EventsService {
 
     /// Get upcoming UCSC campus events.
     pub async fn get_upcoming_events(&self, limit: u32) -> Result<Vec<TribeEvent>> {
-        self.search_events(None, None, Some(limit)).await
+        self.fetch_tribe(None, None, Some(limit), Window::StartsLater)
+            .await
     }
 
     /// Search Eventbrite for events around a location (default: Santa Cruz, CA).
@@ -167,6 +206,23 @@ impl EventsService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn timestamp_is_pacific_wall_clock() {
+        // 05:45 UTC on Nov 13 is 21:45 the evening before in Santa Cruz.
+        let utc = chrono::Utc
+            .with_ymd_and_hms(2026, 11, 13, 5, 45, 23)
+            .unwrap();
+        let pacific = utc.with_timezone(&chrono_tz::US::Pacific);
+        assert_eq!(tribe_timestamp(pacific), "2026-11-12 21:45:23");
+    }
+
+    #[test]
+    fn upcoming_and_search_use_time_aware_filters() {
+        assert_eq!(Window::StartsLater.param(), "starts_after");
+        assert_eq!(Window::NotYetEnded.param(), "ends_after");
+    }
 
     fn slugs() -> Vec<String> {
         ["workshop", "lectures-presentations", "seminars", "exhibits"]

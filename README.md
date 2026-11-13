@@ -59,7 +59,8 @@ Real questions that come up living and studying in Santa Cruz — each one threa
 | **Weather** | NOAA NWS 7-day forecasts and active alerts for coastal (CAZ529) and mountains (CAZ512) zones |
 | **Surf & Marine** | Open-Meteo marine forecasts and surf conditions for Steamer Lane, Pleasure Point, Cowell's, Natural Bridges, The Hook, Manresa; NDBC buoy observations and CDIP waverider swell spectra; NOAA tide predictions |
 | **Beach Water Quality** | CA BeachWatch bacteria monitoring (Enterococcus, E. coli, total coliform) for 24+ Santa Cruz County beaches |
-| **Traffic** | CHP incidents and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101 |
+| **Traffic** | CHP incidents and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101; live Caltrans traffic camera images on Hwy 1 and Hwy 17 |
+| **Bike Share** | Santa Cruz BCycle e-bikes and open docks per station, by name or nearest to a place (campus docks leave at the end of 2026) |
 | **Wildfires & Air** | NASA FIRMS satellite fire detections for SC County, AirNow current AQI, Open-Meteo air-quality and pollen forecasts |
 | **Outdoors** | OpenStreetMap trails, peaks, viewpoints, amenities; OpenBeta climbing routes; National Park Service info |
 | **Sky & Earth** | Sun/moon/twilight + UV index; NOAA SWPC space weather (Kp, storm scales, solar wind); USGS earthquakes; USGS real-time stream conditions; iNaturalist + eBird species observations |

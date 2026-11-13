@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added — traffic cameras and bike share (2026-11-13)
+- **`get_traffic_cameras`**: Caltrans District 5 cameras in Santa Cruz County (22 on Hwy 1, 4 on Hwy 17), each with a link to its current still image. Out-of-service cameras are listed and flagged. Optional `route` filter.
+- **`get_bike_share`**: live Santa Cruz BCycle availability from the public GBFS feed: e-bikes and open docks per station, by station name or nearest to a landmark, station or `lat,lon`, with a `need` filter for a bike or an open dock. UCSC ended its BCycle contract, so once the campus docks leave the feed, campus queries fall back to the nearest city stations.
+- Route filters on `get_lane_closures` and `get_traffic_summary` also accept "Highway 17", "Route 17" and "CA-1".
+- The public build now has 56 tools (60 with auth).
+
 ### Fixed — upstream drift (2026-11-12)
 - **`get_air_quality`**: AirNow retired its ZIP-code, lat/long and forecast web services on 2026-10-01, so every call returned 410 Gone. The ZIP is now geocoded through Open-Meteo (cached a day) and observations come from the bounding-box data service (`/aq/data/?BBOX=…`). Each pollutant reports the nearest monitor inside `distance_miles` from the last three hours, with the site name and distance, in the ZIP's local time.
 - **`get_beach_water_quality`**: the BeachWatch republish renamed `30DayGeoMean` to `GeoMean_30Day`, and the query failed with 409. The tool reads the new column and adds the new `Count_30Day` and `GeoMean_6Week` columns. It now filters on the Santa Cruz County project, because the `O%` station-code filter also matched Orange, San Diego, San Luis Obispo and San Francisco beaches. A CKAN error envelope on a non-2xx response is reported with its Postgres message, for example `column "30DayGeoMean" does not exist`.

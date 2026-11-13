@@ -49,9 +49,7 @@ impl<'a> FuzzyMatcher<'a> {
     }
 
     /// Require matches to land at word boundaries (start/end of string or non-word
-    /// character). Prevents `"plan"` matching `"planet"`. Currently unused at
-    /// call sites — kept as part of the matcher's public API.
-    #[allow(dead_code)]
+    /// character). Prevents `"plan"` matching `"planet"`.
     pub fn word_boundary(mut self) -> Self {
         self.word_boundary = true;
         self

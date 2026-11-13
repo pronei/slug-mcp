@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::util::now_pacific;
+use crate::util::{haversine_miles, now_pacific};
 use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -193,15 +193,6 @@ fn bounding_box(lat: f64, lon: f64, miles: f64) -> (f64, f64, f64, f64) {
         (lon + dlon).min(180.0),
         (lat + dlat).min(90.0),
     )
-}
-
-fn haversine_miles(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    const EARTH_RADIUS_MILES: f64 = 3958.8;
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let dp = (lat2 - lat1).to_radians();
-    let dl = (lon2 - lon1).to_radians();
-    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
-    2.0 * EARTH_RADIUS_MILES * a.sqrt().asin()
 }
 
 async fn fetch_airnow_bbox(

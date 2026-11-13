@@ -1,0 +1,436 @@
+{
+ "data": [
+  {
+   "cctv": {
+    "index": "1",
+    "recordTimestamp": {
+     "recordDate": "2025-02-27",
+     "recordTime": "12:31:35",
+     "recordEpoch": "1740688295"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "US-101 : North Main Street",
+     "nearbyPlace": "Salinas",
+     "longitude": "-121.653231",
+     "latitude": "36.687188",
+     "elevation": "52",
+     "direction": "South",
+     "county": "Monterey",
+     "route": "US-101",
+     "routeSuffix": "",
+     "postmilePrefix": "R",
+     "postmile": "88.28",
+     "alignment": "",
+     "milepost": "328.5"
+    },
+    "inService": "true",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/101atMainSt-Route183.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/us101northmainstreet.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101northmainstreet\/previous\/us101northmainstreet-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "20",
+    "recordTimestamp": {
+     "recordDate": "2021-06-28",
+     "recordTime": "16:41:39",
+     "recordEpoch": "1624923699"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "SR-1 : East of Morrissey Blvd",
+     "nearbyPlace": "Santa Cruz",
+     "longitude": "-121.998833",
+     "latitude": "36.98836",
+     "elevation": "101",
+     "direction": "North",
+     "county": "Santa Cruz",
+     "route": "SR-1",
+     "routeSuffix": "",
+     "postmilePrefix": "",
+     "postmile": "15.57",
+     "alignment": "",
+     "milepost": "357.97"
+    },
+    "inService": "true",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/1atEastofMorriseyBlvd.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/sr1eastofmorrisseyblvd.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1eastofmorrisseyblvd\/previous\/sr1eastofmorrisseyblvd-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "22",
+    "recordTimestamp": {
+     "recordDate": "2020-02-18",
+     "recordTime": "16:47:49",
+     "recordEpoch": "1582073269"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "SR-17 : Fishhook",
+     "nearbyPlace": "Santa Cruz",
+     "longitude": "-122.019756",
+     "latitude": "36.992045",
+     "elevation": "131",
+     "direction": "North",
+     "county": "Santa Cruz",
+     "route": "SR-17",
+     "routeSuffix": "",
+     "postmilePrefix": "",
+     "postmile": "0.2",
+     "alignment": "",
+     "milepost": "0.2"
+    },
+    "inService": "true",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/17atPasatiempoDr.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/sr17fishhook.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17fishhook\/previous\/sr17fishhook-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "28",
+    "recordTimestamp": {
+     "recordDate": "2022-10-21",
+     "recordTime": "07:42:07",
+     "recordEpoch": "1666363327"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "SR-1 : Salinas Road",
+     "nearbyPlace": "Watsonville",
+     "longitude": "-121.769591",
+     "latitude": "36.869708",
+     "elevation": "150",
+     "direction": "North",
+     "county": "Monterey",
+     "route": "SR-1",
+     "routeSuffix": "",
+     "postmilePrefix": "T",
+     "postmile": "101.04",
+     "alignment": "",
+     "milepost": "342.81"
+    },
+    "inService": "true",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/1atSalinasRd.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/sr1salinasroad.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1salinasroad\/previous\/sr1salinasroad-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "37",
+    "recordTimestamp": {
+     "recordDate": "2026-04-28",
+     "recordTime": "13:30:13",
+     "recordEpoch": "1777408213"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "US-101 : Cabrillo Blvd",
+     "nearbyPlace": "Santa Barbara",
+     "longitude": "-119.659076",
+     "latitude": "34.423288",
+     "elevation": "32",
+     "direction": "North",
+     "county": "Santa Barbara",
+     "route": "US-101",
+     "routeSuffix": "",
+     "postmilePrefix": "",
+     "postmile": "11.69",
+     "alignment": "",
+     "milepost": "94.6"
+    },
+    "inService": "false",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/101atWestofCabrilloBlvd.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/us101cabrilloblvd.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/us101cabrilloblvd\/previous\/us101cabrilloblvd-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "48",
+    "recordTimestamp": {
+     "recordDate": "2022-11-14",
+     "recordTime": "10:28:42",
+     "recordEpoch": "1668450522"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "SR-1 : SR-129 Northbound Exit",
+     "nearbyPlace": "Watsonville",
+     "longitude": "-121.773172",
+     "latitude": "36.890663",
+     "elevation": "19",
+     "direction": "North",
+     "county": "Santa Cruz",
+     "route": "SR-1",
+     "routeSuffix": "",
+     "postmilePrefix": "R",
+     "postmile": "0.46",
+     "alignment": "",
+     "milepost": "342.66"
+    },
+    "inService": "true",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/1atRoute129NBExit.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/sr1sr129northboundexit.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1sr129northboundexit\/previous\/sr1sr129northboundexit-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "72",
+    "recordTimestamp": {
+     "recordDate": "2025-06-10",
+     "recordTime": "06:54:25",
+     "recordEpoch": "1749563665"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "SR-1 : State Park Drive",
+     "nearbyPlace": "Aptos",
+     "longitude": "-121.914096",
+     "latitude": "36.979707",
+     "elevation": "160",
+     "direction": "South",
+     "county": "Santa Cruz",
+     "route": "SR-1",
+     "routeSuffix": "",
+     "postmilePrefix": "",
+     "postmile": "10.76",
+     "alignment": "",
+     "milepost": "353.16"
+    },
+    "inService": "false",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/1atStateParkDr.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/sr1stateparkdrive.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1stateparkdrive\/previous\/sr1stateparkdrive-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "83",
+    "recordTimestamp": {
+     "recordDate": "2026-04-29",
+     "recordTime": "12:51:16",
+     "recordEpoch": "1777492276"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "SR-1 :  Between Park Ave and Bay Ave",
+     "nearbyPlace": "Capitola",
+     "longitude": "-121.948635",
+     "latitude": "36.983834",
+     "elevation": "114",
+     "direction": "South",
+     "county": "Santa Cruz",
+     "route": "SR-1",
+     "routeSuffix": "",
+     "postmilePrefix": "",
+     "postmile": "12.81",
+     "alignment": "",
+     "milepost": "355.21"
+    },
+    "inService": "false",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/1atEofCapitolaAve.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/sr1betweenparkaveandbayave.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr1betweenparkaveandbayave\/previous\/sr1betweenparkaveandbayave-12.jpg"
+     }
+    }
+   }
+  },
+  {
+   "cctv": {
+    "index": "120",
+    "recordTimestamp": {
+     "recordDate": "2024-04-23",
+     "recordTime": "09:02:15",
+     "recordEpoch": "1713888135"
+    },
+    "location": {
+     "district": "5",
+     "locationName": "SR-17 : South of Summit Road",
+     "nearbyPlace": "Los Gatos",
+     "longitude": "-121.978649",
+     "latitude": "37.130361",
+     "elevation": "1738",
+     "direction": "South",
+     "county": "Santa Cruz",
+     "route": "SR-17",
+     "routeSuffix": "",
+     "postmilePrefix": "",
+     "postmile": "11.54",
+     "alignment": "",
+     "milepost": "11.54"
+    },
+    "inService": "true",
+    "imageData": {
+     "imageDescription": "",
+     "streamingVideoURL": "https:\/\/wzmedia.dot.ca.gov\/D5\/17SouthoftheSummit.stream\/playlist.m3u8",
+     "static": {
+      "currentImageUpdateFrequency": "2",
+      "currentImageURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/sr17southofsummitroad.jpg",
+      "referenceImageUpdateFrequency": "15",
+      "referenceImage1UpdateAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-1.jpg",
+      "referenceImage2UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-2.jpg",
+      "referenceImage3UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-3.jpg",
+      "referenceImage4UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-4.jpg",
+      "referenceImage5UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-5.jpg",
+      "referenceImage6UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-6.jpg",
+      "referenceImage7UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-7.jpg",
+      "referenceImage8UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-8.jpg",
+      "referenceImage9UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-9.jpg",
+      "referenceImage10UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-10.jpg",
+      "referenceImage11UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-11.jpg",
+      "referenceImage12UpdatesAgoURL": "https:\/\/cwwp2.dot.ca.gov\/data\/d5\/cctv\/image\/sr17southofsummitroad\/previous\/sr17southofsummitroad-12.jpg"
+     }
+    }
+   }
+  }
+ ]
+}

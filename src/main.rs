@@ -15,6 +15,7 @@ mod astronomy;
 #[cfg(feature = "auth")]
 mod auth;
 mod beach_water;
+mod bike_share;
 mod biodiversity;
 mod buoy;
 mod cache;
@@ -211,6 +212,10 @@ async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
             cache.clone(),
         )),
         biodiversity: biodiversity.clone(),
+        bike_share: Arc::new(bike_share::BikeShareService::new(
+            http.clone(),
+            cache.clone(),
+        )),
         air_quality: Arc::new(air_quality::AirQualityService::new(
             http.clone(),
             cache.clone(),

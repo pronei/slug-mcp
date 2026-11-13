@@ -7,8 +7,12 @@
 //!
 //! The combined "traffic summary" tool fetches both in parallel and gracefully
 //! degrades if either source is unavailable.
+//!
+//! Caltrans CWWP2 District 5 CCTV (JSON) separately backs the traffic-camera
+//! lookup.
 
 pub mod caltrans;
+pub mod cameras;
 pub mod chp;
 
 use std::sync::Arc;
@@ -19,11 +23,18 @@ use serde::Deserialize;
 
 use crate::cache::CacheStore;
 use caltrans::LaneClosure;
+use cameras::TrafficCamera;
 use chp::Incident;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TrafficRequest {
     /// Route number to filter (e.g. "1", "9", "17", "101"). If omitted, shows all Santa Cruz County routes.
+    pub route: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TrafficCamerasRequest {
+    /// Highway to filter by, e.g. "1", "17", "SR-17", "Hwy 17" or "Highway 1". Santa Cruz County's Caltrans cameras are on Hwy 1 and Hwy 17. If omitted, lists every camera in the county.
     pub route: Option<String>,
 }
 
@@ -77,6 +88,20 @@ impl TrafficService {
         };
 
         Ok(format_caltrans(&filtered, route, closures.len()))
+    }
+
+    /// Caltrans D5 traffic cameras in Santa Cruz County, optionally filtered by route.
+    pub async fn get_traffic_cameras(&self, route: Option<&str>) -> Result<String> {
+        match self.load_cameras().await {
+            Ok(cams) => Ok(cameras::format_cameras(&cams, route)),
+            Err(e) => {
+                tracing::warn!("Caltrans CCTV fetch failed: {}", e);
+                Ok(format!(
+                    "⚠ Caltrans D5 traffic cameras temporarily unreachable. Try again in a minute.\n(details: {})",
+                    e
+                ))
+            }
+        }
     }
 
     /// Combined CHP + Caltrans view, fetched in parallel. If one source fails,
@@ -164,6 +189,19 @@ impl TrafficService {
         self.cache
             .get_or_fetch::<Vec<LaneClosure>, _, _>(key, 300, move || async move {
                 caltrans::fetch_sc_closures(&http).await
+            })
+            .await
+    }
+
+    async fn load_cameras(&self) -> Result<Vec<TrafficCamera>> {
+        let key = "traffic:caltrans:d5:cctv:sc:raw";
+        let http = self.http.clone();
+        // The camera list changes only when Caltrans adds, moves or takes down
+        // a camera; image URLs are fixed and serve a fresh frame every couple
+        // of minutes, so a long TTL never makes an image stale.
+        self.cache
+            .get_or_fetch::<Vec<TrafficCamera>, _, _>(key, 6 * 3600, move || async move {
+                cameras::fetch_sc_cameras(&http).await
             })
             .await
     }

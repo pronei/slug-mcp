@@ -1,0 +1,261 @@
+{
+  "last_updated": 1794569946,
+  "ttl": 0,
+  "version": "2.1",
+  "data": {
+    "stations": [
+      {
+        "station_id": "bcycle_santacruz_7434",
+        "num_bikes_available": 18,
+        "num_docks_available": 0,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 18
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7439",
+        "num_bikes_available": 9,
+        "num_docks_available": 7,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 9
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7440",
+        "num_bikes_available": 10,
+        "num_docks_available": 3,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 10
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7512",
+        "num_bikes_available": 5,
+        "num_docks_available": 10,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 5
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7525",
+        "num_bikes_available": 2,
+        "num_docks_available": 18,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 2
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7462",
+        "num_bikes_available": 0,
+        "num_docks_available": 2,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 0
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7544",
+        "num_bikes_available": 6,
+        "num_docks_available": 4,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 6
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7509",
+        "num_bikes_available": 10,
+        "num_docks_available": 2,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 10
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7471",
+        "num_bikes_available": 7,
+        "num_docks_available": 8,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 7
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7485",
+        "num_bikes_available": 0,
+        "num_docks_available": 1,
+        "is_installed": true,
+        "is_renting": false,
+        "is_returning": false,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 0
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_8857",
+        "num_bikes_available": 0,
+        "num_docks_available": 0,
+        "is_installed": true,
+        "is_renting": false,
+        "is_returning": false,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 0
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7716",
+        "num_bikes_available": 3,
+        "num_docks_available": 9,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 3
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7782",
+        "num_bikes_available": 8,
+        "num_docks_available": 12,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 8
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7470",
+        "num_bikes_available": 1,
+        "num_docks_available": 22,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 1
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7613",
+        "num_bikes_available": 5,
+        "num_docks_available": 1,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 5
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7727",
+        "num_bikes_available": 1,
+        "num_docks_available": 2,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 1
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_7737",
+        "num_bikes_available": 5,
+        "num_docks_available": 3,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 5
+        }
+      },
+      {
+        "station_id": "bcycle_santacruz_8823",
+        "num_bikes_available": 0,
+        "num_docks_available": 11,
+        "is_installed": true,
+        "is_renting": true,
+        "is_returning": true,
+        "last_reported": 1794569946,
+        "num_bikes_available_types": {
+          "classic": 0,
+          "smart": 0,
+          "electric": 0
+        }
+      }
+    ]
+  }
+}

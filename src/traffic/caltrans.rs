@@ -196,28 +196,30 @@ pub fn parse_sc_closures(body: &str) -> Result<Vec<LaneClosure>> {
 }
 
 /// Filter closures to those on a specific route. Accepts "1", "9", "17",
-/// "SR-1", "Sr1", "101", "US-101", etc.
+/// "SR-1", "Sr1", "101", "US-101", "Hwy 17", "Highway 1", etc.
 pub fn filter_by_route<'a>(closures: &'a [LaneClosure], route: &str) -> Vec<&'a LaneClosure> {
-    let r = route.trim().to_uppercase();
-    // Normalize candidate matches
-    let bare = r
-        .trim_start_matches("SR-")
-        .trim_start_matches("SR")
-        .trim_start_matches("US-")
-        .trim_start_matches("US")
-        .trim_start_matches("HWY ")
-        .trim_start_matches("HWY")
-        .trim();
     closures
         .iter()
-        .filter(|c| {
-            let route_up = c.route.to_uppercase();
-            route_up == format!("SR-{}", bare)
-                || route_up == format!("US-{}", bare)
-                || route_up == format!("SR{}", bare)
-                || route_up == format!("US{}", bare)
-        })
+        .filter(|c| route_matches(&c.route, route))
         .collect()
+}
+
+/// True when a CWWP2 route field ("SR-17", "US-101") names the route in a
+/// user query ("17", "SR-17", "Sr17", "Hwy 17", "Highway 17", "CA-1").
+pub fn route_matches(feed_route: &str, query: &str) -> bool {
+    let q = query.trim().to_uppercase();
+    let mut bare = q.as_str();
+    for prefix in ["HIGHWAY", "HWY", "ROUTE", "SR", "US", "CA"] {
+        if let Some(rest) = bare.strip_prefix(prefix) {
+            bare = rest;
+            break;
+        }
+    }
+    let bare = bare.trim_start_matches(['-', ' ']).trim();
+    let route_up = feed_route.trim().to_uppercase();
+    ["SR-", "US-", "SR", "US"]
+        .iter()
+        .any(|p| route_up == format!("{p}{bare}"))
 }
 
 #[cfg(test)]
@@ -253,6 +255,34 @@ mod tests {
         let sr17 = filter_by_route(&closures, "17");
         // Fixture is SR-1 only, so SR-17 should yield nothing
         assert!(sr17.is_empty());
+    }
+
+    #[test]
+    fn route_matches_query_spellings() {
+        for q in [
+            "17",
+            " 17 ",
+            "SR-17",
+            "sr17",
+            "Sr 17",
+            "Hwy 17",
+            "hwy17",
+            "Highway 17",
+            "Route 17",
+            "CA-17",
+        ] {
+            assert!(route_matches("SR-17", q), "{q:?} should match SR-17");
+        }
+        assert!(route_matches("US-101", "101"));
+        assert!(route_matches("US-101", "US-101"));
+        assert!(route_matches("US-101", "Highway 101"));
+        // Exact number match: "1" must not leak into SR-17 or SR-129.
+        assert!(!route_matches("SR-17", "1"));
+        assert!(!route_matches("SR-129", "1"));
+        assert!(!route_matches("SR-1", "17"));
+        for q in ["", "  ", "SR", "Highway"] {
+            assert!(!route_matches("SR-1", q), "{q:?} should match nothing");
+        }
     }
 
     #[test]

@@ -55,6 +55,16 @@ pub fn truncate(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Great-circle distance in statute miles between two lat/lon points.
+pub fn haversine_miles(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const EARTH_RADIUS_MILES: f64 = 3958.8;
+    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
+    let dp = (lat2 - lat1).to_radians();
+    let dl = (lon2 - lon1).to_radians();
+    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * EARTH_RADIUS_MILES * a.sqrt().asin()
+}
+
 /// Convert a compass bearing in degrees (0-360, wrapping) to a 16-point cardinal
 /// direction string (e.g. 45° -> "NE"). Used by marine/buoy/tides modules.
 pub fn degrees_to_compass(deg: f64) -> &'static str {

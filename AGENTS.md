@@ -38,11 +38,11 @@ src/
 ├── util/fuzzy.rs  # FuzzyMatcher — case/whitespace-insensitive name matching.
 ├── auth/          # CDP-driven CruzID+Duo login; AES-256-GCM session storage;
 │                  # portable token codec. All gated on `feature = "auth"`.
-└── <service>/     # 28 service modules — see "The pattern" below.
+└── <service>/     # 29 service modules — see "The pattern" below.
 ```
 
 Service modules: `academics`, `air_forecast`, `air_quality`, `astronomy`,
-`beach_water`, `biodiversity`, `buoy`, `classrooms`, `climbing`, `degrees`,
+`beach_water`, `bike_share`, `biodiversity`, `buoy`, `classrooms`, `climbing`, `degrees`,
 `dining`, `earthquakes`, `events`, `fire`, `library`, `marine`, `nps`, `ocean`,
 `outdoors`, `recreation`, `space_weather`, `summer`, `tides`, `traffic`,
 `transit`, `usgs_water`, `wave_buoy`, `weather`.
@@ -177,7 +177,7 @@ Then wire it in three places:
   positions/occupancy and system alerts. Real GTFS-RT predictions (and true
   per-route delays) need a static-GTFS `stops.txt`/`stop_times.txt` loader.
 
-- **The public build exposes 54 tools, not 58.** The Dockerfile builds
+- **The public build exposes 56 tools, not 60.** The Dockerfile builds
   `--no-default-features`, which compiles out the four auth tools.
 
 - **`docs/` is git-ignored.** Local design notes and audit write-ups live there

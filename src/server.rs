@@ -20,6 +20,7 @@ use crate::auth::AuthManager;
 #[cfg(feature = "auth")]
 use crate::auth::session::SessionData;
 use crate::beach_water::{BeachWaterQualityRequest, BeachWaterService};
+use crate::bike_share::{BikeShareRequest, BikeShareService};
 use crate::biodiversity::{
     BiodiversityService, BirdRequest, HistoricBirdRequest, HotspotRequest, NearestBirdRequest,
     SpeciesRequest,
@@ -49,7 +50,7 @@ use crate::recreation::{
 use crate::space_weather::{SpaceWeatherRequest, SpaceWeatherService};
 use crate::summer::{SummerDeadlinesRequest, SummerService};
 use crate::tides::{TidesRequest, TidesService};
-use crate::traffic::{TrafficRequest, TrafficService};
+use crate::traffic::{TrafficCamerasRequest, TrafficRequest, TrafficService};
 use crate::transit::TransitService;
 use crate::usgs_water::{StreamConditionsRequest, UsgsWaterService};
 use crate::wave_buoy::{WaveBuoyRequest, WaveBuoyService};
@@ -95,6 +96,7 @@ pub struct ServiceContext {
     pub wave_buoy: Arc<WaveBuoyService>,
     pub usgs_water: Arc<UsgsWaterService>,
     pub biodiversity: Arc<BiodiversityService>,
+    pub bike_share: Arc<BikeShareService>,
     pub air_quality: Arc<AirQualityService>,
     pub astronomy: Arc<AstronomyService>,
     pub space_weather: Arc<SpaceWeatherService>,
@@ -132,6 +134,7 @@ pub struct SlugMcpServer {
     wave_buoy: Arc<WaveBuoyService>,
     usgs_water: Arc<UsgsWaterService>,
     biodiversity: Arc<BiodiversityService>,
+    bike_share: Arc<BikeShareService>,
     air_quality: Arc<AirQualityService>,
     astronomy: Arc<AstronomyService>,
     space_weather: Arc<SpaceWeatherService>,
@@ -170,6 +173,7 @@ impl SlugMcpServer {
             wave_buoy: ctx.wave_buoy,
             usgs_water: ctx.usgs_water,
             biodiversity: ctx.biodiversity,
+            bike_share: ctx.bike_share,
             air_quality: ctx.air_quality,
             astronomy: ctx.astronomy,
             space_weather: ctx.space_weather,
@@ -980,6 +984,40 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
+            }
+
+            #[tool(
+                title = "Traffic Cameras",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "List Caltrans District 5 traffic cameras in Santa Cruz County (Hwy 1 and Hwy 17) with a link to each camera's current still image and a flag for cameras that are out of service. Optionally filter by route (e.g. '17', 'Hwy 1'). Use this to look at the road before driving; pair with get_traffic_summary for incidents and closures."
+            )]
+            async fn get_traffic_cameras(
+                &self,
+                Parameters(req): Parameters<TrafficCamerasRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                let result = self
+                    .traffic
+                    .get_traffic_cameras(req.route.as_deref())
+                    .await
+                    .map_err(internal_err)?;
+                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
+            }
+
+            // ─── Bike Share Tools ───
+
+            #[tool(
+                title = "Bike Share Availability",
+                annotations(read_only_hint = true, open_world_hint = true),
+                description = "Live Santa Cruz BCycle e-bike share availability: e-bikes ready to rent and open docks per station, from the public GBFS feed. With no arguments, lists the UCSC campus stations. Search by station name, or list the stations nearest a landmark, station or 'lat,lon'; `need` narrows to stations with a bike or with an open dock. UCSC ended its BCycle contract, so campus docks are being removed by the end of 2026; city stations continue. No API key required."
+            )]
+            async fn get_bike_share(
+                &self,
+                Parameters(req): Parameters<BikeShareRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                match self.bike_share.get_bike_share(&req).await {
+                    Ok(text) => Ok(CallToolResult::success(vec![ContentBlock::text(text)])),
+                    Err(e) => caller_or_internal(e),
+                }
             }
 
             // ─── Classroom Tools ───

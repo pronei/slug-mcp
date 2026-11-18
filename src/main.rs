@@ -273,6 +273,80 @@ async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
     }
 }
 
+// The spec allows only an SSE stream or a 405 for GET. rmcp answers a GET
+// whose Accept lacks text/event-stream with 406, which clients probing the
+// endpoint with a plain GET don't expect. rmcp still answers first, so its
+// Host and Origin checks keep their 403s; only its 406 becomes the 405 it
+// already gives HEAD.
+async fn get_without_event_stream_is_405(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::{Method, StatusCode, header};
+    use axum::response::IntoResponse;
+
+    let is_get = request.method() == Method::GET;
+    let response = next.run(request).await;
+    if is_get && response.status() == StatusCode::NOT_ACCEPTABLE {
+        return (
+            StatusCode::METHOD_NOT_ALLOWED,
+            [(header::ALLOW, "GET, POST, DELETE")],
+            "Method Not Allowed",
+        )
+            .into_response();
+    }
+    response
+}
+
+// rmcp logs session creation but not rejections (400/404/406/422), so a
+// client that fails mid-handshake leaves no trace without this line.
+async fn log_request(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if request.uri().path() == "/healthz" {
+        return next.run(request).await;
+    }
+    // Read everything before awaiting: a borrow of the request held across the
+    // await would make the future !Send (axum's Body isn't Sync).
+    let (accept, origin, protocol, user_agent, session) = {
+        let header = |name: &str| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.chars().take(120).collect::<String>())
+                .unwrap_or_else(|| "-".into())
+        };
+        (
+            header("accept"),
+            header("origin"),
+            header("mcp-protocol-version"),
+            header("user-agent"),
+            request.headers().contains_key("mcp-session-id"),
+        )
+    };
+    let method = request.method().clone();
+    let path = request.uri().path().to_owned();
+    let started = std::time::Instant::now();
+
+    let response = next.run(request).await;
+    tracing::info!(
+        target: "slug_mcp::http",
+        %method,
+        %path,
+        status = response.status().as_u16(),
+        ms = started.elapsed().as_millis() as u64,
+        session,
+        ?protocol,
+        ?accept,
+        ?origin,
+        ?user_agent,
+        "request"
+    );
+    response
+}
+
 async fn run_sse(host: std::net::IpAddr, port: u16, ctx: server::ServiceContext) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
@@ -329,11 +403,20 @@ async fn run_sse(host: std::net::IpAddr, port: u16, ctx: server::ServiceContext)
         sse_config,
     );
 
+    // Exact routes, not a nest: a nest hands rmcp every path under /mcp, so an
+    // OAuth discovery probe like /mcp/.well-known/... got 406 instead of the
+    // 404 that tells a client the server has no auth.
+    let mcp = axum::Router::new()
+        .route_service("/mcp", service.clone())
+        .route_service("/mcp/", service)
+        .route_layer(axum::middleware::from_fn(get_without_event_stream_is_405));
+
     let app = axum::Router::new()
         // Liveness probe for Fly's health check. It sits outside /mcp, so the
         // Host allowlist doesn't apply to it.
         .route("/healthz", axum::routing::get(|| async { "ok" }))
-        .nest_service("/mcp", service);
+        .merge(mcp)
+        .layer(axum::middleware::from_fn(log_request));
 
     let addr = std::net::SocketAddr::new(host, port);
     let listener = tokio::net::TcpListener::bind(addr).await?;

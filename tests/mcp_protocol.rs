@@ -473,3 +473,74 @@ async fn http_rejects_request_bodies_over_64_kib() {
     assert_eq!(response.status(), 413);
     server.shutdown().await;
 }
+
+/// A GET on the endpoint may only get an SSE stream or a 405. A GET that can't
+/// take a stream (a plain reachability probe, `Accept: */*`) gets 405, which
+/// clients read as "no server-to-client stream", instead of rmcp's 406.
+#[tokio::test]
+async fn http_get_that_cannot_take_an_event_stream_is_405() {
+    let server = HttpServer::spawn(false).await;
+    let http = reqwest::Client::new();
+    for accept in ["*/*", "application/json"] {
+        let response = http
+            .get(server.mcp_url())
+            .header("Accept", accept)
+            .send()
+            .await
+            .expect("GET /mcp");
+        assert_eq!(response.status(), 405, "GET with Accept {accept}");
+        assert_eq!(
+            response.headers().get("allow").map(|v| v.to_str().unwrap()),
+            Some("GET, POST, DELETE"),
+            "Allow header for Accept {accept}"
+        );
+    }
+    server.shutdown().await;
+}
+
+/// Only `/mcp` is the endpoint. OAuth discovery probes under it, such as
+/// `/mcp/.well-known/openid-configuration`, get the plain 404 that tells a
+/// client the server has no auth, not rmcp's 406.
+#[tokio::test]
+async fn http_paths_below_mcp_are_not_found() {
+    let server = HttpServer::spawn(false).await;
+    for path in [
+        "/mcp/.well-known/oauth-authorization-server",
+        "/mcp/.well-known/openid-configuration",
+        "/mcp/.well-known/oauth-protected-resource",
+        "/mcp/anything",
+    ] {
+        let response = reqwest::get(format!("http://127.0.0.1:{}{path}", server.port))
+            .await
+            .expect("GET");
+        assert_eq!(response.status(), 404, "{path}");
+    }
+    server.shutdown().await;
+}
+
+/// A client configured with a trailing slash still reaches the endpoint.
+#[tokio::test]
+async fn http_serves_mcp_with_a_trailing_slash() {
+    let server = HttpServer::spawn(false).await;
+    let client = common::connect_http(&format!("{}/", server.mcp_url())).await;
+    let tools = client.list_all_tools().await.expect("tools/list at /mcp/");
+    assert_eq!(tools.len(), EXPECTED_TOOL_COUNT);
+    let _ = client.cancel().await;
+    server.shutdown().await;
+}
+
+/// The 405 for a stream-less GET must not bypass the Host and Origin checks:
+/// a cross-site GET is still refused with 403.
+#[tokio::test]
+async fn http_cross_site_get_is_still_403() {
+    let server = HttpServer::spawn(false).await;
+    let response = reqwest::Client::new()
+        .get(server.mcp_url())
+        .header("Accept", "*/*")
+        .header("Origin", "https://evil.example.com")
+        .send()
+        .await
+        .expect("GET /mcp");
+    assert_eq!(response.status(), 403);
+    server.shutdown().await;
+}

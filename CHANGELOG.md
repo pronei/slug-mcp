@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed — Streamable HTTP answers for probing clients (2026-11-18)
+- A `GET /mcp` that doesn't accept `text/event-stream` (a plain probe, `Accept: */*`) now gets `405 Method Not Allowed` with `Allow: GET, POST, DELETE`, the answer the spec gives a client when the server offers it no stream. rmcp answered `406`. rmcp still answers first, so its Host and Origin checks keep their `403`s.
+- Only `/mcp` and `/mcp/` reach rmcp. Paths below it, such as the OAuth discovery probe `/mcp/.well-known/openid-configuration`, now get `404`, which tells a client the server has no auth. rmcp answered `406`.
+- Every `/mcp` request is logged once under `slug_mcp::http`: method, path, status, latency, protocol version, Accept, Origin, User-Agent, and whether a session ID was sent. rmcp logs session creation but not its 400/404/406/422 rejections, so a client that failed mid-handshake left no trace. Gemini Apps Developer Mode did exactly that: it initialized a session and never sent `notifications/initialized`, and Fly's metrics showed a `406` among its requests.
+
 ### Added — traffic cameras and bike share (2026-11-13)
 - **`get_traffic_cameras`**: Caltrans District 5 cameras in Santa Cruz County (22 on Hwy 1, 4 on Hwy 17), each with a link to its current still image. Out-of-service cameras are listed and flagged. Optional `route` filter.
 - **`get_bike_share`**: live Santa Cruz BCycle availability from the public GBFS feed: e-bikes and open docks per station, by station name or nearest to a landmark, station or `lat,lon`, with a `need` filter for a bike or an open dock. UCSC ended its BCycle contract, so once the campus docks leave the feed, campus queries fall back to the nearest city stations.

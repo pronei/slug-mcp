@@ -544,3 +544,52 @@ async fn http_cross_site_get_is_still_403() {
     assert_eq!(response.status(), 403);
     server.shutdown().await;
 }
+
+/// Legacy-session SSE responses carry only JSON-RPC messages: no empty-data
+/// "priming" event (`data:` / `id: 0` / `retry: 3000`). Gemini's connector
+/// aborts on an initialize response that starts with one.
+#[tokio::test]
+async fn http_legacy_sse_responses_have_no_priming_event() {
+    let server = HttpServer::spawn(false).await;
+    let response = reqwest::Client::new()
+        .post(server.mcp_url())
+        .header("Accept", "application/json, text/event-stream")
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": { "name": "mcp-protocol-test", "version": "0" }
+            }
+        }))
+        .send()
+        .await
+        .expect("POST /mcp");
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .map(|v| v.to_str().unwrap()),
+        Some("text/event-stream"),
+        "a 2025-11-25 session should still get SSE"
+    );
+    let body = response.text().await.expect("body");
+    for event in body.split("\n\n").filter(|e| !e.trim().is_empty()) {
+        let data: String = event
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(str::trim)
+            .collect();
+        assert!(!data.is_empty(), "SSE event without data: {event:?}");
+        assert!(
+            !event.lines().any(|line| line.starts_with("retry:")),
+            "SSE event with a retry field: {event:?}"
+        );
+        serde_json::from_str::<serde_json::Value>(&data)
+            .unwrap_or_else(|e| panic!("SSE data is not JSON ({e}): {data:?}"));
+    }
+    server.shutdown().await;
+}

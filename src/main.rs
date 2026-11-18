@@ -352,13 +352,21 @@ async fn run_sse(host: std::net::IpAddr, port: u16, ctx: server::ServiceContext)
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     };
 
-    let session_manager = Arc::new(LocalSessionManager::default());
+    // No SSE priming event: an empty `data:` with `id: 0` / `retry: 3000` that
+    // lets a client resume a dropped stream. Every response here is a single
+    // message, and Gemini's connector stops right after receiving an
+    // initialize response that starts with one. Legacy sessions read this
+    // session-level setting, not the server config's (also cleared below).
+    let mut session_manager = LocalSessionManager::default();
+    session_manager.session_config.sse_retry = None;
+    let session_manager = Arc::new(session_manager);
     // StreamableHttpServerConfig is #[non_exhaustive] — build from Default and
     // set the fields we care about. rmcp 3.x serves protocol 2026-07-28+
     // statelessly (SEP-2567); `legacy_session_mode` keeps Mcp-Session-Id
     // sessions for older protocol versions, which is what current clients use.
     let mut sse_config = StreamableHttpServerConfig::default();
     sse_config.legacy_session_mode = true;
+    sse_config.sse_retry = None;
     // rmcp rejects any inbound `Host` not in `allowed_hosts` (DNS-rebinding
     // protection), defaulting to loopback only. Behind a proxy the Host header
     // is the public domain, so every /mcp request 403s ("Host header is not

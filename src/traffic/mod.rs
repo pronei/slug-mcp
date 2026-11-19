@@ -18,6 +18,8 @@ pub mod chp;
 use std::sync::Arc;
 
 use anyhow::Result;
+use chrono::DateTime;
+use chrono_tz::Tz;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -50,8 +52,8 @@ impl TrafficService {
 
     /// CHP incidents in Santa Cruz County, optionally filtered by route.
     pub async fn get_chp_incidents(&self, route: Option<&str>) -> Result<String> {
-        let incidents = match self.load_chp_incidents().await {
-            Ok(i) => i,
+        let snapshot = match self.load_chp_incidents().await {
+            Ok(s) => s,
             Err(e) => {
                 tracing::warn!("CHP fetch failed: {}", e);
                 return Ok(format!(
@@ -61,12 +63,18 @@ impl TrafficService {
             }
         };
 
+        let incidents = &snapshot.incidents;
         let filtered: Vec<&Incident> = match route {
-            Some(r) => chp::filter_by_route(&incidents, r),
+            Some(r) => chp::filter_by_route(incidents, r),
             None => incidents.iter().collect(),
         };
 
-        Ok(format_chp(&filtered, route, incidents.len()))
+        Ok(format_chp(
+            &filtered,
+            route,
+            incidents.len(),
+            snapshot.as_of,
+        ))
     }
 
     /// Caltrans D5 lane closures in Santa Cruz County, optionally filtered by route.
@@ -120,9 +128,10 @@ impl TrafficService {
         // ─── CHP section ───
         out.push_str("## CHP incidents\n\n");
         match chp_res {
-            Ok(incidents) => {
+            Ok(snapshot) => {
+                let incidents = &snapshot.incidents;
                 let filtered: Vec<&Incident> = match route {
-                    Some(r) => chp::filter_by_route(&incidents, r),
+                    Some(r) => chp::filter_by_route(incidents, r),
                     None => incidents.iter().collect(),
                 };
                 if filtered.is_empty() {
@@ -173,11 +182,11 @@ impl TrafficService {
         Ok(out)
     }
 
-    async fn load_chp_incidents(&self) -> Result<Vec<Incident>> {
+    async fn load_chp_incidents(&self) -> Result<chp::Snapshot> {
         let key = "traffic:chp:sc:raw";
         let http = self.http.clone();
         self.cache
-            .get_or_fetch::<Vec<Incident>, _, _>(key, 60, move || async move {
+            .get_or_fetch::<chp::Snapshot, _, _>(key, 60, move || async move {
                 chp::fetch_sc_incidents(&http).await
             })
             .await
@@ -209,7 +218,12 @@ impl TrafficService {
 
 // ───── formatting helpers ─────
 
-fn format_chp(filtered: &[&Incident], route: Option<&str>, total: usize) -> String {
+fn format_chp(
+    filtered: &[&Incident],
+    route: Option<&str>,
+    total: usize,
+    as_of: DateTime<Tz>,
+) -> String {
     let mut out = if let Some(r) = route {
         format!(
             "# CHP Incidents — Route {} ({} matched of {} in SC County)\n\n",
@@ -227,10 +241,9 @@ fn format_chp(filtered: &[&Incident], route: Option<&str>, total: usize) -> Stri
         write_chp_body(&mut out, filtered);
     }
 
-    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\n_Source: CHP CAD (media.chp.ca.gov). Last updated: {}_\n",
-        now.format("%-I:%M %p")
+        as_of.format("%-I:%M %p")
     ));
     out
 }
@@ -356,6 +369,20 @@ mod tests {
         }
     }
 
+    fn pacific(hour: u32, minute: u32) -> DateTime<Tz> {
+        use chrono::TimeZone;
+        chrono_tz::US::Pacific
+            .with_ymd_and_hms(2026, 11, 19, hour, minute, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn chp_footer_shows_the_feeds_time_not_the_clock() {
+        let i = incident("Sr17 N / Summit", "");
+        let out = format_chp(&[&i], None, 1, pacific(3, 7));
+        assert!(out.contains("Last updated: 3:07 AM"), "{out}");
+    }
+
     #[test]
     fn caltrans_delay_sentinels_are_suppressed() {
         // Caltrans sends "Not Reported" and "0" — neither is a real delay.
@@ -391,18 +418,18 @@ mod tests {
     fn chp_location_desc_dedupe() {
         // When LocationDesc duplicates Location it is not repeated in parens.
         let same = incident("Sr17 N / Summit", "Sr17 N / Summit");
-        let out = format_chp(&[&same], None, 1);
+        let out = format_chp(&[&same], None, 1, pacific(9, 15));
         assert!(out.contains("Sr17 N / Summit"));
         assert!(!out.contains("(Sr17 N / Summit)"));
 
         let diff = incident("Sr17 N / Summit", "NB 17 AT THE SUMMIT");
-        let out = format_chp(&[&diff], None, 1);
+        let out = format_chp(&[&diff], None, 1, pacific(9, 15));
         assert!(out.contains("Sr17 N / Summit (NB 17 AT THE SUMMIT)"));
     }
 
     #[test]
     fn chp_empty_filter_message() {
-        let out = format_chp(&[], Some("9"), 2);
+        let out = format_chp(&[], Some("9"), 2, pacific(9, 15));
         assert!(out.contains("No matching active CHP incidents."));
     }
 }

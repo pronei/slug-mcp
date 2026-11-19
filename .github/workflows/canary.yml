@@ -1,0 +1,94 @@
+# Daily live check of every public tool against its real upstream, two ways:
+# the local build on a GitHub runner (finds upstream drift) and the deployed
+# Fly server over HTTPS (also finds deploy, secret and egress problems). A
+# failing test names the tool and its adapter file; each target keeps one open
+# `canary` issue current and closes it when everything passes again.
+name: Upstream canary
+
+on:
+  schedule:
+    - cron: "17 14 * * *" # 07:17 PDT / 06:17 PST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-canary
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  canary:
+    name: canary (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: local build
+            url: ""
+          - target: hosted server
+            url: https://slug-mcp.fly.dev/mcp
+    env:
+      SLUG_MCP_CANARY_URL: ${{ matrix.url }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      # The local build asserts on live data when a key secret is set and on the
+      # "not configured" text when it is empty, so unset secrets are fine. The
+      # hosted server uses its own Fly secrets.
+      SLUG_MCP_BUSTIME_KEY: ${{ secrets.SLUG_MCP_BUSTIME_KEY }}
+      SLUG_MCP_FIRMS_KEY: ${{ secrets.SLUG_MCP_FIRMS_KEY }}
+      AIRNOW_API_KEY: ${{ secrets.AIRNOW_API_KEY }}
+      EBIRD_API_KEY: ${{ secrets.EBIRD_API_KEY }}
+      NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install protoc and OpenSSL headers
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends protobuf-compiler libssl-dev pkg-config
+      # Same trust store as the Docker image: nutrition.sa.ucsc.edu sends the
+      # wrong intermediate, which OpenSSL can't repair on its own, so without
+      # this the dining canaries fail on TLS rather than on drift.
+      - name: Trust the InCommon intermediate
+        if: matrix.url == ''
+        run: sudo cp certs/InCommon_ECC_OV_SSL_CA_3.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: public
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      # Same feature set as the hosted build; the canaries only cover public tools.
+      - name: Run live canaries
+        continue-on-error: true
+        run: cargo nextest run --profile live --no-default-features --test live_canary --run-ignored ignored-only
+      - name: Summarize
+        id: report
+        run: python3 .github/scripts/canary_report.py target/nextest/live/junit.xml "${{ matrix.target }}"
+      - name: Open, update, or close the canary issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED: ${{ steps.report.outputs.failed }}
+          TARGET: ${{ matrix.target }}
+          TITLE: "Upstream canary: ${{ matrix.target }}"
+        run: |
+          set -euo pipefail
+          gh label create canary --color D93F0B --description "A live canary failed: an upstream or the deploy changed" --force >/dev/null
+          existing=$(gh issue list --label canary --state open --limit 50 --json number,title \
+            --jq ".[] | select(.title | startswith(\"$TITLE\")) | .number" | head -n1)
+          if [ "$FAILED" != "0" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body-file canary-issue-body.md
+            else
+              gh issue create --title "$TITLE ($FAILED failing)" --label canary --body-file canary-issue-body.md
+            fi
+            echo "::error::$FAILED live canaries failed against the $TARGET; see the job summary"
+            exit 1
+          elif [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "All live canaries passed on $(date -u +%F): $RUN_URL"
+          fi

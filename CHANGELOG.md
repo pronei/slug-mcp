@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added — CI, coverage, Dependabot and live canaries (2026-11-19)
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): rustfmt, clippy (`-D warnings`) and the test suite (unit tests plus `tests/mcp_protocol.rs`) on both feature sets, an MSRV check on Rust 1.89, `cargo deny` (licenses, bans and sources block; new advisories are reported without blocking PRs), and coverage via `cargo-llvm-cov`, uploaded to Codecov and the job summary. Callable with `workflow_call`, so the Fly deploy can gate on it.
+- **Live upstream canaries** (`tests/live_canary.rs`, all `#[ignore]`): one test per public tool against its real upstream. Each asserts the output markers its formatter promises and that no raw HTML entity reaches the model; the group-exercise canary also checks the schedule is for the current quarter. Three tests chain ids (menu → nutrition, occupancy → schedule, requirements → progress). A failure's first line names the tool, what broke, and the adapter file and upstream from the `ADAPTERS` table. `SLUG_MCP_CANARY_URL` points the same tests at a deployed server.
+- **Daily canary workflow** (`.github/workflows/canary.yml`): runs the canaries against the local build and the hosted Fly server every morning and keeps one `canary` issue per target open while anything fails, closing it when all pass.
+- **Dependabot** (`.github/dependabot.yml`): weekly grouped Cargo minor/patch bumps with a 7-day cooldown, grouped Actions bumps, and Docker base-image bumps.
+- `rust-version = "1.89"` and `license = "MIT"` in `Cargo.toml`, a `deny.toml` policy, and `.config/nextest.toml` profiles (`ci`, `live`) with JUnit output.
+
 ### Fixed — Streamable HTTP answers for probing clients (2026-11-18)
 - A `GET /mcp` that doesn't accept `text/event-stream` (a plain probe, `Accept: */*`) now gets `405 Method Not Allowed` with `Allow: GET, POST, DELETE`, the answer the spec gives a client when the server offers it no stream. rmcp answered `406`. rmcp still answers first, so its Host and Origin checks keep their `403`s.
 - Only `/mcp` and `/mcp/` reach rmcp. Paths below it, such as the OAuth discovery probe `/mcp/.well-known/openid-configuration`, now get `404`, which tells a client the server has no auth. rmcp answered `406`.

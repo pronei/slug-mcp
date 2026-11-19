@@ -10,6 +10,12 @@
   Built in Rust with <a href="https://github.com/anthropics/rmcp">rmcp</a> for the UCSC and Santa Cruz community.
 </p>
 
+<p align="center">
+  <a href="https://github.com/pronei/slug-mcp/actions/workflows/ci.yml"><img src="https://github.com/pronei/slug-mcp/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/pronei/slug-mcp/actions/workflows/canary.yml"><img src="https://github.com/pronei/slug-mcp/actions/workflows/canary.yml/badge.svg" alt="Upstream canary" /></a>
+  <a href="https://codecov.io/gh/pronei/slug-mcp"><img src="https://codecov.io/gh/pronei/slug-mcp/graph/badge.svg" alt="Coverage" /></a>
+</p>
+
 ---
 
 ## Why?
@@ -67,7 +73,7 @@ Real questions that come up living and studying in Santa Cruz — each one threa
 
 ## Quick Start
 
-**Prerequisites:** Rust 1.75+, Chrome/Chromium (for authenticated tools only)
+**Prerequisites:** Rust 1.89+, Chrome/Chromium (for authenticated tools only)
 
 ```bash
 git clone git@github.com:pronei/slug-mcp.git
@@ -230,6 +236,19 @@ The exception is **`SLUG_MCP_BUSTIME_KEY`**: the SC Metro stops catalog is loade
 The hosted instance ships with these configured — set them yourself only if you're running locally.
 
 Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) > `mod.rs` (service layer with caching) > `server.rs` (MCP tool handler).
+
+## Development
+
+```bash
+cargo test                                   # unit tests + offline MCP protocol tests (no network)
+cargo test --test live_canary -- --ignored   # live canaries: one per tool, against the real upstreams
+cargo clippy --all-targets -- -D warnings    # CI is strict; run with --no-default-features too
+cargo fmt --all
+cargo deny check                             # advisories, licenses, sources  (cargo install cargo-deny)
+cargo llvm-cov nextest --profile ci          # coverage  (cargo install cargo-llvm-cov cargo-nextest)
+```
+
+[CI](.github/workflows/ci.yml) runs rustfmt, clippy and the test suite on both feature sets, an MSRV check on Rust 1.89, `cargo deny`, and uploads coverage to Codecov. The [upstream canary](.github/workflows/canary.yml) runs the live canaries every morning against both the local build and the hosted server. It keeps a `canary` issue open per target that names each failing tool and the adapter file to fix. Dependabot keeps crates, Actions and the deploy image current.
 
 ## License
 

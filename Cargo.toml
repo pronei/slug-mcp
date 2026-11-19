@@ -2,7 +2,10 @@
 name = "slug-mcp"
 version = "0.1.0"
 edition = "2024"
+# Let-chains (edition 2024) need 1.88; `aes` 0.9 in the auth feature needs 1.89.
+rust-version = "1.89"
 description = "MCP server for UCSC campus services"
+license = "MIT"
 
 [[bin]]
 name = "slug-mcp"

@@ -172,11 +172,15 @@ Then wire it in three places:
   good list for up to 30 minutes, and asks CHP nothing for five minutes. The
   `(details: …)` text in the tool output and in `fly logs` says what came back.
 
-- **`CacheStore::set` on a live key keeps the old expiry.** moka's default
-  `expire_after_update` leaves the deadline alone, so a value rewritten before
-  it expires still dies on the first write's schedule. `get_or_fetch` inserts
-  only after expiry and isn't affected. State that is rewritten while live,
-  like the last good CHP list, lives on the service instead.
+- **Overwriting a live cache key resets its expiry** to the new TTL.
+  `PerEntryExpiry` overrides moka's `expire_after_update`, whose default keeps
+  the first write's deadline.
+
+- **`get_or_fetch` errors show the whole cause chain with URL query strings
+  redacted**, since callers pass them to clients and reqwest errors print the
+  request URL. A key in a query string is covered; a key in the URL path is
+  not, so that adapter strips the URL itself (FIRMS uses
+  `reqwest::Error::without_url`).
 
 - **`events.ucsc.edu` is WordPress + Tribe Events plugin** at
   `/wp-json/tribe/events/v1/events`. It is *not* Localist, despite earlier campus

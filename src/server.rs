@@ -43,7 +43,6 @@ use crate::ocean::{
     HabRequest, HabRiskRequest, HfrRequest, M1Request, OceanService, ResearchSnapshotRequest,
     SstRequest, UpwellingRequest, UpwellingStateRequest, WharfRequest,
 };
-use crate::outdoors::{OutdoorsRequest, OutdoorsService};
 use crate::recreation::{
     FacilityOccupancyRequest, FacilityScheduleRequest, GroupExerciseRequest, RecreationService,
 };
@@ -101,7 +100,6 @@ pub struct ServiceContext {
     pub astronomy: Arc<AstronomyService>,
     pub space_weather: Arc<SpaceWeatherService>,
     pub summer: Arc<SummerService>,
-    pub outdoors: Arc<OutdoorsService>,
     pub climbing: Arc<ClimbingService>,
     pub earthquakes: Arc<EarthquakeService>,
     pub beach_water: Arc<BeachWaterService>,
@@ -139,7 +137,6 @@ pub struct SlugMcpServer {
     astronomy: Arc<AstronomyService>,
     space_weather: Arc<SpaceWeatherService>,
     summer: Arc<SummerService>,
-    outdoors: Arc<OutdoorsService>,
     climbing: Arc<ClimbingService>,
     earthquakes: Arc<EarthquakeService>,
     beach_water: Arc<BeachWaterService>,
@@ -178,7 +175,6 @@ impl SlugMcpServer {
             astronomy: ctx.astronomy,
             space_weather: ctx.space_weather,
             summer: ctx.summer,
-            outdoors: ctx.outdoors,
             climbing: ctx.climbing,
             earthquakes: ctx.earthquakes,
             beach_water: ctx.beach_water,
@@ -1104,24 +1100,6 @@ macro_rules! define_tools {
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
             }
 
-            // ─── Outdoors / OSM Tools ───
-
-            #[tool(
-                title = "Search Outdoor Places",
-                annotations(read_only_hint = true, open_world_hint = true),
-                description = "Search OpenStreetMap for outdoor features near a location. Category must be one of: \"trails\" (hiking paths/footways), \"peaks\" (mountain summits), \"viewpoints\" (scenic overlooks), \"water_restrooms\" (drinking water + toilets), \"parking\" (parking areas). Defaults to Santa Cruz. Uses the Overpass API (community-run, rate-limited to 2 concurrent queries — results may be slow under heavy load). Data from OSM contributors. For National Park Service units (Pinnacles, Yosemite, etc.) prefer `get_national_park_info` — it returns authoritative hours, fees, and ranger contacts that aren't in OSM."
-            )]
-            async fn search_outdoors(
-                &self,
-                Parameters(req): Parameters<OutdoorsRequest>,
-            ) -> Result<CallToolResult, ErrorData> {
-                let result = match self.outdoors.search(&req).await {
-                    Ok(r) => r,
-                    Err(e) => return caller_or_internal(e),
-                };
-                Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
-            }
-
             // ─── Climbing Tools ───
 
             #[tool(
@@ -1190,7 +1168,7 @@ macro_rules! define_tools {
             #[tool(
                 title = "National Park Info",
                 annotations(read_only_hint = true, open_world_hint = true),
-                description = "Get National Park Service information — hours, fees, activities, directions, weather, and contact info. Authoritative source for NPS units. Search by park code (e.g. \"pinn\" for Pinnacles) or by name. Covers all US national parks; closest to Santa Cruz is Pinnacles NP (~80 mi). Requires a free NPS API key (set NPS_API_KEY from https://www.nps.gov/subjects/developer/get-started.htm) — returns registration instructions if not configured. For trails/peaks/parking *outside* NPS units (state parks, open space preserves, beaches), use `search_outdoors` instead."
+                description = "Get National Park Service information — hours, fees, activities, directions, weather, and contact info. Authoritative source for NPS units. Search by park code (e.g. \"pinn\" for Pinnacles) or by name. Covers all US national parks; closest to Santa Cruz is Pinnacles NP (~80 mi). Requires a free NPS API key (set NPS_API_KEY from https://www.nps.gov/subjects/developer/get-started.htm) — returns registration instructions if not configured. It doesn't cover state parks, open space preserves or beaches."
             )]
             async fn get_national_park_info(
                 &self,
@@ -1563,8 +1541,7 @@ impl ServerHandler for SlugMcpServer {
              sun/moon/twilight/UV index, NOAA space weather (Kp index, \
              storm scales), USGS earthquake data, beach water quality \
              bacteria monitoring (24+ SC beaches via CA BeachWatch), \
-             OpenStreetMap outdoor features (trails, peaks, viewpoints, \
-             amenities), OpenBeta climbing routes, NPS national park info, \
+             OpenBeta climbing routes, NPS national park info, \
              Open-Meteo air quality forecasts, and Monterey Bay ocean \
              monitoring: CUTI/BEUTI coastal upwelling indices with \
              climatological anomalies, MBARI M1 mooring water column \
@@ -1596,8 +1573,7 @@ impl ServerHandler for SlugMcpServer {
              wildfire detections for Santa Cruz County, sun/moon/twilight/UV \
              index, NOAA space weather (Kp index, storm scales), USGS \
              earthquake data, beach water quality bacteria monitoring (24+ \
-             SC beaches via CA BeachWatch), OpenStreetMap outdoor features \
-             (trails, peaks, viewpoints, amenities), OpenBeta climbing \
+             SC beaches via CA BeachWatch), OpenBeta climbing \
              routes, NPS national park info, Open-Meteo air quality \
              forecasts, and Monterey Bay ocean monitoring: CUTI/BEUTI \
              coastal upwelling indices with climatological anomalies, \

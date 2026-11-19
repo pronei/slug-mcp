@@ -123,13 +123,13 @@ async fn malformed_arguments_are_explained_as_tool_errors() {
 async fn caller_mistakes_are_tool_level_errors_with_guidance() {
     let server = StdioServer::spawn(false).await;
     let result = server
-        .call("search_outdoors", json!({ "category": "bogus" }))
+        .call("get_bike_share", json!({ "need": "scooter" }))
         .await
         .expect("validation failures are tool results, not protocol errors");
     assert!(is_tool_error(&result), "isError should be set");
     let text = text_of(&result);
     assert!(
-        text.contains("bogus") && text.contains("trails"),
+        text.contains("scooter") && text.contains("bike"),
         "message should name the bad value and list valid ones: {text}"
     );
     server.shutdown().await;
@@ -231,7 +231,7 @@ async fn http_serves_healthz_and_the_same_tool_surface() {
     let tools = client.list_all_tools().await.expect("tools/list over HTTP");
     assert_eq!(tools.len(), EXPECTED_TOOL_COUNT);
 
-    let result = common::call_tool(&client, "search_outdoors", json!({ "category": "bogus" }))
+    let result = common::call_tool(&client, "get_bike_share", json!({ "need": "scooter" }))
         .await
         .expect("tool call over HTTP");
     assert!(is_tool_error(&result));

@@ -31,7 +31,6 @@ mod library;
 mod marine;
 mod nps;
 mod ocean;
-mod outdoors;
 mod recreation;
 mod server;
 mod space_weather;
@@ -149,8 +148,8 @@ async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
 
     // Shared HTTP client: gzip for smaller responses, explicit User-Agent so
     // public upstream APIs (notably NOAA NWS, which rejects blank UAs) can
-    // identify us, and bounded timeouts so one hung upstream (Overpass,
-    // ERDDAP, NDBC…) can't wedge a tool call forever. All services clone from
+    // identify us, and bounded timeouts so one hung upstream (ERDDAP,
+    // NDBC, OpenBeta…) can't wedge a tool call forever. All services clone from
     // this single client.
     let http = reqwest::Client::builder()
         .user_agent("slug-mcp/0.1 (+https://git.ucsc.edu/pmundra/slug-mcp; student project)")
@@ -230,7 +229,6 @@ async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
             cache.clone(),
         )),
         summer: Arc::new(summer::SummerService::new(http.clone(), cache.clone())),
-        outdoors: Arc::new(outdoors::OutdoorsService::new(http.clone(), cache.clone())),
         climbing: Arc::new(climbing::ClimbingService::new(http.clone(), cache.clone())),
         earthquakes: Arc::new(earthquakes::EarthquakeService::new(
             http.clone(),

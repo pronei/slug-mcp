@@ -27,9 +27,9 @@ pub const API_KEY_VARS: &[&str] = &[
 /// Tools compiled into this build. Bump this (and the counts in README /
 /// AGENTS.md) when a tool is added or removed.
 #[cfg(feature = "auth")]
-pub const EXPECTED_TOOL_COUNT: usize = 60;
+pub const EXPECTED_TOOL_COUNT: usize = 59;
 #[cfg(not(feature = "auth"))]
-pub const EXPECTED_TOOL_COUNT: usize = 56;
+pub const EXPECTED_TOOL_COUNT: usize = 55;
 
 pub type Client = RunningService<RoleClient, ()>;
 

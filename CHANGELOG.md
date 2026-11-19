@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added — CI, coverage, Dependabot and live canaries (2026-11-19)
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): rustfmt, clippy (`-D warnings`) and the test suite (unit tests plus `tests/mcp_protocol.rs`) on both feature sets, an MSRV check on Rust 1.89, `cargo deny` (licenses, bans and sources block; new advisories are reported without blocking PRs), and coverage via `cargo-llvm-cov`, uploaded to Codecov and the job summary. Callable with `workflow_call`, so the Fly deploy can gate on it.
+- **Live upstream canaries** (`tests/live_canary.rs`, all `#[ignore]`): one test per public tool against its real upstream. Each asserts the output markers its formatter promises and that no raw HTML entity reaches the model; the group-exercise canary also checks the schedule is for the current quarter. Three tests chain ids (menu → nutrition, occupancy → schedule, requirements → progress). A failure's first line names the tool, what broke, and the adapter file and upstream from the `ADAPTERS` table. `SLUG_MCP_CANARY_URL` points the same tests at a deployed server.
+- **Daily canary workflow** (`.github/workflows/canary.yml`): runs the canaries against the local build and the hosted Fly server every morning and keeps one `canary` issue per target open while anything fails, closing it when all pass.
+- **Dependabot** (`.github/dependabot.yml`): weekly grouped Cargo minor/patch bumps with a 7-day cooldown, grouped Actions bumps, and Docker base-image bumps.
+- `rust-version = "1.89"` and `license = "MIT"` in `Cargo.toml`, a `deny.toml` policy, and `.config/nextest.toml` profiles (`ci`, `live`) with JUnit output.
+
+### Changed — dependencies (2026-11-19)
+- **rmcp 3.5.1 → 3.11.0, tokio 1.53.1 → 1.54.1, ctutils 0.4.2 → 0.4.8.** This clears five RustSec advisories. The one that mattered most is RUSTSEC-2026-0461, an unbounded tool-schema cache in the Streamable HTTP server transport that the hosted server uses. The others: -0457 and -0462 in rmcp's OAuth and HTTP clients, which only the tests use; -0386, `AsyncFd` unsoundness in tokio; and -0385, non-constant-time comparisons in the auth crypto stack. `chrono` and `chrono-tz` stay flagged as unmaintained (RUSTSEC-2026-0543, -0555), and neither has a newer release.
+
+### Removed — `search_outdoors` (2026-11-19)
+- The OpenStreetMap search for trails, peaks, viewpoints, water and restrooms, and parking is gone, along with `src/outdoors/`. Its only upstream, the community-run overpass-api.de, has timed out or answered 502 since at least 2026-10-19, so the tool mostly returned errors. The public build now has 55 tools (59 with auth). It can be restored from git history if a reliable Overpass instance turns up.
+
 ### Fixed — Streamable HTTP answers for probing clients (2026-11-18)
 - A `GET /mcp` that doesn't accept `text/event-stream` (a plain probe, `Accept: */*`) now gets `405 Method Not Allowed` with `Allow: GET, POST, DELETE`, the answer the spec gives a client when the server offers it no stream. rmcp answered `406`. rmcp still answers first, so its Host and Origin checks keep their `403`s.
 - Only `/mcp` and `/mcp/` reach rmcp. Paths below it, such as the OAuth discovery probe `/mcp/.well-known/openid-configuration`, now get `404`, which tells a client the server has no auth. rmcp answered `406`.

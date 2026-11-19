@@ -162,6 +162,22 @@ Then wire it in three places:
   `slug-mcp.fly.dev` while working from campus and home networks. Headers won't
   get past a CAPTCHA.
 
+- **CHP sometimes serves a broken copy of `sa.xml`.** `media.chp.ca.gov` is one
+  address behind a load balancer, and it can hand a caller a file that is cut
+  off mid-tag and frozen hours in the past, as a 200, while other callers get
+  the live feed (2026-11-19: 180,224 bytes, last modified 11:57 PM the night
+  before). It looks host-specific and isn't: Fly and a laptop each had it at
+  different times that day. Fetching again returns the same copy, so the
+  adapter doesn't retry. It rejects cut-off and stale copies, shows the last
+  good list for up to 30 minutes, and asks CHP nothing for five minutes. The
+  `(details: …)` text in the tool output and in `fly logs` says what came back.
+
+- **`CacheStore::set` on a live key keeps the old expiry.** moka's default
+  `expire_after_update` leaves the deadline alone, so a value rewritten before
+  it expires still dies on the first write's schedule. `get_or_fetch` inserts
+  only after expiry and isn't affected. State that is rewritten while live,
+  like the last good CHP list, lives on the service instead.
+
 - **`events.ucsc.edu` is WordPress + Tribe Events plugin** at
   `/wp-json/tribe/events/v1/events`. It is *not* Localist, despite earlier campus
   pages suggesting that. Eventbrite is a separate API for community events; both

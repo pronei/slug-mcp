@@ -19,7 +19,7 @@ report-name = "slug-mcp"
 [profile.live]
 fail-fast = false
 retries = 0
-# Four upstream calls at a time keeps us under Overpass / NOAA rate limits.
+# Four upstream calls at a time keeps us under NOAA and ERDDAP rate limits.
 test-threads = 4
 slow-timeout = { period = "120s", terminate-after = 2 }
 

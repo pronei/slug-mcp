@@ -40,7 +40,7 @@ Real questions that come up living and studying in Santa Cruz — each one threa
 | *"Plan a tide-pool walk at Natural Bridges this week — when's the lowest daytime tide and what's the weather doing?"* | Tide tables filtered to daylight hours via sunrise/sunset, NWS coastal forecast (CAZ529), current beach water quality |
 | *"Hwy 17 had a closure earlier — is my evening commute home going to be brutal?"* | Live CHP incidents, Caltrans D5 lane closures on Hwy 17, traffic summary, evening weather |
 | *"I want to study for 3 hours then hit the gym — find me a quiet library room and tell me when the rec center will be least crowded."* | LibCal availability across McHenry and S&E, live rec headcount with recent trend, dining hours for after |
-| *"Looking for a Friday afternoon climb near Castle Rock — what's the weather doing and how's the drive?"* | OpenBeta route search, OSM trail and peak data, NWS mountains forecast (CAZ512), Hwy 9 incidents and lane closures |
+| *"Looking for a Friday afternoon climb near Castle Rock — what's the weather doing and how's the drive?"* | OpenBeta route search, NWS mountains forecast (CAZ512), Hwy 9 incidents and lane closures |
 | *"Find me a high-protein dinner near my 4 PM class in Baskin, then a study room that closes after 10."* | Class schedule lookup, dining menus with nutrition ranked by protein, walking-distance dining hours, late-night LibCal availability |
 | *"Is it worth driving up to Big Basin tomorrow, or is the AQI still bad from the fires?"* | NASA FIRMS satellite fire detections, AirNow current AQI, Open-Meteo air-quality forecast, NPS park status, NWS forecast |
 
@@ -68,7 +68,7 @@ Real questions that come up living and studying in Santa Cruz — each one threa
 | **Traffic** | CHP incidents and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101; live Caltrans traffic camera images on Hwy 1 and Hwy 17 |
 | **Bike Share** | Santa Cruz BCycle e-bikes and open docks per station, by name or nearest to a place (campus docks leave at the end of 2026) |
 | **Wildfires & Air** | NASA FIRMS satellite fire detections for SC County, AirNow current AQI, Open-Meteo air-quality and pollen forecasts |
-| **Outdoors** | OpenStreetMap trails, peaks, viewpoints, amenities; OpenBeta climbing routes; National Park Service info |
+| **Outdoors** | OpenBeta climbing routes; National Park Service info |
 | **Sky & Earth** | Sun/moon/twilight + UV index; NOAA SWPC space weather (Kp, storm scales, solar wind); USGS earthquakes; USGS real-time stream conditions; iNaturalist + eBird species observations |
 
 ## Quick Start
@@ -212,7 +212,6 @@ src/
 ├── air_forecast/        # Open-Meteo air quality + pollen forecast
 ├── astronomy/           # Sun/moon/twilight + UV index
 ├── space_weather/       # NOAA SWPC Kp + storm scales + solar wind
-├── outdoors/            # OSM Overpass: trails, peaks, viewpoints
 ├── climbing/            # OpenBeta GraphQL climbing routes
 ├── earthquakes/         # USGS recent seismic events
 ├── beach_water/         # CA BeachWatch bacteria monitoring

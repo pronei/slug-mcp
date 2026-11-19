@@ -224,7 +224,6 @@ const ADAPTERS: &[(&str, &str)] = &[
         "src/ocean/fusion.rs ← the ocean adapters above",
     ),
     // Outdoors & biodiversity
-    ("search_outdoors", "src/outdoors/mod.rs ← overpass-api.de"),
     (
         "search_climbing_routes",
         "src/climbing/mod.rs ← api.openbeta.io GraphQL",
@@ -890,12 +889,6 @@ async fn fusion_research_snapshot_is_json_with_a_checksum() {
 
 // ─── Outdoors & biodiversity ───
 
-canary!(
-    outdoors_trails,
-    "search_outdoors",
-    { "category": "trails" },
-    Expect::markers(&["near Santa Cruz"])
-);
 canary!(
     climbing_routes,
     "search_climbing_routes",

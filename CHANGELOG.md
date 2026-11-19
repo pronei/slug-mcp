@@ -9,6 +9,9 @@
 - **Dependabot** (`.github/dependabot.yml`): weekly grouped Cargo minor/patch bumps with a 7-day cooldown, grouped Actions bumps, and Docker base-image bumps.
 - `rust-version = "1.89"` and `license = "MIT"` in `Cargo.toml`, a `deny.toml` policy, and `.config/nextest.toml` profiles (`ci`, `live`) with JUnit output.
 
+### Removed — `search_outdoors` (2026-11-19)
+- The OpenStreetMap search for trails, peaks, viewpoints, water and restrooms, and parking is gone, along with `src/outdoors/`. Its only upstream, the community-run overpass-api.de, has timed out or answered 502 since at least 2026-10-19, so the tool mostly returned errors. The public build now has 55 tools (59 with auth). It can be restored from git history if a reliable Overpass instance turns up.
+
 ### Fixed — Streamable HTTP answers for probing clients (2026-11-18)
 - A `GET /mcp` that doesn't accept `text/event-stream` (a plain probe, `Accept: */*`) now gets `405 Method Not Allowed` with `Allow: GET, POST, DELETE`, the answer the spec gives a client when the server offers it no stream. rmcp answered `406`. rmcp still answers first, so its Host and Origin checks keep their `403`s.
 - Only `/mcp` and `/mcp/` reach rmcp. Paths below it, such as the OAuth discovery probe `/mcp/.well-known/openid-configuration`, now get `404`, which tells a client the server has no auth. rmcp answered `406`.

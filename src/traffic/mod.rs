@@ -45,8 +45,8 @@ pub struct TrafficCamerasRequest {
 pub struct TrafficService {
     http: reqwest::Client,
     cache: Arc<CacheStore>,
-    // Not in `CacheStore`: overwriting a live key there keeps the old expiry,
-    // so a last good list rewritten every minute would expire with the first.
+    // Not in `CacheStore`: the pause and last-good timing rules run on the
+    // `now` passed in, so tests drive them with an injected clock.
     chp: Mutex<ChpState>,
 }
 

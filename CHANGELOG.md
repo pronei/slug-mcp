@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed — cache errors and overwrites (2026-11-19)
+- **Every cached tool**: a failed upstream fetch now reports its whole cause chain, so `cache fetch failed: parsing CHP XML` or `cache fetch failed: expected value at line 1 column 1` also says what went wrong underneath. Query strings in URLs are replaced with `?<redacted>`, so the NPS, AirNow and BusTime keys never reach tool output or logs. Each failure is logged once at warn level with its cache key.
+- **`get_fire_detections`**: FIRMS puts its MAP_KEY in the URL path, so its request errors no longer carry the URL.
+- **Cache overwrites**: writing a key that hasn't expired yet now gives it the new TTL. It used to keep the first write's deadline, so the 5 AM dining menu refresh could expire early.
+
 ### Fixed — CHP incident feed (2026-11-19)
 - **`get_traffic_incidents` / `get_traffic_summary`**: CHP's server sometimes hands a caller a copy of its feed that is cut off mid-tag and frozen hours in the past, as a 200 (2026-11-19: 180,224 bytes, last modified 11:57 PM the night before). The tool reported "parsing CHP XML", and a complete but frozen copy would have been shown as current. The adapter now rejects cut-off, stale, empty and non-feed answers and says what came back: status, content type, size, Last-Modified and the last characters.
 - After a bad copy the tools show the last good list (up to 30 minutes old) under a warning that gives the list's time, and ask CHP nothing for five minutes, because fetching again returned the same copy every time. With no recent list they say that CHP is sending a broken copy and when the next check is. Network errors and non-2xx answers start no pause.

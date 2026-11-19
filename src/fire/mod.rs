@@ -148,15 +148,22 @@ async fn fetch_detections(
         "{}/{}/{}/{:.4},{:.4},{:.4},{:.4}/{}",
         FIRMS_BASE, map_key, SENSOR, w, s, e, n, days
     );
+    // The MAP_KEY is a path segment, which the cache's query redaction can't
+    // see, so reqwest errors must not carry the URL.
     let resp = http
         .get(&url)
         .send()
         .await
+        .map_err(reqwest::Error::without_url)
         .context("FIRMS HTTP request failed")?;
     if !resp.status().is_success() {
         anyhow::bail!("FIRMS returned HTTP {}", resp.status());
     }
-    let body = resp.text().await.context("reading FIRMS CSV body")?;
+    let body = resp
+        .text()
+        .await
+        .map_err(reqwest::Error::without_url)
+        .context("reading FIRMS CSV body")?;
     check_firms_error(&body)?;
     parse_csv(&body)
 }

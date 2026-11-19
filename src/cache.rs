@@ -26,6 +26,18 @@ impl Expiry<String, CacheEntry> for PerEntryExpiry {
     ) -> Option<Duration> {
         Some(value.ttl)
     }
+
+    // moka's default keeps the first write's deadline, so an overwrite of a
+    // live key would still expire on the old schedule.
+    fn expire_after_update(
+        &self,
+        _key: &String,
+        value: &CacheEntry,
+        _updated_at: Instant,
+        _duration_until_expiry: Option<Duration>,
+    ) -> Option<Duration> {
+        Some(value.ttl)
+    }
 }
 
 /// In-memory TTL cache with per-entry expiration. Backed by moka with
@@ -114,14 +126,22 @@ impl CacheStore {
             .inner
             .entry(key.to_string())
             .or_try_insert_with(async move {
-                let value = fetch().await?;
-                Ok::<CacheEntry, anyhow::Error>(CacheEntry {
-                    value: Arc::new(value) as Arc<dyn Any + Send + Sync>,
-                    ttl,
-                })
+                match fetch().await {
+                    Ok(value) => Ok(CacheEntry {
+                        value: Arc::new(value) as Arc<dyn Any + Send + Sync>,
+                        ttl,
+                    }),
+                    // Callers show this text to clients, and some adapters put
+                    // API keys in the query string that reqwest errors print.
+                    Err(e) => {
+                        let chain = redact_url_queries(&format!("{e:#}"));
+                        tracing::warn!(key, "cache fetch failed: {chain}");
+                        Err(chain)
+                    }
+                }
             })
             .await
-            .map_err(|e: Arc<anyhow::Error>| anyhow::anyhow!("cache fetch failed: {e}"))?;
+            .map_err(|chain: Arc<String>| anyhow::anyhow!("cache fetch failed: {chain}"))?;
 
         match Arc::downcast::<T>(entry.into_value().value) {
             Ok(arc) => Ok((*arc).clone()),
@@ -132,5 +152,117 @@ impl CacheStore {
                 "cache type mismatch for key '{key}' after fetch"
             )),
         }
+    }
+}
+
+// Hosts and paths stay so the error still says which request failed.
+fn redact_url_queries(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = ["http://", "https://"]
+        .iter()
+        .filter_map(|scheme| rest.find(scheme))
+        .min()
+    {
+        let (before, from_url) = rest.split_at(start);
+        out.push_str(before);
+        let end = from_url
+            .find(|c: char| c.is_whitespace() || matches!(c, ')' | '"' | '\'' | '<' | '>'))
+            .unwrap_or(from_url.len());
+        // Sentence punctuation after a URL (`…?a=b: cause`) isn't part of it.
+        let url = from_url[..end].trim_end_matches([':', ',', ';', '.']);
+        match url.find('?') {
+            Some(q) => {
+                out.push_str(&url[..q]);
+                out.push_str("?<redacted>");
+            }
+            None => out.push_str(url),
+        }
+        out.push_str(&from_url[url.len()..end]);
+        rest = &from_url[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn fetch_error(err: anyhow::Error) -> String {
+        let cache = CacheStore::new(16);
+        cache
+            .get_or_fetch::<u32, _, _>("k", 60, || async { Err(err) })
+            .await
+            .unwrap_err()
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn fetch_error_keeps_the_whole_cause_chain() {
+        let msg = fetch_error(anyhow::anyhow!("inner cause").context("outer")).await;
+        assert!(msg.starts_with("cache fetch failed: "), "{msg}");
+        assert!(msg.contains("outer"), "{msg}");
+        assert!(msg.contains("inner cause"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn fetch_error_hides_url_query_strings() {
+        let err = anyhow::anyhow!(
+            "error sending request for url (https://example.test/v1/parks?parkCode=pinn&api_key=SECRET123)"
+        )
+        .context("NPS API HTTP request failed");
+        let msg = fetch_error(err).await;
+        assert!(!msg.contains("SECRET123"), "{msg}");
+        assert!(msg.contains("https://example.test/v1/parks"), "{msg}");
+        assert!(msg.contains("NPS API HTTP request failed"), "{msg}");
+    }
+
+    #[test]
+    fn redact_url_queries_table() {
+        let cases = [
+            ("no url here", "no url here"),
+            (
+                "see https://example.test/a/b for details",
+                "see https://example.test/a/b for details",
+            ),
+            (
+                "ends with https://example.test/a?key=K1",
+                "ends with https://example.test/a?<redacted>",
+            ),
+            (
+                "error sending request for url (https://example.test/a?a=b&key=K1)",
+                "error sending request for url (https://example.test/a?<redacted>)",
+            ),
+            (
+                "fetch https://example.test/a?key=K1: connection refused",
+                "fetch https://example.test/a?<redacted>: connection refused",
+            ),
+            (
+                "first http://one.test/x?key=K1, then https://two.test/y?token=K2 and https://three.test/z",
+                "first http://one.test/x?<redacted>, then https://two.test/y?<redacted> and https://three.test/z",
+            ),
+        ];
+        for (input, want) in cases {
+            assert_eq!(redact_url_queries(input), want, "input: {input}");
+        }
+    }
+
+    #[tokio::test]
+    async fn overwrite_with_longer_ttl_extends_expiry() {
+        let cache = CacheStore::new(16);
+        cache.set("k", 1u32, Duration::from_millis(400)).await;
+        cache.set("k", 2u32, Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(cache.get::<u32>("k").await, Some(2));
+    }
+
+    #[tokio::test]
+    async fn overwrite_with_shorter_ttl_shortens_expiry() {
+        let cache = CacheStore::new(16);
+        cache.set("k", 1u32, Duration::from_secs(30)).await;
+        cache.set("k", 2u32, Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(cache.get::<u32>("k").await, None);
     }
 }

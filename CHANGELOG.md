@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added — usage metrics (2026-11-19)
+- `serve --sse --metrics-port <PORT>` serves Prometheus metrics at `/metrics` on a separate listener: `slug_mcp_tool_calls_total{tool,outcome}`, `slug_mcp_tool_call_duration_seconds{tool}` and `slug_mcp_sessions_total{client}`. The Docker image passes `--metrics-port 9091`, and `fly.toml` has Fly scrape it privately.
+- Every tool call logs one INFO line under `slug_mcp::usage` with the tool, client, outcome and latency. The client name comes from the request's `_meta` for 2026-07-28 stateless calls and from `initialize` for legacy sessions.
+- `fly.toml` sets `RUST_LOG = "info,html5ever=error"`, so the dining scrapers' HTML parse warnings no longer fill Fly's log buffer.
+
 ### Fixed — cache errors and overwrites (2026-11-19)
 - **Every cached tool**: a failed upstream fetch now reports its whole cause chain, so `cache fetch failed: parsing CHP XML` or `cache fetch failed: expected value at line 1 column 1` also says what went wrong underneath. Query strings in URLs are replaced with `?<redacted>`, so the NPS, AirNow and BusTime keys never reach tool output or logs. Each failure is logged once at warn level with its cache key.
 - **`get_fire_detections`**: FIRMS puts its MAP_KEY in the URL path, so its request errors no longer carry the URL.

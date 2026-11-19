@@ -32,4 +32,4 @@ RUN useradd --system --create-home slug
 USER slug
 COPY --from=build /usr/local/bin/slug-mcp /usr/local/bin/slug-mcp
 EXPOSE 3000
-CMD ["slug-mcp", "serve", "--sse", "--host", "0.0.0.0", "--port", "3000"]
+CMD ["slug-mcp", "serve", "--sse", "--host", "0.0.0.0", "--port", "3000", "--metrics-port", "9091"]

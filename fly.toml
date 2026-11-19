@@ -4,6 +4,16 @@ primary_region = "sjc"
 [env]
   # Add a custom domain here too, or rmcp answers its /mcp requests with 403.
   SLUG_MCP_ALLOWED_HOSTS = "slug-mcp.fly.dev"
+  # main.rs appends a global INFO directive, so only per-crate directives
+  # lower anything. html5ever's parse warnings from the dining scrapers would
+  # otherwise fill Fly's 100-line log window.
+  RUST_LOG = "info,html5ever=error"
+
+# Scraped every 15 s into the org's managed Prometheus (fly-metrics.net). The
+# port is not in [http_service], so it isn't reachable from the internet.
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [deploy]
   # The new machine must pass /healthz before it takes traffic, so a bad build

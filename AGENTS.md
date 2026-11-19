@@ -14,6 +14,7 @@ cargo build --profile release-optimized --no-default-features  # smallest/fastes
 
 cargo run -- serve                           # stdio MCP server (default)
 cargo run -- serve --sse --port 3000        # HTTP/SSE server at /mcp
+cargo run -- serve --sse --metrics-port 9091 # plus Prometheus /metrics on :9091
 cargo run -- export-token                    # browser login, prints portable token to stdout
 
 cargo test                                   # unit tests (most live in `mod tests` blocks)
@@ -33,6 +34,7 @@ src/
 │                  # of truth for the tool surface). ~1300 lines.
 ├── cache.rs       # Type-erased TTL cache (moka). No JSON round-trip.
 ├── config.rs      # Env var → Config struct. Optional API keys.
+├── usage.rs       # Tool-call/session counters, /metrics listener, per-call log.
 ├── util.rs        # `now_pacific()`, `strip_html_tags`, `truncate`,
 │                  # `degrees_to_compass`, `selectors!` macro.
 ├── util/fuzzy.rs  # FuzzyMatcher — case/whitespace-insensitive name matching.
@@ -262,6 +264,55 @@ fly deploy --remote-only --ha=false
 - **The container binds `--host 0.0.0.0`.** The default is `127.0.0.1` for local
   runs, which Fly's proxy can't reach.
 - **API keys are Fly secrets** (`fly secrets list`), never `[env]` in `fly.toml`.
+- **`/metrics` is on port 9091, not 3000.** `fly.toml`'s `[metrics]` section has
+  Fly scrape it privately every 15 s; it isn't in `[http_service]`, so it isn't
+  public. The metrics listener binds `[::]` when `--host` is `0.0.0.0`, because
+  the scraper comes in over the machine's private IPv6 address.
+
+## Usage metrics
+
+`ServerHandler::call_tool` in `server.rs` records every tool call through
+`usage.rs`; `initialize` records each legacy session. Fly keeps about 15 days
+in the managed Prometheus behind [fly-metrics.net](https://fly-metrics.net)
+(Explore → Prometheus), and the same PromQL works against
+`https://api.fly.io/prometheus/personal/api/v1/query` with an
+`Authorization: FlyV1 <token>` header (flyctl's `fm2_` token isn't a Bearer).
+
+| Metric | Labels |
+| --- | --- |
+| `slug_mcp_tool_calls_total` | `tool`, `outcome` (`ok`, `tool_error`, `protocol_error`) |
+| `slug_mcp_tool_call_duration_seconds` (histogram) | `tool` |
+| `slug_mcp_sessions_total` | `client` |
+
+- **Labels are bounded.** An unregistered tool name is counted as
+  `tool="unknown"`, and client names are clamped by `CLIENTS` in `usage.rs`
+  to a fixed list plus `other` and `unknown`. The per-call log line
+  (`slug_mcp::usage`, "tool call") carries the raw client name: grep it for
+  `client=other` and add new names to `CLIENTS`.
+- **Sessions count `initialize` handshakes only.** 2026-07-28 clients are
+  stateless and never send one; their name rides in each request's `_meta`
+  and shows up in the log line, not in `slug_mcp_sessions_total`.
+- **Every series starts at 0** after a deploy, so `increase()` counts the first
+  call. Counters reset on each deploy; `increase()` handles that.
+
+```promql
+# Calls per tool per day
+sum by (tool) (increase(slug_mcp_tool_calls_total[1d]))
+
+# Calls per day, all tools
+sum(increase(slug_mcp_tool_calls_total[1d]))
+
+# Error rate per tool over a day (tool errors and protocol errors)
+sum by (tool) (increase(slug_mcp_tool_calls_total{outcome!="ok"}[1d]))
+  / sum by (tool) (increase(slug_mcp_tool_calls_total[1d]))
+
+# p95 latency per tool over a day
+histogram_quantile(0.95,
+  sum by (tool, le) (increase(slug_mcp_tool_call_duration_seconds_bucket[1d])))
+
+# Sessions per client per day
+sum by (client) (increase(slug_mcp_sessions_total[1d]))
+```
 
 ## Where to look
 

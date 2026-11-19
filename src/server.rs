@@ -938,7 +938,7 @@ macro_rules! define_tools {
             #[tool(
                 title = "CHP Traffic Incidents",
                 annotations(read_only_hint = true, open_world_hint = true),
-                description = "Get active CHP incidents in Santa Cruz County. Pulls from the CHP CAD XML feed (Monterey comm center / MYCC dispatch) and filters to SC County areas. Optionally filter by route number (e.g. '1', '9', '17')."
+                description = "Get active CHP incidents in Santa Cruz County. Pulls from the CHP CAD XML feed (Monterey comm center / MYCC dispatch) and filters to SC County areas. Optionally filter by route (e.g. '17', 'SR-17', 'Hwy 1', 'Highway 9')."
             )]
             async fn get_traffic_incidents(
                 &self,

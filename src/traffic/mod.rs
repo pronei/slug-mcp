@@ -32,7 +32,7 @@ use chp::Incident;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TrafficRequest {
-    /// Route number to filter (e.g. "1", "9", "17", "101"). If omitted, shows all Santa Cruz County routes.
+    /// Route to filter by, e.g. "17", "SR-17", "Hwy 17" or "Highway 1". If omitted, shows all Santa Cruz County routes.
     pub route: Option<String>,
 }
 

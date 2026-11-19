@@ -14,8 +14,10 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use super::caltrans::route_number;
 use crate::util::{FuzzyMatcher, truncate};
 
 pub const CHP_FEED_URL: &str = "https://media.chp.ca.gov/sa_xml/sa.xml";
@@ -309,33 +311,26 @@ pub fn parse_sc_incidents(body: &str) -> Result<Vec<Incident>> {
     Ok(out)
 }
 
-/// Filter an incident list to entries that mention a given route (e.g. "17",
-/// "9", "1"). Checks both `location` and `location_desc` fields
-/// case-insensitively.
+/// Filter an incident list to entries on a given route. Takes the spellings
+/// the lane-closure filter does ("17", "SR-17", "Hwy 17", "Highway 17") and
+/// checks both `location` and `location_desc`.
 pub fn filter_by_route<'a>(incidents: &'a [Incident], route: &str) -> Vec<&'a Incident> {
-    let route = route.trim().trim_start_matches(|c: char| {
-        c.eq_ignore_ascii_case(&'h') || c.eq_ignore_ascii_case(&'w') || c == 'y' || c == ' '
-    });
-    // Build patterns to match: "SR17", "Sr17", "HWY 17", "17 ", "SR-17"
-    let candidates = [
-        format!("SR{}", route),
-        format!("SR-{}", route),
-        format!("Sr{}", route),
-        format!("sr{}", route),
-        format!("HWY {}", route),
-        format!("Hwy {}", route),
-        format!("Us{}", route),
-        format!("US{}", route),
-    ];
+    let number = route_number(route);
+    if number.is_empty() {
+        return Vec::new();
+    }
+    // CHP writes "Sr17 N / Summit", "Us101 N / Abbott", "13000 Highway 9".
+    // The closing \b keeps route 1 from matching Sr17 and Us101.
+    let pattern = format!(
+        r"(?i)\b(?:SR|US|HWY|HIGHWAY)[- ]*{}\b",
+        regex::escape(&number)
+    );
+    let Ok(on_route) = Regex::new(&pattern) else {
+        return Vec::new();
+    };
     incidents
         .iter()
-        .filter(|i| {
-            let loc = format!("{} {}", i.location, i.location_desc);
-            let loc_lower = loc.to_lowercase();
-            candidates
-                .iter()
-                .any(|p| loc.contains(p.as_str()) || loc_lower.contains(&p.to_lowercase()))
-        })
+        .filter(|i| on_route.is_match(&i.location) || on_route.is_match(&i.location_desc))
         .collect()
 }
 
@@ -491,6 +486,88 @@ mod tests {
         assert_eq!(incidents[0].log_time, "");
         assert_eq!(incidents[0].location, "");
         assert_eq!(incidents[0].latlon, "");
+    }
+
+    // ───── filter_by_route ─────
+
+    fn at(location: &str, desc: &str) -> Incident {
+        Incident {
+            id: "261119MY0001".to_string(),
+            log_time: "Nov 19 2026  9:08AM".to_string(),
+            log_type: "1125-Traffic Hazard".to_string(),
+            location: location.to_string(),
+            location_desc: desc.to_string(),
+            area: "Santa Cruz".to_string(),
+            latlon: String::new(),
+        }
+    }
+
+    fn found(incidents: &[Incident], route: &str) -> Vec<String> {
+        filter_by_route(incidents, route)
+            .iter()
+            .map(|i| i.location.clone())
+            .collect()
+    }
+
+    #[test]
+    fn route_filter_accepts_the_spellings_the_lane_closure_filter_does() {
+        let incidents = [
+            at("Sr17 N / Summit", "NB 17 AT THE SUMMIT"),
+            at("SR17 S / SUMMIT", "NB AND SB 17"),
+            at("Sr1 N / Soquel Dr Ofr", "NB OFR"),
+        ];
+        for q in [
+            "17",
+            " 17 ",
+            "SR-17",
+            "sr17",
+            "Sr 17",
+            "Hwy 17",
+            "HWY 17",
+            "hwy17",
+            "Highway 17",
+            "Route 17",
+            "CA-17",
+        ] {
+            assert_eq!(
+                found(&incidents, q),
+                ["Sr17 N / Summit", "SR17 S / SUMMIT"],
+                "query {q:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn route_filter_matches_the_whole_number_only() {
+        let incidents = [
+            at("Sr1 N / Soquel Dr Ofr", ""),
+            at("Sr17 N / Summit", ""),
+            at("Us101 N / Abbott", ""),
+            at("SR129 / Carlton Rd", ""),
+        ];
+        assert_eq!(found(&incidents, "1"), ["Sr1 N / Soquel Dr Ofr"]);
+        assert_eq!(found(&incidents, "101"), ["Us101 N / Abbott"]);
+        assert_eq!(found(&incidents, "129"), ["SR129 / Carlton Rd"]);
+    }
+
+    #[test]
+    fn route_filter_reads_street_addresses_and_descriptions() {
+        let incidents = [
+            at("13000 Highway 9", ""),
+            at("Graham Hill Rd / Lockwood Ln", "JNO HWY  17"),
+            at("17 Mile Dr", ""),
+        ];
+        assert_eq!(found(&incidents, "9"), ["13000 Highway 9"]);
+        // "17 Mile Dr" names no route; the other is on 17 by its description.
+        assert_eq!(found(&incidents, "17"), ["Graham Hill Rd / Lockwood Ln"]);
+    }
+
+    #[test]
+    fn route_filter_with_no_number_matches_nothing() {
+        let incidents = [at("Sr17 N / Summit", ""), at("Us101 N / Abbott", "")];
+        for q in ["", "  ", "SR", "Highway"] {
+            assert!(found(&incidents, q).is_empty(), "query {q:?}");
+        }
     }
 
     // ───── check_feed: what CHP answered with ─────

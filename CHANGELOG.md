@@ -9,6 +9,9 @@
 - **Dependabot** (`.github/dependabot.yml`): weekly grouped Cargo minor/patch bumps with a 7-day cooldown, grouped Actions bumps, and Docker base-image bumps.
 - `rust-version = "1.89"` and `license = "MIT"` in `Cargo.toml`, a `deny.toml` policy, and `.config/nextest.toml` profiles (`ci`, `live`) with JUnit output.
 
+### Changed — dependencies (2026-11-19)
+- **rmcp 3.5.1 → 3.11.0, tokio 1.53.1 → 1.54.1, ctutils 0.4.2 → 0.4.8.** This clears five RustSec advisories. The one that mattered most is RUSTSEC-2026-0461, an unbounded tool-schema cache in the Streamable HTTP server transport that the hosted server uses. The others: -0457 and -0462 in rmcp's OAuth and HTTP clients, which only the tests use; -0386, `AsyncFd` unsoundness in tokio; and -0385, non-constant-time comparisons in the auth crypto stack. `chrono` and `chrono-tz` stay flagged as unmaintained (RUSTSEC-2026-0543, -0555), and neither has a newer release.
+
 ### Removed — `search_outdoors` (2026-11-19)
 - The OpenStreetMap search for trails, peaks, viewpoints, water and restrooms, and parking is gone, along with `src/outdoors/`. Its only upstream, the community-run overpass-api.de, has timed out or answered 502 since at least 2026-10-19, so the tool mostly returned errors. The public build now has 55 tools (59 with auth). It can be restored from git history if a reliable Overpass instance turns up.
 

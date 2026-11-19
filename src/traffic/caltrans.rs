@@ -204,9 +204,9 @@ pub fn filter_by_route<'a>(closures: &'a [LaneClosure], route: &str) -> Vec<&'a 
         .collect()
 }
 
-/// True when a CWWP2 route field ("SR-17", "US-101") names the route in a
-/// user query ("17", "SR-17", "Sr17", "Hwy 17", "Highway 17", "CA-1").
-pub fn route_matches(feed_route: &str, query: &str) -> bool {
+/// The bare route number in a user query: "17" from "17", "SR-17", "Sr17",
+/// "Hwy 17", "Highway 17", "Route 17" or "CA-17". Empty when there is none.
+pub fn route_number(query: &str) -> String {
     let q = query.trim().to_uppercase();
     let mut bare = q.as_str();
     for prefix in ["HIGHWAY", "HWY", "ROUTE", "SR", "US", "CA"] {
@@ -215,7 +215,13 @@ pub fn route_matches(feed_route: &str, query: &str) -> bool {
             break;
         }
     }
-    let bare = bare.trim_start_matches(['-', ' ']).trim();
+    bare.trim_start_matches(['-', ' ']).trim().to_string()
+}
+
+/// True when a CWWP2 route field ("SR-17", "US-101") names the route in a
+/// user query ("17", "SR-17", "Sr17", "Hwy 17", "Highway 17", "CA-1").
+pub fn route_matches(feed_route: &str, query: &str) -> bool {
+    let bare = route_number(query);
     let route_up = feed_route.trim().to_uppercase();
     ["SR-", "US-", "SR", "US"]
         .iter()

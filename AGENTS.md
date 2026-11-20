@@ -38,10 +38,10 @@ src/
 ├── util/fuzzy.rs  # FuzzyMatcher — case/whitespace-insensitive name matching.
 ├── auth/          # CDP-driven CruzID+Duo login; AES-256-GCM session storage;
 │                  # portable token codec. All gated on `feature = "auth"`.
-└── <service>/     # 29 service modules — see "The pattern" below.
+└── <service>/     # 30 service modules — see "The pattern" below.
 ```
 
-Service modules: `academics`, `air_forecast`, `air_quality`, `astronomy`,
+Service modules: `academics`, `agenda`, `air_forecast`, `air_quality`, `astronomy`,
 `beach_water`, `bike_share`, `biodiversity`, `buoy`, `classrooms`, `climbing`, `degrees`,
 `dining`, `earthquakes`, `events`, `fire`, `library`, `marine`, `nps`, `ocean`,
 `outdoors`, `recreation`, `space_weather`, `summer`, `tides`, `traffic`,
@@ -197,8 +197,14 @@ Then wire it in three places:
   positions/occupancy and system alerts. Real GTFS-RT predictions (and true
   per-route delays) need a static-GTFS `stops.txt`/`stop_times.txt` loader.
 
-- **The public build exposes 56 tools, not 60.** The Dockerfile builds
+- **The public build exposes 57 tools, not 61.** The Dockerfile builds
   `--no-default-features`, which compiles out the four auth tools.
+
+- **`update_agenda` is the one tool that writes to another system.** It posts
+  the caller's words to the transit agent at `SLUG_MCP_TRANSIT_AGENT_URL` and
+  returns the reply; it has no cache and never retries. Keep that variable off
+  the public Fly app: the server has no user auth, so anyone connected could
+  edit the agenda behind it. The wire contract is in the module's tests.
 
 - **`docs/` is git-ignored.** Local design notes and audit write-ups live there
   but never ship; anything that must be tracked goes in README/AGENTS/CHANGELOG.

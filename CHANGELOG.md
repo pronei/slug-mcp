@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added — agenda relay (2026-11-20)
+- **`update_agenda`**: passes a request in the user's own words to a personal transit agent (Wayfinder) and returns its reply. The agent decides what the request means and what to change. When it proposes a change that needs a yes, the result gives a proposal ID, and a second call with `answer` (`accept` or `keep_current`) and that `proposal_id` settles it. Set `SLUG_MCP_TRANSIT_AGENT_URL` to the agent's request endpoint and, if it wants one, `SLUG_MCP_TRANSIT_AGENT_TOKEN`; without the URL the tool says it is not configured and changes nothing. Each call is sent once with a 20-second limit, and a call that fails is reported as an error that says the agenda was not confirmed as changed.
+- The public build now has 57 tools (61 with auth).
+
 ### Fixed — cache errors and overwrites (2026-11-19)
 - **Every cached tool**: a failed upstream fetch now reports its whole cause chain, so `cache fetch failed: parsing CHP XML` or `cache fetch failed: expected value at line 1 column 1` also says what went wrong underneath. Query strings in URLs are replaced with `?<redacted>`, so the NPS, AirNow and BusTime keys never reach tool output or logs. Each failure is logged once at warn level with its cache key.
 - **`get_fire_detections`**: FIRMS puts its MAP_KEY in the URL path, so its request errors no longer carry the URL.

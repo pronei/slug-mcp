@@ -62,6 +62,7 @@ Real questions that come up living and studying in Santa Cruz — each one threa
 | **Traffic** | CHP incidents and Caltrans District 5 lane closures for Hwy 1 / 9 / 17 / 101; live Caltrans traffic camera images on Hwy 1 and Hwy 17 |
 | **Bike Share** | Santa Cruz BCycle e-bikes and open docks per station, by name or nearest to a place (campus docks leave at the end of 2026) |
 | **Wildfires & Air** | NASA FIRMS satellite fire detections for SC County, AirNow current AQI, Open-Meteo air-quality and pollen forecasts |
+| **Agenda** | `update_agenda` passes a spoken request ("add the pharmacy before dinner") to a personal transit agent and returns its reply; needs your own agent endpoint |
 | **Outdoors** | OpenStreetMap trails, peaks, viewpoints, amenities; OpenBeta climbing routes; National Park Service info |
 | **Sky & Earth** | Sun/moon/twilight + UV index; NOAA SWPC space weather (Kp, storm scales, solar wind); USGS earthquakes; USGS real-time stream conditions; iNaturalist + eBird species observations |
 
@@ -226,8 +227,9 @@ The exception is **`SLUG_MCP_BUSTIME_KEY`**: the SC Metro stops catalog is loade
 | `AIRNOW_API_KEY` | `get_air_quality` | <https://docs.airnowapi.org/> |
 | `EBIRD_API_KEY` | `search_bird_observations` | <https://ebird.org/api/keygen> |
 | `NPS_API_KEY` | `get_national_park_info` | <https://www.nps.gov/subjects/developer/get-started.htm> |
+| `SLUG_MCP_TRANSIT_AGENT_URL` | `update_agenda` | The full URL of your own transit agent's request endpoint; add `SLUG_MCP_TRANSIT_AGENT_TOKEN` if it wants a bearer token |
 
-The hosted instance ships with these configured — set them yourself only if you're running locally.
+The hosted instance ships with these configured — set them yourself only if you're running locally. The exception is `SLUG_MCP_TRANSIT_AGENT_URL`: `update_agenda` writes to one person's agenda, so the public server leaves it unset and the tool answers "not configured" there.
 
 Each module follows the pattern: `scraper.rs` (HTTP + HTML parsing) > `mod.rs` (service layer with caching) > `server.rs` (MCP tool handler).
 

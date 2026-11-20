@@ -170,6 +170,11 @@ async fn missing_api_keys_degrade_to_instructions() {
             "NPS_API_KEY",
         ),
         ("search_bird_observations", json!({}), "EBIRD_API_KEY"),
+        (
+            "update_agenda",
+            json!({ "request": "add a stop at the pharmacy" }),
+            "SLUG_MCP_TRANSIT_AGENT_URL",
+        ),
         ("get_bird_hotspots", json!({}), "EBIRD_API_KEY"),
         (
             "find_nearest_bird_sighting",
@@ -275,7 +280,7 @@ async fn http_rejects_requests_with_an_unlisted_host_header() {
 
 /// Clients read these hints to decide which calls need the user's confirmation.
 /// An omitted hint means "may write, may destroy", so every tool states them
-/// explicitly, and only the auth tools may change any state.
+/// explicitly, and only the auth tools and `update_agenda` may change any state.
 #[tokio::test]
 async fn every_tool_has_a_title_and_explicit_behavior_hints() {
     let server = HttpServer::spawn(false).await;
@@ -314,11 +319,14 @@ async fn every_tool_has_a_title_and_explicit_behavior_hints() {
         problems.join("\n")
     );
     let expected: &[&str] = if cfg!(feature = "auth") {
-        &["authenticate", "login"]
+        &["authenticate", "login", "update_agenda"]
     } else {
-        &[]
+        &["update_agenda"]
     };
-    assert_eq!(state_changing, expected, "only the auth tools change state");
+    assert_eq!(
+        state_changing, expected,
+        "only the auth tools and update_agenda change state"
+    );
 
     let _ = client.cancel().await;
     server.shutdown().await;

@@ -14,6 +14,8 @@ pub struct Config {
     pub airnow_api_key: Option<String>,
     pub ebird_api_key: Option<String>,
     pub nps_api_key: Option<String>,
+    pub transit_agent_url: Option<String>,
+    pub transit_agent_token: Option<String>,
 }
 
 impl Config {
@@ -31,6 +33,8 @@ impl Config {
             airnow_api_key: std::env::var("AIRNOW_API_KEY").ok(),
             ebird_api_key: std::env::var("EBIRD_API_KEY").ok(),
             nps_api_key: std::env::var("NPS_API_KEY").ok(),
+            transit_agent_url: std::env::var(crate::agenda::URL_ENV).ok(),
+            transit_agent_token: std::env::var(crate::agenda::TOKEN_ENV).ok(),
         })
     }
 

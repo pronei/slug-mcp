@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 
 mod academics;
+mod agenda;
 mod air_forecast;
 mod air_quality;
 mod astronomy;
@@ -241,6 +242,11 @@ async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
             cache.clone(),
         )),
         nps: Arc::new(nps::NpsService::new(http.clone(), cache.clone(), nps_key)),
+        agenda: Arc::new(agenda::AgendaService::new(
+            http.clone(),
+            config.transit_agent_url.clone(),
+            config.transit_agent_token.clone(),
+        )),
         air_forecast: Arc::new(air_forecast::AirForecastService::new(
             http.clone(),
             cache.clone(),

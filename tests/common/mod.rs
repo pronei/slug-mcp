@@ -22,14 +22,16 @@ pub const API_KEY_VARS: &[&str] = &[
     "AIRNOW_API_KEY",
     "EBIRD_API_KEY",
     "NPS_API_KEY",
+    "SLUG_MCP_TRANSIT_AGENT_URL",
+    "SLUG_MCP_TRANSIT_AGENT_TOKEN",
 ];
 
 /// Tools compiled into this build. Bump this (and the counts in README /
 /// AGENTS.md) when a tool is added or removed.
 #[cfg(feature = "auth")]
-pub const EXPECTED_TOOL_COUNT: usize = 60;
+pub const EXPECTED_TOOL_COUNT: usize = 61;
 #[cfg(not(feature = "auth"))]
-pub const EXPECTED_TOOL_COUNT: usize = 56;
+pub const EXPECTED_TOOL_COUNT: usize = 57;
 
 pub type Client = RunningService<RoleClient, ()>;
 

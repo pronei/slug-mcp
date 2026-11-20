@@ -12,6 +12,7 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::academics::{AcademicsService, SearchClassesRequest, SearchDirectoryRequest};
+use crate::agenda::{AgendaService, UpdateAgendaRequest};
 use crate::air_forecast::{AirForecastRequest, AirForecastService};
 use crate::air_quality::{AirQualityRequest, AirQualityService};
 use crate::astronomy::{AstronomyService, SunMoonRequest};
@@ -106,6 +107,7 @@ pub struct ServiceContext {
     pub earthquakes: Arc<EarthquakeService>,
     pub beach_water: Arc<BeachWaterService>,
     pub nps: Arc<NpsService>,
+    pub agenda: Arc<AgendaService>,
     pub air_forecast: Arc<AirForecastService>,
     pub ocean: Arc<OceanService>,
 }
@@ -144,6 +146,7 @@ pub struct SlugMcpServer {
     earthquakes: Arc<EarthquakeService>,
     beach_water: Arc<BeachWaterService>,
     nps: Arc<NpsService>,
+    agenda: Arc<AgendaService>,
     air_forecast: Arc<AirForecastService>,
     ocean: Arc<OceanService>,
     tool_router: ToolRouter<Self>,
@@ -183,6 +186,7 @@ impl SlugMcpServer {
             earthquakes: ctx.earthquakes,
             beach_water: ctx.beach_water,
             nps: ctx.nps,
+            agenda: ctx.agenda,
             air_forecast: ctx.air_forecast,
             ocean: ctx.ocean,
             tool_router: Self::tool_router(),
@@ -1202,6 +1206,32 @@ macro_rules! define_tools {
                     .await
                     .map_err(internal_err)?;
                 Ok(CallToolResult::success(vec![ContentBlock::text(result)]))
+            }
+
+            // ─── Agenda Tools ───
+
+            #[tool(
+                title = "Update Today's Agenda",
+                // Relays to the transit agent, which may add, move or drop stops.
+                annotations(
+                    read_only_hint = false,
+                    destructive_hint = true,
+                    idempotent_hint = false,
+                    open_world_hint = true
+                ),
+                description = "Change or ask about the user's agenda for today through their personal transit agent (Wayfinder), which plans the day's stops and reroutes around changes. Pass the user's words as `request` (e.g. \"add a stop at the pharmacy before dinner\", \"push groceries to after 3\", \"can I still fit the haircut?\"); the transit agent decides what to do and its reply comes back as text to read to the user. If the reply says nothing has changed yet and gives a proposal ID, ask the user, then call again with `answer` (\"accept\" or \"keep_current\") and that `proposal_id`. This tool WRITES: only call it when the user asked for a change or a question about their own day. Returns setup instructions if the server has no transit agent configured."
+            )]
+            async fn update_agenda(
+                &self,
+                Parameters(req): Parameters<UpdateAgendaRequest>,
+            ) -> Result<CallToolResult, ErrorData> {
+                match self.agenda.update(req).await {
+                    Ok(text) => Ok(CallToolResult::success(vec![ContentBlock::text(text)])),
+                    // A failed write must reach the caller as readable text, not an opaque protocol error.
+                    Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(
+                        e.to_string(),
+                    )])),
+                }
             }
 
             // ─── Air Quality Forecast Tools ───

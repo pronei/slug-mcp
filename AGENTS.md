@@ -70,7 +70,7 @@ the tool counts in README / this file.
 src/
 ├── main.rs        # CLI parsing, service wiring, transport setup
 ├── server.rs      # All MCP tool handlers (one big file by design — single source
-│                  # of truth for the tool surface). ~1300 lines.
+│                  # of truth for the tool surface).
 ├── cache.rs       # Type-erased TTL cache (moka). No JSON round-trip.
 ├── config.rs      # Env var → Config struct. Optional API keys.
 ├── usage.rs       # Tool-call/session counters, /metrics listener, per-call log.
@@ -124,7 +124,8 @@ impl FooService {
 
 Then wire it in three places:
 
-1. `main.rs` → add `Arc<FooService>` field to `ServiceContext` and construct it.
+1. `server.rs` → add an `Arc<FooService>` field to `ServiceContext`; `main.rs` →
+   construct it in `run_serve`.
 2. `server.rs` → add the matching field to `SlugMcpServer` and copy it across in
    `SlugMcpServer::new(ctx)`.
 3. `server.rs` → add the `#[tool]` handler **inside the `define_tools! { ... }`

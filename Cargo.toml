@@ -25,7 +25,7 @@ schemars = "1"
 # deploy. `charset`/`http2`/`system-proxy` replicate the rest of 0.13's default.
 reqwest = { version = "0.13", default-features = false, features = ["cookies", "json", "gzip", "query", "form", "native-tls", "charset", "http2", "system-proxy"] }
 moka = { version = "0.12", features = ["future"] }
-scraper = "0.27"
+scraper = "0.29"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 tracing = "0.1"

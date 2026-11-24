@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install protoc and OpenSSL headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends protobuf-compiler libssl-dev pkg-config
-      - uses: dtolnay/rust-toolchain@1.89
+      - uses: dtolnay/rust-toolchain@1.120
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: msrv

@@ -15,6 +15,22 @@
 ### Removed — `search_outdoors` (2026-11-19)
 - The OpenStreetMap search for trails, peaks, viewpoints, water and restrooms, and parking is gone, along with `src/outdoors/`. Its only upstream, the community-run overpass-api.de, has timed out or answered 502 since at least 2026-10-19, so the tool mostly returned errors. The public build now has 55 tools (59 with auth). It can be restored from git history if a reliable Overpass instance turns up.
 
+### Added — usage metrics (2026-11-19)
+- `serve --sse --metrics-port <PORT>` serves Prometheus metrics at `/metrics` on a separate listener: `slug_mcp_tool_calls_total{tool,outcome}`, `slug_mcp_tool_call_duration_seconds{tool}` and `slug_mcp_sessions_total{client}`. The Docker image passes `--metrics-port 9091`, and `fly.toml` has Fly scrape it privately.
+- Every tool call logs one INFO line under `slug_mcp::usage` with the tool, client, outcome and latency. The client name comes from the request's `_meta` for 2026-07-28 stateless calls and from `initialize` for legacy sessions.
+- `fly.toml` sets `RUST_LOG = "info,html5ever=error"`, so the dining scrapers' HTML parse warnings no longer fill Fly's log buffer.
+
+### Fixed — cache errors and overwrites (2026-11-19)
+- **Every cached tool**: a failed upstream fetch now reports its whole cause chain, so `cache fetch failed: parsing CHP XML` or `cache fetch failed: expected value at line 1 column 1` also says what went wrong underneath. Query strings in URLs are replaced with `?<redacted>`, so the NPS, AirNow and BusTime keys never reach tool output or logs. Each failure is logged once at warn level with its cache key.
+- **`get_fire_detections`**: FIRMS puts its MAP_KEY in the URL path, so its request errors no longer carry the URL.
+- **Cache overwrites**: writing a key that hasn't expired yet now gives it the new TTL. It used to keep the first write's deadline, so the 5 AM dining menu refresh could expire early.
+
+### Fixed — CHP incident feed (2026-11-19)
+- **`get_traffic_incidents` / `get_traffic_summary`**: CHP's server sometimes hands a caller a copy of its feed that is cut off mid-tag and frozen hours in the past, as a 200 (2026-11-19: 180,224 bytes, last modified 11:57 PM the night before). The tool reported "parsing CHP XML", and a complete but frozen copy would have been shown as current. The adapter now rejects cut-off, stale, empty and non-feed answers and says what came back: status, content type, size, Last-Modified and the last characters.
+- After a bad copy the tools show the last good list (up to 30 minutes old) under a warning that gives the list's time, and ask CHP nothing for five minutes, because fetching again returned the same copy every time. With no recent list they say that CHP is sending a broken copy and when the next check is. Network errors and non-2xx answers start no pause.
+- The footer's "Last updated" on `get_traffic_incidents` is the feed's own Last-Modified time, not the time the answer was formatted.
+- **CHP route filter**: `route` on `get_traffic_incidents` and the CHP half of `get_traffic_summary` accepts "SR-17", "Hwy 17", "HWY 17", "Highway 17", "Route 17" and "CA-17", as lane closures already did. It matches whole route numbers, so "1" no longer lists incidents on Hwy 17, US 101 or SR 129, and a query with no number matches nothing.
+
 ### Fixed — Streamable HTTP answers for probing clients (2026-11-18)
 - A `GET /mcp` that doesn't accept `text/event-stream` (a plain probe, `Accept: */*`) now gets `405 Method Not Allowed` with `Allow: GET, POST, DELETE`, the answer the spec gives a client when the server offers it no stream. rmcp answered `406`. rmcp still answers first, so its Host and Origin checks keep their `403`s.
 - Only `/mcp` and `/mcp/` reach rmcp. Paths below it, such as the OAuth discovery probe `/mcp/.well-known/openid-configuration`, now get `404`, which tells a client the server has no auth. rmcp answered `406`.

@@ -15,11 +15,15 @@ pub mod caltrans;
 pub mod cameras;
 pub mod chp;
 
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Result;
+use chrono::{DateTime, Duration};
+use chrono_tz::Tz;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use tokio::sync::Mutex;
 
 use crate::cache::CacheStore;
 use caltrans::LaneClosure;
@@ -28,7 +32,7 @@ use chp::Incident;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TrafficRequest {
-    /// Route number to filter (e.g. "1", "9", "17", "101"). If omitted, shows all Santa Cruz County routes.
+    /// Route to filter by, e.g. "17", "SR-17", "Hwy 17" or "Highway 1". If omitted, shows all Santa Cruz County routes.
     pub route: Option<String>,
 }
 
@@ -41,32 +45,56 @@ pub struct TrafficCamerasRequest {
 pub struct TrafficService {
     http: reqwest::Client,
     cache: Arc<CacheStore>,
+    // Not in `CacheStore`: the pause and last-good timing rules run on the
+    // `now` passed in, so tests drive them with an injected clock.
+    chp: Mutex<ChpState>,
+}
+
+const CHP_FRESH_SECS: i64 = 60;
+/// How long the last good list is still worth showing with a warning.
+const CHP_KEEP_MINUTES: i64 = 30;
+// Asking CHP again soon after a bad copy returned the same copy every time
+// (35 of 35 on 2026-11-19), so the adapter stays quiet instead. If CHP pins a
+// caller to one server by recent activity, the quiet is also what frees it.
+const CHP_PAUSE_MINUTES: i64 = 5;
+
+#[derive(Default)]
+struct ChpState {
+    /// The last good list and when it was fetched.
+    last_good: Option<(chp::Snapshot, DateTime<Tz>)>,
+    paused: Option<ChpProblem>,
+}
+
+/// Why the CHP list on hand isn't a fresh one.
+#[derive(Debug, Clone)]
+struct ChpProblem {
+    reason: String,
+    /// Set after a bad copy: CHP isn't asked again before this time.
+    retry_at: Option<DateTime<Tz>>,
+}
+
+#[derive(Debug)]
+enum ChpLoad {
+    Fresh(chp::Snapshot),
+    Stale {
+        snapshot: chp::Snapshot,
+        problem: ChpProblem,
+    },
+    Unavailable(ChpProblem),
 }
 
 impl TrafficService {
     pub fn new(http: reqwest::Client, cache: Arc<CacheStore>) -> Self {
-        Self { http, cache }
+        Self {
+            http,
+            cache,
+            chp: Mutex::new(ChpState::default()),
+        }
     }
 
     /// CHP incidents in Santa Cruz County, optionally filtered by route.
     pub async fn get_chp_incidents(&self, route: Option<&str>) -> Result<String> {
-        let incidents = match self.load_chp_incidents().await {
-            Ok(i) => i,
-            Err(e) => {
-                tracing::warn!("CHP fetch failed: {}", e);
-                return Ok(format!(
-                    "⚠ CHP incident feed temporarily unreachable. Try again in a minute.\n(details: {})",
-                    e
-                ));
-            }
-        };
-
-        let filtered: Vec<&Incident> = match route {
-            Some(r) => chp::filter_by_route(&incidents, r),
-            None => incidents.iter().collect(),
-        };
-
-        Ok(format_chp(&filtered, route, incidents.len()))
+        Ok(render_chp(&self.load_chp().await, route))
     }
 
     /// Caltrans D5 lane closures in Santa Cruz County, optionally filtered by route.
@@ -107,9 +135,8 @@ impl TrafficService {
     /// Combined CHP + Caltrans view, fetched in parallel. If one source fails,
     /// the other is still rendered with a warning line.
     pub async fn get_traffic_summary(&self, route: Option<&str>) -> Result<String> {
-        let (chp_res, ct_res) =
-            futures_util::future::join(self.load_chp_incidents(), self.load_caltrans_closures())
-                .await;
+        let (chp_load, ct_res) =
+            futures_util::future::join(self.load_chp(), self.load_caltrans_closures()).await;
 
         let mut out = if let Some(r) = route {
             format!("# Santa Cruz Traffic Summary — Route {}\n\n", r)
@@ -119,27 +146,7 @@ impl TrafficService {
 
         // ─── CHP section ───
         out.push_str("## CHP incidents\n\n");
-        match chp_res {
-            Ok(incidents) => {
-                let filtered: Vec<&Incident> = match route {
-                    Some(r) => chp::filter_by_route(&incidents, r),
-                    None => incidents.iter().collect(),
-                };
-                if filtered.is_empty() {
-                    out.push_str(if route.is_some() {
-                        "_No active CHP incidents on this route in SC County._\n\n"
-                    } else {
-                        "_No active CHP incidents in Santa Cruz County._\n\n"
-                    });
-                } else {
-                    write_chp_body(&mut out, &filtered);
-                }
-            }
-            Err(e) => {
-                tracing::warn!("CHP fetch failed in summary: {}", e);
-                out.push_str(&format!("⚠ CHP feed unavailable: {}\n\n", e));
-            }
-        }
+        write_chp_section(&mut out, &chp_load, route);
 
         // ─── Caltrans section ───
         out.push_str("## Caltrans lane closures\n\n");
@@ -173,14 +180,61 @@ impl TrafficService {
         Ok(out)
     }
 
-    async fn load_chp_incidents(&self) -> Result<Vec<Incident>> {
-        let key = "traffic:chp:sc:raw";
+    async fn load_chp(&self) -> ChpLoad {
         let http = self.http.clone();
-        self.cache
-            .get_or_fetch::<Vec<Incident>, _, _>(key, 60, move || async move {
-                chp::fetch_sc_incidents(&http).await
-            })
-            .await
+        self.load_chp_with(crate::util::now_pacific(), || async move {
+            chp::fetch_sc_incidents(&http).await
+        })
+        .await
+    }
+
+    async fn load_chp_with<F, Fut>(&self, now: DateTime<Tz>, fetch: F) -> ChpLoad
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<chp::Snapshot>>,
+    {
+        // Held across the fetch, so concurrent calls share one request.
+        let mut state = self.chp.lock().await;
+        if let Some((snapshot, fetched_at)) = &state.last_good
+            && now - *fetched_at < Duration::seconds(CHP_FRESH_SECS)
+        {
+            return ChpLoad::Fresh(snapshot.clone());
+        }
+
+        let paused = state.paused.clone().filter(|p| p.retry_at > Some(now));
+        let problem = match paused {
+            Some(problem) => problem,
+            None => match fetch().await {
+                Ok(snapshot) => {
+                    state.last_good = Some((snapshot.clone(), now));
+                    state.paused = None;
+                    return ChpLoad::Fresh(snapshot);
+                }
+                Err(e) => {
+                    // The feed URL carries no key, so the whole chain is safe to show.
+                    let reason = format!("{e:#}");
+                    tracing::warn!("CHP fetch failed: {reason}");
+                    let retry_at = e
+                        .downcast_ref::<chp::BadCopy>()
+                        .map(|_| now + Duration::minutes(CHP_PAUSE_MINUTES));
+                    let problem = ChpProblem { reason, retry_at };
+                    state.paused = retry_at.map(|_| problem.clone());
+                    problem
+                }
+            },
+        };
+
+        match &state.last_good {
+            Some((snapshot, fetched_at))
+                if now - *fetched_at < Duration::minutes(CHP_KEEP_MINUTES) =>
+            {
+                ChpLoad::Stale {
+                    snapshot: snapshot.clone(),
+                    problem,
+                }
+            }
+            _ => ChpLoad::Unavailable(problem),
+        }
     }
 
     async fn load_caltrans_closures(&self) -> Result<Vec<LaneClosure>> {
@@ -209,7 +263,102 @@ impl TrafficService {
 
 // ───── formatting helpers ─────
 
-fn format_chp(filtered: &[&Incident], route: Option<&str>, total: usize) -> String {
+fn chp_on_route<'a>(incidents: &'a [Incident], route: Option<&str>) -> Vec<&'a Incident> {
+    match route {
+        Some(r) => chp::filter_by_route(incidents, r),
+        None => incidents.iter().collect(),
+    }
+}
+
+/// The warning for a CHP list that isn't fresh. `shown` is the time of the
+/// list being shown under it, if there is one.
+fn chp_notice(problem: &ChpProblem, shown: Option<DateTime<Tz>>) -> String {
+    let clock = |t: DateTime<Tz>| t.format("%-I:%M %p").to_string();
+    match (problem.retry_at, shown) {
+        (Some(retry), Some(as_of)) => format!(
+            "⚠ CHP is sending this server a broken copy of its feed. This is the last good list, from {}; next check after {}.",
+            clock(as_of),
+            clock(retry)
+        ),
+        (Some(retry), None) => format!(
+            "⚠ CHP is sending this server a broken copy of its incident feed, and there's no recent good list to show. Asking again right away returns the same copy; the next check is after {}. Caltrans lane closures (get_lane_closures) are unaffected.",
+            clock(retry)
+        ),
+        (None, Some(as_of)) => format!(
+            "⚠ CHP's feed couldn't be read just now. This is the last good list, from {}.",
+            clock(as_of)
+        ),
+        (None, None) => {
+            "⚠ CHP incident feed temporarily unreachable. Try again in a minute.".to_string()
+        }
+    }
+}
+
+fn render_chp(load: &ChpLoad, route: Option<&str>) -> String {
+    let (snapshot, problem) = match load {
+        ChpLoad::Fresh(snapshot) => (snapshot, None),
+        ChpLoad::Stale { snapshot, problem } => (snapshot, Some(problem)),
+        ChpLoad::Unavailable(problem) => {
+            return format!(
+                "{}\n(details: {})",
+                chp_notice(problem, None),
+                problem.reason
+            );
+        }
+    };
+    let filtered = chp_on_route(&snapshot.incidents, route);
+    format_chp(
+        &filtered,
+        route,
+        snapshot.incidents.len(),
+        snapshot.as_of,
+        problem,
+    )
+}
+
+fn write_chp_section(out: &mut String, load: &ChpLoad, route: Option<&str>) {
+    let snapshot = match load {
+        ChpLoad::Fresh(snapshot) => snapshot,
+        ChpLoad::Stale { snapshot, problem } => {
+            out.push_str(&format!(
+                "{}\n(details: {})\n\n",
+                chp_notice(problem, Some(snapshot.as_of)),
+                problem.reason
+            ));
+            snapshot
+        }
+        ChpLoad::Unavailable(problem) if problem.retry_at.is_some() => {
+            out.push_str(&format!(
+                "{}\n(details: {})\n\n",
+                chp_notice(problem, None),
+                problem.reason
+            ));
+            return;
+        }
+        ChpLoad::Unavailable(problem) => {
+            out.push_str(&format!("⚠ CHP feed unavailable: {}\n\n", problem.reason));
+            return;
+        }
+    };
+    let filtered = chp_on_route(&snapshot.incidents, route);
+    if filtered.is_empty() {
+        out.push_str(if route.is_some() {
+            "_No active CHP incidents on this route in SC County._\n\n"
+        } else {
+            "_No active CHP incidents in Santa Cruz County._\n\n"
+        });
+    } else {
+        write_chp_body(out, &filtered);
+    }
+}
+
+fn format_chp(
+    filtered: &[&Incident],
+    route: Option<&str>,
+    total: usize,
+    as_of: DateTime<Tz>,
+    problem: Option<&ChpProblem>,
+) -> String {
     let mut out = if let Some(r) = route {
         format!(
             "# CHP Incidents — Route {} ({} matched of {} in SC County)\n\n",
@@ -221,17 +370,24 @@ fn format_chp(filtered: &[&Incident], route: Option<&str>, total: usize) -> Stri
         format!("# CHP Incidents — Santa Cruz County ({} active)\n\n", total)
     };
 
+    if let Some(problem) = problem {
+        out.push_str(&chp_notice(problem, Some(as_of)));
+        out.push_str("\n\n");
+    }
+
     if filtered.is_empty() {
         out.push_str("No matching active CHP incidents.\n");
     } else {
         write_chp_body(&mut out, filtered);
     }
 
-    let now = crate::util::now_pacific();
     out.push_str(&format!(
         "\n_Source: CHP CAD (media.chp.ca.gov). Last updated: {}_\n",
-        now.format("%-I:%M %p")
+        as_of.format("%-I:%M %p")
     ));
+    if let Some(problem) = problem {
+        out.push_str(&format!("(details: {})\n", problem.reason));
+    }
     out
 }
 
@@ -356,6 +512,250 @@ mod tests {
         }
     }
 
+    fn pacific(hour: u32, minute: u32) -> DateTime<Tz> {
+        use chrono::TimeZone;
+        chrono_tz::US::Pacific
+            .with_ymd_and_hms(2026, 11, 19, hour, minute, 0)
+            .unwrap()
+    }
+
+    fn service() -> TrafficService {
+        TrafficService::new(reqwest::Client::new(), Arc::new(CacheStore::new(16)))
+    }
+
+    fn list(location: &str, as_of: DateTime<Tz>) -> chp::Snapshot {
+        chp::Snapshot {
+            incidents: vec![incident(location, "")],
+            as_of,
+        }
+    }
+
+    fn cut_off() -> anyhow::Error {
+        anyhow::Error::new(chp::BadCopy(
+            "cut-off copy: HTTP 200 text/xml, 180224 bytes".to_string(),
+        ))
+    }
+
+    async fn must_not_fetch() -> Result<chp::Snapshot> {
+        panic!("CHP was asked when it shouldn't have been")
+    }
+
+    fn location(load: &ChpLoad) -> &str {
+        match load {
+            ChpLoad::Fresh(s) | ChpLoad::Stale { snapshot: s, .. } => &s.incidents[0].location,
+            ChpLoad::Unavailable(p) => panic!("no list: {p:?}"),
+        }
+    }
+
+    fn secs(n: i64) -> chrono::Duration {
+        chrono::Duration::seconds(n)
+    }
+
+    #[tokio::test]
+    async fn fresh_list_is_reused_for_a_minute_then_fetched_again() {
+        let svc = service();
+        let t0 = pacific(9, 0);
+        let first = svc
+            .load_chp_with(t0, || async { Ok(list("Sr17 N / Summit", t0)) })
+            .await;
+        assert!(matches!(first, ChpLoad::Fresh(_)), "{first:?}");
+
+        let reused = svc.load_chp_with(t0 + secs(30), must_not_fetch).await;
+        assert!(matches!(reused, ChpLoad::Fresh(_)), "{reused:?}");
+        assert_eq!(location(&reused), "Sr17 N / Summit");
+
+        let later = t0 + secs(61);
+        let refetched = svc
+            .load_chp_with(
+                later,
+                || async move { Ok(list("Sr9 / Clear Creek Rd", later)) },
+            )
+            .await;
+        assert_eq!(location(&refetched), "Sr9 / Clear Creek Rd");
+    }
+
+    #[tokio::test]
+    async fn bad_copy_shows_the_last_good_list_and_pauses_five_minutes() {
+        let svc = service();
+        let t0 = pacific(9, 0);
+        svc.load_chp_with(t0, || async { Ok(list("Sr17 N / Summit", t0)) })
+            .await;
+
+        let after_bad = svc
+            .load_chp_with(pacific(9, 2), || async { Err(cut_off()) })
+            .await;
+        let ChpLoad::Stale { problem, .. } = &after_bad else {
+            panic!("expected the last good list, got {after_bad:?}");
+        };
+        assert_eq!(location(&after_bad), "Sr17 N / Summit");
+        assert!(problem.reason.contains("cut-off copy"), "{problem:?}");
+        assert_eq!(problem.retry_at, Some(pacific(9, 7)));
+
+        // Still paused at 9:06:59: CHP isn't asked.
+        let paused = svc
+            .load_chp_with(pacific(9, 6) + secs(59), must_not_fetch)
+            .await;
+        assert!(matches!(paused, ChpLoad::Stale { .. }), "{paused:?}");
+
+        // At 9:07 the pause is over and the next call fetches.
+        let resumed = svc
+            .load_chp_with(pacific(9, 7), || async {
+                Ok(list("Sr1 N / Soquel Dr Ofr", pacific(9, 7)))
+            })
+            .await;
+        assert!(matches!(resumed, ChpLoad::Fresh(_)), "{resumed:?}");
+        assert_eq!(location(&resumed), "Sr1 N / Soquel Dr Ofr");
+    }
+
+    #[tokio::test]
+    async fn bad_copy_with_nothing_saved_is_unavailable_and_pauses() {
+        let svc = service();
+        let first = svc
+            .load_chp_with(pacific(9, 0), || async { Err(cut_off()) })
+            .await;
+        let ChpLoad::Unavailable(problem) = &first else {
+            panic!("expected unavailable, got {first:?}");
+        };
+        assert_eq!(problem.retry_at, Some(pacific(9, 5)));
+
+        let again = svc.load_chp_with(pacific(9, 3), must_not_fetch).await;
+        assert!(matches!(again, ChpLoad::Unavailable(_)), "{again:?}");
+    }
+
+    #[tokio::test]
+    async fn last_good_list_is_dropped_after_half_an_hour() {
+        let svc = service();
+        let t0 = pacific(9, 0);
+        svc.load_chp_with(t0, || async { Ok(list("Sr17 N / Summit", t0)) })
+            .await;
+
+        let still_shown = svc
+            .load_chp_with(pacific(9, 29), || async { Err(cut_off()) })
+            .await;
+        assert!(
+            matches!(still_shown, ChpLoad::Stale { .. }),
+            "{still_shown:?}"
+        );
+
+        let too_old = svc
+            .load_chp_with(pacific(9, 35), || async { Err(cut_off()) })
+            .await;
+        assert!(matches!(too_old, ChpLoad::Unavailable(_)), "{too_old:?}");
+    }
+
+    #[tokio::test]
+    async fn network_error_shows_the_last_good_list_without_pausing() {
+        let svc = service();
+        let t0 = pacific(9, 0);
+        svc.load_chp_with(t0, || async { Ok(list("Sr17 N / Summit", t0)) })
+            .await;
+
+        let failed = svc
+            .load_chp_with(pacific(9, 2), || async {
+                Err(anyhow::anyhow!("connection reset").context("GET CHP sa.xml"))
+            })
+            .await;
+        let ChpLoad::Stale { problem, .. } = &failed else {
+            panic!("expected the last good list, got {failed:?}");
+        };
+        assert_eq!(problem.retry_at, None);
+        assert!(problem.reason.contains("connection reset"), "{problem:?}");
+
+        // Ten seconds later CHP is asked again, and answers.
+        let next = pacific(9, 2) + secs(10);
+        let recovered = svc
+            .load_chp_with(
+                next,
+                || async move { Ok(list("Sr9 / Clear Creek Rd", next)) },
+            )
+            .await;
+        assert!(matches!(recovered, ChpLoad::Fresh(_)), "{recovered:?}");
+        assert_eq!(location(&recovered), "Sr9 / Clear Creek Rd");
+    }
+
+    fn broken_copy_problem() -> ChpProblem {
+        ChpProblem {
+            reason: "cut-off copy: HTTP 200 text/xml, 180224 bytes".to_string(),
+            retry_at: Some(pacific(9, 31)),
+        }
+    }
+
+    #[test]
+    fn stale_list_says_how_old_it_is_and_when_chp_is_asked_again() {
+        let load = ChpLoad::Stale {
+            snapshot: list("Sr17 N / Summit", pacific(9, 15)),
+            problem: broken_copy_problem(),
+        };
+        let out = render_chp(&load, None);
+        assert!(
+            out.starts_with("# CHP Incidents — Santa Cruz County (1 active)"),
+            "{out}"
+        );
+        assert!(out.contains("last good list, from 9:15 AM"), "{out}");
+        assert!(out.contains("next check after 9:31 AM"), "{out}");
+        assert!(out.contains("Sr17 N / Summit"), "{out}");
+        assert!(
+            out.contains("(details: cut-off copy: HTTP 200 text/xml, 180224 bytes)"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn fresh_list_carries_no_warning() {
+        let out = render_chp(
+            &ChpLoad::Fresh(list("Sr17 N / Summit", pacific(9, 15))),
+            None,
+        );
+        assert!(!out.contains('⚠'), "{out}");
+        assert!(!out.contains("details"), "{out}");
+    }
+
+    #[test]
+    fn broken_copy_with_no_list_says_when_chp_is_asked_again() {
+        let out = render_chp(&ChpLoad::Unavailable(broken_copy_problem()), None);
+        assert!(out.contains("broken copy of its incident feed"), "{out}");
+        assert!(out.contains("next check is after 9:31 AM"), "{out}");
+        assert!(out.contains("get_lane_closures"), "{out}");
+        assert!(out.contains("(details: cut-off copy"), "{out}");
+    }
+
+    #[test]
+    fn other_failures_keep_the_unreachable_message() {
+        let problem = ChpProblem {
+            reason: "GET CHP sa.xml: connection reset".to_string(),
+            retry_at: None,
+        };
+        let out = render_chp(&ChpLoad::Unavailable(problem), None);
+        assert!(out.contains("temporarily unreachable"), "{out}");
+        assert!(
+            out.contains("(details: GET CHP sa.xml: connection reset)"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn summary_section_shows_a_stale_list_under_its_warning() {
+        let load = ChpLoad::Stale {
+            snapshot: list("Sr17 N / Summit", pacific(9, 15)),
+            problem: broken_copy_problem(),
+        };
+        let mut out = String::new();
+        write_chp_section(&mut out, &load, Some("17"));
+        assert!(out.contains("last good list, from 9:15 AM"), "{out}");
+        assert!(out.contains("Sr17 N / Summit"), "{out}");
+
+        let mut out = String::new();
+        write_chp_section(&mut out, &ChpLoad::Unavailable(broken_copy_problem()), None);
+        assert!(out.contains("next check is after 9:31 AM"), "{out}");
+    }
+
+    #[test]
+    fn chp_footer_shows_the_feeds_time_not_the_clock() {
+        let i = incident("Sr17 N / Summit", "");
+        let out = format_chp(&[&i], None, 1, pacific(3, 7), None);
+        assert!(out.contains("Last updated: 3:07 AM"), "{out}");
+    }
+
     #[test]
     fn caltrans_delay_sentinels_are_suppressed() {
         // Caltrans sends "Not Reported" and "0" — neither is a real delay.
@@ -391,18 +791,18 @@ mod tests {
     fn chp_location_desc_dedupe() {
         // When LocationDesc duplicates Location it is not repeated in parens.
         let same = incident("Sr17 N / Summit", "Sr17 N / Summit");
-        let out = format_chp(&[&same], None, 1);
+        let out = format_chp(&[&same], None, 1, pacific(9, 15), None);
         assert!(out.contains("Sr17 N / Summit"));
         assert!(!out.contains("(Sr17 N / Summit)"));
 
         let diff = incident("Sr17 N / Summit", "NB 17 AT THE SUMMIT");
-        let out = format_chp(&[&diff], None, 1);
+        let out = format_chp(&[&diff], None, 1, pacific(9, 15), None);
         assert!(out.contains("Sr17 N / Summit (NB 17 AT THE SUMMIT)"));
     }
 
     #[test]
     fn chp_empty_filter_message() {
-        let out = format_chp(&[], Some("9"), 2);
+        let out = format_chp(&[], Some("9"), 2, pacific(9, 15), None);
         assert!(out.contains("No matching active CHP incidents."));
     }
 }

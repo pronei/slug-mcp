@@ -6,6 +6,8 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
 use rmcp::service::RequestContext;
 use rmcp::{RoleServer, ServerHandler, tool, tool_router};
+
+use crate::usage;
 use schemars::JsonSchema;
 use serde::Deserialize;
 #[cfg(feature = "auth")]
@@ -183,6 +185,14 @@ impl SlugMcpServer {
             ocean: ctx.ocean,
             tool_router: Self::tool_router(),
         }
+    }
+
+    pub fn tool_names() -> Vec<String> {
+        Self::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name.into_owned())
+            .collect()
     }
 
     #[cfg(feature = "auth")]
@@ -934,7 +944,7 @@ macro_rules! define_tools {
             #[tool(
                 title = "CHP Traffic Incidents",
                 annotations(read_only_hint = true, open_world_hint = true),
-                description = "Get active CHP incidents in Santa Cruz County. Pulls from the CHP CAD XML feed (Monterey comm center / MYCC dispatch) and filters to SC County areas. Optionally filter by route number (e.g. '1', '9', '17')."
+                description = "Get active CHP incidents in Santa Cruz County. Pulls from the CHP CAD XML feed (Monterey comm center / MYCC dispatch) and filters to SC County areas. Optionally filter by route (e.g. '17', 'SR-17', 'Hwy 1', 'Highway 9')."
             )]
             async fn get_traffic_incidents(
                 &self,
@@ -1490,8 +1500,35 @@ impl ServerHandler for SlugMcpServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        let tool = request.name.to_string();
+        let known = self.tool_router.has_route(&tool);
+        // Stateless (2026-07-28) requests carry clientInfo in `_meta`; legacy
+        // sessions fall back to the initialize handshake.
+        let client = context.client_info().map(|info| info.name);
+        let started = std::time::Instant::now();
+
         let tcc = ToolCallContext::new(self, request, context);
-        self.tool_router.call(tcc).await
+        let result = self.tool_router.call(tcc).await;
+
+        let outcome = match &result {
+            Ok(CallToolResponse::Complete(r)) if r.is_error == Some(true) => {
+                usage::Outcome::ToolError
+            }
+            Ok(_) => usage::Outcome::Ok,
+            Err(_) => usage::Outcome::ProtocolError,
+        };
+        usage::record_tool_call(&tool, known, client.as_deref(), outcome, started.elapsed());
+        result
+    }
+
+    async fn initialize(
+        &self,
+        request: InitializeRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<InitializeResult, ErrorData> {
+        usage::record_session(&request.client_info.name);
+        context.peer.set_peer_info(request.clone());
+        self.negotiate_initialize(&request)
     }
 
     async fn list_tools(

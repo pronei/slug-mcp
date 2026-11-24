@@ -38,6 +38,7 @@ mod summer;
 mod tides;
 mod traffic;
 mod transit;
+mod usage;
 mod usgs_water;
 mod util;
 mod wave_buoy;
@@ -66,6 +67,10 @@ enum Command {
         /// Port for the SSE server
         #[arg(long, default_value_t = 3000)]
         port: u16,
+        /// Serve Prometheus metrics at /metrics on this port (SSE mode only).
+        /// Keep it off the public service; on Fly it is scraped privately.
+        #[arg(long)]
+        metrics_port: Option<u16>,
     },
     /// Login locally via browser and print a portable auth token to stdout.
     /// Use this token with the `authenticate` tool on a remote SSE server.
@@ -81,10 +86,16 @@ async fn main() -> Result<()> {
         sse: false,
         host: std::net::Ipv4Addr::LOCALHOST.into(),
         port: 3000,
+        metrics_port: None,
     }) {
         #[cfg(feature = "auth")]
         Command::ExportToken => run_export_token().await,
-        Command::Serve { sse, host, port } => {
+        Command::Serve {
+            sse,
+            host,
+            port,
+            metrics_port,
+        } => {
             tracing_subscriber::fmt()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::from_default_env()
@@ -93,7 +104,7 @@ async fn main() -> Result<()> {
                 .with_writer(std::io::stderr)
                 .init();
 
-            run_serve(sse, host, port).await
+            run_serve(sse, host, port, metrics_port).await
         }
     }
 }
@@ -142,7 +153,12 @@ async fn run_export_token() -> Result<()> {
     Ok(())
 }
 
-async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
+async fn run_serve(
+    sse: bool,
+    host: std::net::IpAddr,
+    port: u16,
+    metrics_port: Option<u16>,
+) -> Result<()> {
     let config = Arc::new(config::Config::load()?);
     let cache = Arc::new(cache::CacheStore::new(10_000));
 
@@ -262,7 +278,7 @@ async fn run_serve(sse: bool, host: std::net::IpAddr, port: u16) -> Result<()> {
     });
 
     if sse {
-        run_sse(host, port, ctx).await
+        run_sse(host, port, metrics_port, ctx).await
     } else {
         let server = server::SlugMcpServer::new(ctx);
         let service = server.serve(rmcp::transport::io::stdio()).await?;
@@ -345,7 +361,12 @@ async fn log_request(
     response
 }
 
-async fn run_sse(host: std::net::IpAddr, port: u16, ctx: server::ServiceContext) -> Result<()> {
+async fn run_sse(
+    host: std::net::IpAddr,
+    port: u16,
+    metrics_port: Option<u16>,
+    ctx: server::ServiceContext,
+) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     };
@@ -427,6 +448,25 @@ async fn run_sse(host: std::net::IpAddr, port: u16, ctx: server::ServiceContext)
     let addr = std::net::SocketAddr::new(host, port);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("SSE server listening on http://{addr}/mcp");
+
+    if let Some(metrics_port) = metrics_port {
+        let handle = usage::install(&server::SlugMcpServer::tool_names())?;
+        // Fly's scraper reaches the machine over its private IPv6 address, which
+        // a 0.0.0.0 bind doesn't accept; [::] on Linux takes IPv4 as well.
+        let metrics_host = if host.is_unspecified() {
+            std::net::Ipv6Addr::UNSPECIFIED.into()
+        } else {
+            host
+        };
+        let metrics_addr = std::net::SocketAddr::new(metrics_host, metrics_port);
+        let metrics_listener = tokio::net::TcpListener::bind(metrics_addr).await?;
+        tracing::info!("metrics listening on http://{metrics_addr}/metrics");
+        tokio::spawn(async move {
+            if let Err(e) = usage::serve(metrics_listener, handle).await {
+                tracing::error!("metrics server stopped: {e}");
+            }
+        });
+    }
 
     axum::serve(listener, app).await?;
 

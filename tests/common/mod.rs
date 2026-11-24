@@ -118,6 +118,21 @@ pub fn text_of(result: &CallToolResult) -> String {
         .join("\n")
 }
 
+/// The value of the Prometheus sample `name{labels…}`, matching every given
+/// label regardless of order.
+pub fn metric_value(exposition: &str, name: &str, labels: &[(&str, &str)]) -> Option<f64> {
+    exposition.lines().find_map(|line| {
+        let rest = line.strip_prefix(name)?.strip_prefix('{')?;
+        let (label_set, value) = rest.split_once("} ")?;
+        let all_match = labels.iter().all(|(k, v)| {
+            label_set
+                .split(',')
+                .any(|pair| pair == format!("{k}=\"{v}\""))
+        });
+        all_match.then(|| value.trim().parse().ok()).flatten()
+    })
+}
+
 pub fn is_tool_error(result: &CallToolResult) -> bool {
     result.is_error.unwrap_or(false)
 }
@@ -177,6 +192,7 @@ async fn wait_for_healthz(child: &mut tokio::process::Child, port: u16) -> bool 
 /// `slug-mcp serve --sse` on a free port, ready once `/healthz` answers.
 pub struct HttpServer {
     pub port: u16,
+    pub metrics_port: u16,
     child: tokio::process::Child,
     _home: TempDir,
 }
@@ -188,14 +204,23 @@ impl HttpServer {
         // server that exits before answering is retried on a fresh port.
         for _ in 0..3 {
             let port = free_port();
+            let metrics_port = free_port();
             let mut cmd = tokio::process::Command::new(binary());
-            cmd.args(["serve", "--sse", "--port", &port.to_string()]);
+            cmd.args([
+                "serve",
+                "--sse",
+                "--port",
+                &port.to_string(),
+                "--metrics-port",
+                &metrics_port.to_string(),
+            ]);
             configure_env(&mut cmd, home.path(), keep_keys);
             cmd.kill_on_drop(true);
             let mut child = cmd.spawn().expect("spawn slug-mcp --sse");
             if wait_for_healthz(&mut child, port).await {
                 return Self {
                     port,
+                    metrics_port,
                     child,
                     _home: home,
                 };
@@ -206,6 +231,13 @@ impl HttpServer {
 
     pub fn mcp_url(&self) -> String {
         format!("http://127.0.0.1:{}/mcp", self.port)
+    }
+
+    pub async fn scrape_metrics(&self) -> String {
+        let url = format!("http://127.0.0.1:{}/metrics", self.metrics_port);
+        let response = reqwest::get(&url).await.expect("GET /metrics");
+        assert_eq!(response.status(), 200, "GET {url}");
+        response.text().await.expect("metrics body")
     }
 
     pub async fn connect(&self) -> Client {

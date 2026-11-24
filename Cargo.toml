@@ -44,6 +44,10 @@ quick-xml = { version = "0.42", features = ["serialize"] }
 gtfs-realtime = "0.2"
 prost = "0.14"
 regex = "1"
+# Exporter without its own HTTP listener: /metrics is an axum route on a
+# separate internal port, so the hyper/push-gateway features are dead weight.
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
 [features]
 default = ["auth"]

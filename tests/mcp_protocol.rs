@@ -6,7 +6,8 @@
 mod common;
 
 use common::{
-    EXPECTED_TOOL_COUNT, HttpServer, StdioServer, error_code, is_tool_error, text_of, tools_by_name,
+    EXPECTED_TOOL_COUNT, HttpServer, StdioServer, call_tool, error_code, is_tool_error,
+    metric_value, text_of, tools_by_name,
 };
 use rmcp::model::ErrorCode;
 use serde_json::json;
@@ -591,5 +592,93 @@ async fn http_legacy_sse_responses_have_no_priming_event() {
         serde_json::from_str::<serde_json::Value>(&data)
             .unwrap_or_else(|e| panic!("SSE data is not JSON ({e}): {data:?}"));
     }
+    server.shutdown().await;
+}
+
+// ─── Usage metrics ───
+
+const TOOL_CALLS: &str = "slug_mcp_tool_calls_total";
+
+#[tokio::test]
+async fn http_tool_calls_are_counted_on_the_metrics_port() {
+    let server = HttpServer::spawn(false).await;
+    let bad_need = [("tool", "get_bike_share"), ("outcome", "tool_error")];
+
+    let before = server.scrape_metrics().await;
+    assert_eq!(
+        metric_value(&before, TOOL_CALLS, &bad_need),
+        Some(0.0),
+        "every tool's series should start at 0:\n{before}"
+    );
+
+    let client = server.connect().await;
+    let result = call_tool(&client, "get_bike_share", json!({ "need": "scooter" }))
+        .await
+        .expect("validation failures are tool results");
+    assert!(is_tool_error(&result));
+    call_tool(&client, "no_such_tool_0123456789", json!({}))
+        .await
+        .expect_err("unknown tool is a protocol error");
+    let _ = client.cancel().await;
+
+    // A 2026-07-28 stateless call names its client in `_meta`, not a handshake.
+    let response = reqwest::Client::new()
+        .post(server.mcp_url())
+        .header("Accept", "application/json, text/event-stream")
+        .header("MCP-Protocol-Version", "2026-07-28")
+        .header("Mcp-Method", "tools/call")
+        .header("Mcp-Name", "get_bike_share")
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_bike_share",
+                "arguments": { "need": "scooter" },
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientInfo": { "name": "claude-code", "version": "0" },
+                    "io.modelcontextprotocol/clientCapabilities": {}
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("POST tools/call");
+    assert_eq!(response.status(), 200, "{:?}", response.text().await);
+
+    let after = server.scrape_metrics().await;
+    assert_eq!(
+        metric_value(&after, TOOL_CALLS, &bad_need),
+        Some(2.0),
+        "{after}"
+    );
+    assert_eq!(
+        metric_value(
+            &after,
+            TOOL_CALLS,
+            &[("tool", "unknown"), ("outcome", "protocol_error")]
+        ),
+        Some(1.0),
+        "unknown tool names collapse into one label:\n{after}"
+    );
+    assert!(
+        !after.contains("no_such_tool_0123456789"),
+        "raw unknown tool names must not become labels"
+    );
+    assert_eq!(
+        metric_value(
+            &after,
+            "slug_mcp_tool_call_duration_seconds_count",
+            &[("tool", "get_bike_share")]
+        ),
+        Some(2.0),
+        "{after}"
+    );
+    assert_eq!(
+        metric_value(&after, "slug_mcp_sessions_total", &[("client", "rmcp")]),
+        Some(1.0),
+        "{after}"
+    );
     server.shutdown().await;
 }

@@ -17,13 +17,52 @@ cargo run -- serve --sse --port 3000        # HTTP/SSE server at /mcp
 cargo run -- serve --sse --metrics-port 9091 # plus Prometheus /metrics on :9091
 cargo run -- export-token                    # browser login, prints portable token to stdout
 
-cargo test                                   # unit tests (most live in `mod tests` blocks)
-cargo clippy --all-targets -- -D warnings    # lints; CI is strict
+cargo test                                   # unit tests + offline MCP protocol tests (no network)
+cargo test --test live_canary -- --ignored   # live canaries, one per public tool (hits upstreams)
+cargo clippy --all-targets -- -D warnings    # lints; CI is strict, on both feature sets
 cargo fmt
+cargo deny check                             # advisories/licenses/sources; same policy as CI
+cargo llvm-cov nextest --profile ci          # coverage; HTML with `cargo llvm-cov report --html`
 ```
 
 Logging: `RUST_LOG=slug_mcp=debug cargo run -- serve` (writes to stderr; stdout is
 reserved for MCP framing on stdio transport, and for the token on `export-token`).
+`main.rs` appends a global INFO directive after `RUST_LOG`, so a bare level such as
+`RUST_LOG=warn` can't go below INFO; per-crate directives can
+(`RUST_LOG=slug_mcp=warn,rmcp=warn`).
+
+## Testing tiers
+
+1. **Unit tests** (`mod tests` in each module, fixtures in `src/<service>/fixtures/`):
+   parsers and formatters against saved upstream responses. Offline, sub-second.
+2. **Offline integration** ([tests/mcp_protocol.rs](tests/mcp_protocol.rs)): spawns the
+   built binary and drives it as a real MCP client over stdio and Streamable HTTP.
+   Asserts the tool surface (count, names, titles and behaviour hints, schemas, every
+   parameter documented), server identity, error semantics (`isError` for caller
+   mistakes, -32602 for unknown tools), "key not configured" degradation, and the HTTP
+   transport (`/healthz`, Host and Origin allow-lists, the body cap, answers to
+   probing clients). Only calls code paths that return before any upstream request.
+   Runs in CI.
+3. **Live canaries** ([tests/live_canary.rs](tests/live_canary.rs), all `#[ignore]`):
+   one test per public tool against its real upstream. Each asserts the headings and
+   markers its formatter promises (`# Tide predictions`, `(recipe: `, …), that no raw
+   HTML entity reaches the model, and, where data can go stale without erroring, a
+   freshness check (the group-exercise schedule must be for the current quarter).
+   Three tests chain ids (menu → nutrition, occupancy → schedule, requirements →
+   progress). A failure's first line is `<tool>: <what broke> — adapter <file> ←
+   <upstream>`, taken from the `ADAPTERS` table. A protocol-level failure is retried
+   once after 15 s so a momentary blip isn't reported as drift.
+   `SLUG_MCP_CANARY_URL=https://slug-mcp.fly.dev/mcp` points the same tests at a
+   deployed server. `canary.yml` runs both targets daily and keeps one `canary`
+   issue per target current.
+4. **Coverage**: `cargo llvm-cov nextest --profile ci` (CI uploads to Codecov and
+   the job summary). The spawned binary is instrumented too, so handler code in
+   `server.rs` counts, not only the fixture-driven parsers.
+
+When a tool is added or removed: bump `EXPECTED_TOOL_COUNT` in `tests/common/mod.rs`
+(59 with the auth feature, 55 public), add an `ADAPTERS` row and a canary for it in
+`tests/live_canary.rs` (`every_public_tool_has_a_canary` fails otherwise), and update
+the tool counts in README / this file.
 
 ## Module layout
 
@@ -31,7 +70,7 @@ reserved for MCP framing on stdio transport, and for the token on `export-token`
 src/
 ├── main.rs        # CLI parsing, service wiring, transport setup
 ├── server.rs      # All MCP tool handlers (one big file by design — single source
-│                  # of truth for the tool surface). ~1300 lines.
+│                  # of truth for the tool surface).
 ├── cache.rs       # Type-erased TTL cache (moka). No JSON round-trip.
 ├── config.rs      # Env var → Config struct. Optional API keys.
 ├── usage.rs       # Tool-call/session counters, /metrics listener, per-call log.
@@ -40,13 +79,13 @@ src/
 ├── util/fuzzy.rs  # FuzzyMatcher — case/whitespace-insensitive name matching.
 ├── auth/          # CDP-driven CruzID+Duo login; AES-256-GCM session storage;
 │                  # portable token codec. All gated on `feature = "auth"`.
-└── <service>/     # 29 service modules — see "The pattern" below.
+└── <service>/     # 28 service modules — see "The pattern" below.
 ```
 
 Service modules: `academics`, `air_forecast`, `air_quality`, `astronomy`,
 `beach_water`, `bike_share`, `biodiversity`, `buoy`, `classrooms`, `climbing`, `degrees`,
 `dining`, `earthquakes`, `events`, `fire`, `library`, `marine`, `nps`, `ocean`,
-`outdoors`, `recreation`, `space_weather`, `summer`, `tides`, `traffic`,
+`recreation`, `space_weather`, `summer`, `tides`, `traffic`,
 `transit`, `usgs_water`, `wave_buoy`, `weather`.
 
 ## The pattern
@@ -85,7 +124,8 @@ impl FooService {
 
 Then wire it in three places:
 
-1. `main.rs` → add `Arc<FooService>` field to `ServiceContext` and construct it.
+1. `server.rs` → add an `Arc<FooService>` field to `ServiceContext`; `main.rs` →
+   construct it in `run_serve`.
 2. `server.rs` → add the matching field to `SlugMcpServer` and copy it across in
    `SlugMcpServer::new(ctx)`.
 3. `server.rs` → add the `#[tool]` handler **inside the `define_tools! { ... }`
@@ -199,7 +239,7 @@ Then wire it in three places:
   positions/occupancy and system alerts. Real GTFS-RT predictions (and true
   per-route delays) need a static-GTFS `stops.txt`/`stop_times.txt` loader.
 
-- **The public build exposes 56 tools, not 60.** The Dockerfile builds
+- **The public build exposes 55 tools, not 59.** The Dockerfile builds
   `--no-default-features`, which compiles out the four auth tools.
 
 - **`docs/` is git-ignored.** Local design notes and audit write-ups live there
@@ -213,6 +253,25 @@ Then wire it in three places:
   portable token; this is stored per-session in `SlugMcpServer.session_auth`
   (an `Arc<RwLock<Option<SessionData>>>`). Stdio mode falls back to the
   on-disk encrypted session. See `get_active_session` in `server.rs`.
+
+- **rmcp turns argument deserialization failures into tool results**
+  (`isError: true`, "failed to deserialize parameters: …"), not JSON-RPC -32602,
+  so the model can correct its call. Only an unknown tool name is -32602.
+
+- **Canary markers are part of a formatter's contract.** Each live canary asserts
+  on the heading its tool renders (`# Santa Cruz Weather Forecast`, `## Schedule:`).
+  Renaming a heading means updating the canary — on purpose: headings are what the
+  model reads, so a silent rename is a behaviour change.
+
+- **The local canary trusts the InCommon intermediate.** `nutrition.sa.ucsc.edu`
+  sends the wrong intermediate certificate; macOS repairs the chain, OpenSSL on a
+  Linux runner doesn't. `canary.yml` installs `certs/InCommon_ECC_OV_SSL_CA_3.crt`
+  (the same file the Docker image on `deploy/flyio` installs) so dining canaries
+  fail on drift, not TLS.
+
+- **Dependabot's Docker bumps land on `main`.** Deploys fast-forward `deploy/flyio`
+  from `main`, so a merged base-image bump ships with the next
+  `git push origin main:deploy/flyio`, like any other change.
 
 ## Adding a new tool: checklist
 
@@ -320,6 +379,10 @@ sum by (client) (increase(slug_mcp_sessions_total[1d]))
   [src/dining/scraper.rs](src/dining/scraper.rs).
 - **Tool registration patterns:** the `define_tools!` macro body in
   [src/server.rs](src/server.rs).
+- **CI and checks:** [.github/workflows/ci.yml](.github/workflows/ci.yml) (fmt, clippy,
+  tests, coverage, MSRV, cargo-deny), [.github/workflows/canary.yml](.github/workflows/canary.yml)
+  (daily live canaries, local build and hosted server → one `canary` issue each), [.github/dependabot.yml](.github/dependabot.yml),
+  [deny.toml](deny.toml), [.config/nextest.toml](.config/nextest.toml).
 - **Auth flow:** [src/auth/mod.rs](src/auth/mod.rs) for the `AuthManager`,
   [src/auth/browser.rs](src/auth/browser.rs) for the CDP login dance,
   [src/auth/token.rs](src/auth/token.rs) for the portable token format.

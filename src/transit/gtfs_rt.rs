@@ -476,7 +476,7 @@ pub async fn fetch_route_delays(
             }
         })
         .collect();
-    out.sort_by(|a, b| b.avg_delay_seconds.cmp(&a.avg_delay_seconds));
+    out.sort_by_key(|s| std::cmp::Reverse(s.avg_delay_seconds));
     Ok(out)
 }
 

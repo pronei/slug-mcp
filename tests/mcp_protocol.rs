@@ -124,13 +124,13 @@ async fn malformed_arguments_are_explained_as_tool_errors() {
 async fn caller_mistakes_are_tool_level_errors_with_guidance() {
     let server = StdioServer::spawn(false).await;
     let result = server
-        .call("search_outdoors", json!({ "category": "bogus" }))
+        .call("get_bike_share", json!({ "need": "scooter" }))
         .await
         .expect("validation failures are tool results, not protocol errors");
     assert!(is_tool_error(&result), "isError should be set");
     let text = text_of(&result);
     assert!(
-        text.contains("bogus") && text.contains("trails"),
+        text.contains("scooter") && text.contains("bike"),
         "message should name the bad value and list valid ones: {text}"
     );
     server.shutdown().await;
@@ -232,7 +232,7 @@ async fn http_serves_healthz_and_the_same_tool_surface() {
     let tools = client.list_all_tools().await.expect("tools/list over HTTP");
     assert_eq!(tools.len(), EXPECTED_TOOL_COUNT);
 
-    let result = common::call_tool(&client, "search_outdoors", json!({ "category": "bogus" }))
+    let result = common::call_tool(&client, "get_bike_share", json!({ "need": "scooter" }))
         .await
         .expect("tool call over HTTP");
     assert!(is_tool_error(&result));
@@ -602,17 +602,17 @@ const TOOL_CALLS: &str = "slug_mcp_tool_calls_total";
 #[tokio::test]
 async fn http_tool_calls_are_counted_on_the_metrics_port() {
     let server = HttpServer::spawn(false).await;
-    let bogus_outdoors = [("tool", "search_outdoors"), ("outcome", "tool_error")];
+    let bad_need = [("tool", "get_bike_share"), ("outcome", "tool_error")];
 
     let before = server.scrape_metrics().await;
     assert_eq!(
-        metric_value(&before, TOOL_CALLS, &bogus_outdoors),
+        metric_value(&before, TOOL_CALLS, &bad_need),
         Some(0.0),
         "every tool's series should start at 0:\n{before}"
     );
 
     let client = server.connect().await;
-    let result = call_tool(&client, "search_outdoors", json!({ "category": "bogus" }))
+    let result = call_tool(&client, "get_bike_share", json!({ "need": "scooter" }))
         .await
         .expect("validation failures are tool results");
     assert!(is_tool_error(&result));
@@ -627,14 +627,14 @@ async fn http_tool_calls_are_counted_on_the_metrics_port() {
         .header("Accept", "application/json, text/event-stream")
         .header("MCP-Protocol-Version", "2026-07-28")
         .header("Mcp-Method", "tools/call")
-        .header("Mcp-Name", "search_outdoors")
+        .header("Mcp-Name", "get_bike_share")
         .json(&json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
             "params": {
-                "name": "search_outdoors",
-                "arguments": { "category": "bogus" },
+                "name": "get_bike_share",
+                "arguments": { "need": "scooter" },
                 "_meta": {
                     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
                     "io.modelcontextprotocol/clientInfo": { "name": "claude-code", "version": "0" },
@@ -649,7 +649,7 @@ async fn http_tool_calls_are_counted_on_the_metrics_port() {
 
     let after = server.scrape_metrics().await;
     assert_eq!(
-        metric_value(&after, TOOL_CALLS, &bogus_outdoors),
+        metric_value(&after, TOOL_CALLS, &bad_need),
         Some(2.0),
         "{after}"
     );
@@ -670,7 +670,7 @@ async fn http_tool_calls_are_counted_on_the_metrics_port() {
         metric_value(
             &after,
             "slug_mcp_tool_call_duration_seconds_count",
-            &[("tool", "search_outdoors")]
+            &[("tool", "get_bike_share")]
         ),
         Some(2.0),
         "{after}"

@@ -1,0 +1,45 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 5
+    # Wait a week before adopting a fresh release: most yanked or compromised
+    # crate versions are caught within days.
+    cooldown:
+      default-days: 7
+    groups:
+      # One PR per week for every semver-compatible bump; majors stay separate
+      # because they usually need code changes (rmcp 2→3 did).
+      rust-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Los_Angeles
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"
+
+  # Deploys fast-forward deploy/flyio from main, so base-image bumps belong on main.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Los_Angeles
+    commit-message:
+      prefix: "chore(deps)"

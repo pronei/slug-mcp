@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM rust:1.94-slim-trixie AS build
+FROM rust:1.100-slim-trixie AS build
 # pkg-config + libssl-dev: reqwest uses native-tls (system OpenSSL).
 # protobuf-compiler: gtfs-realtime's build script runs protoc.
 RUN apt-get update \
